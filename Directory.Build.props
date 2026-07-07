@@ -12,6 +12,9 @@
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <Deterministic>true</Deterministic>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- Allow building net8.0-windows (WPF) projects on Linux CI / remote agents.
+         Running WPF or its tests still requires Windows. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 
   <ItemGroup>
