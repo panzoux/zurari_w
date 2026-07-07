@@ -1,0 +1,3 @@
+T:System.IO.File; Shell wraps Win32/COM only - plain file I/O belongs to Zurari.Runtime
+T:System.IO.Directory; Shell wraps Win32/COM only - plain file I/O belongs to Zurari.Runtime
+T:System.IO.FileStream; Shell wraps Win32/COM only - plain file I/O belongs to Zurari.Runtime

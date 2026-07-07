@@ -1,0 +1,36 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+indent_style = space
+indent_size = 4
+trim_trailing_whitespace = true
+
+[*.{csproj,props,targets,xml,xaml}]
+indent_size = 2
+
+[*.{json,yml,yaml}]
+indent_size = 2
+
+[*.cs]
+# --- Style: make the intended style the default the IDE produces ---
+csharp_style_namespace_declarations = file_scoped:error
+csharp_style_var_for_built_in_types = false:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_prefer_braces = true:error
+dotnet_style_readonly_field = true:error
+dotnet_sort_system_directives_first = true
+
+# --- Analyzer tuning (documented downgrades from AnalysisLevel=latest-all) ---
+# Localization: this app is not localized via resources.
+dotnet_diagnostic.CA1303.severity = none
+# CLS compliance is irrelevant for an application.
+dotnet_diagnostic.CA1014.severity = none
+# LoggerMessage delegates: overkill at this stage.
+dotnet_diagnostic.CA1848.severity = none
+# ConfigureAwait: WPF app code must stay on the dispatcher; Runtime revisits per-call.
+dotnet_diagnostic.CA2007.severity = none
+# Nested types / visibility style choices we accept for Msg/Effect unions.
+dotnet_diagnostic.CA1034.severity = none

@@ -1,0 +1,8 @@
+T:System.IO.File; App is a thin shell - file I/O must be requested via an Effect and executed by Zurari.Runtime
+T:System.IO.Directory; App is a thin shell - file I/O must be requested via an Effect and executed by Zurari.Runtime
+T:System.IO.FileStream; App is a thin shell - file I/O must be requested via an Effect and executed by Zurari.Runtime
+T:System.IO.FileInfo; App is a thin shell - file I/O must be requested via an Effect and executed by Zurari.Runtime
+T:System.IO.DirectoryInfo; App is a thin shell - file I/O must be requested via an Effect and executed by Zurari.Runtime
+M:System.Threading.Tasks.Task.Run(System.Action); App must not spawn its own workers - dispatch an Effect instead
+M:System.Threading.Tasks.Task.Run(System.Func{System.Threading.Tasks.Task}); App must not spawn its own workers - dispatch an Effect instead
+T:System.Threading.Thread; App must not spawn its own workers - dispatch an Effect instead

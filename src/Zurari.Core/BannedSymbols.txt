@@ -1,0 +1,13 @@
+T:System.IO.File; Core is pure - file I/O must be requested via an Effect and executed by Zurari.Runtime
+T:System.IO.Directory; Core is pure - file I/O must be requested via an Effect and executed by Zurari.Runtime
+T:System.IO.FileStream; Core is pure - file I/O must be requested via an Effect and executed by Zurari.Runtime
+T:System.IO.FileInfo; Core is pure - file I/O must be requested via an Effect and executed by Zurari.Runtime
+T:System.IO.DirectoryInfo; Core is pure - file I/O must be requested via an Effect and executed by Zurari.Runtime
+T:System.IO.FileSystemWatcher; Core is pure - watching is a Runtime concern, results arrive as Msgs
+T:System.Threading.Tasks.Task; Core is pure and synchronous - async work belongs to Zurari.Runtime
+T:System.Threading.Tasks.Task`1; Core is pure and synchronous - async work belongs to Zurari.Runtime
+T:System.Threading.Thread; Core is pure and synchronous - threading belongs to Zurari.Runtime
+P:System.DateTime.Now; Core must be deterministic - current time arrives inside a Msg
+P:System.DateTime.UtcNow; Core must be deterministic - current time arrives inside a Msg
+M:System.Environment.GetFolderPath(System.Environment.SpecialFolder); Core is pure - environment lookups happen in Zurari.Runtime
+P:System.Environment.CurrentDirectory; Core is pure - environment lookups happen in Zurari.Runtime

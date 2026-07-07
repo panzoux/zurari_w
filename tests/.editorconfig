@@ -1,0 +1,4 @@
+# Overrides for test projects only.
+[*.cs]
+# Underscores in test method names are the xunit convention.
+dotnet_diagnostic.CA1707.severity = none
