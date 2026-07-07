@@ -1,0 +1,12 @@
+T:System.IO.File; Controls is a dumb view - it never touches the file system; data arrives as view models
+T:System.IO.Directory; Controls is a dumb view - it never touches the file system; data arrives as view models
+T:System.IO.FileStream; Controls is a dumb view - it never touches the file system; data arrives as view models
+T:System.IO.FileInfo; Controls is a dumb view - it never touches the file system; data arrives as view models
+T:System.IO.DirectoryInfo; Controls is a dumb view - it never touches the file system; data arrives as view models
+T:System.IO.FileSystemWatcher; Controls is a dumb view - watching is a Runtime concern
+T:System.Threading.Tasks.Task; Controls is synchronous - async work belongs to the host application
+T:System.Threading.Tasks.Task`1; Controls is synchronous - async work belongs to the host application
+T:System.Threading.Thread; Controls is synchronous - threading belongs to the host application
+T:System.Windows.Threading.DispatcherTimer; Controls has no timers - animation of state is the host's job
+P:System.DateTime.Now; Controls must be deterministic - dates arrive pre-formatted inside view models
+P:System.DateTime.UtcNow; Controls must be deterministic - dates arrive pre-formatted inside view models

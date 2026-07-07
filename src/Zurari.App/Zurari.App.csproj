@@ -1,6 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <ProjectReference Include="..\Zurari.Controls\Zurari.Controls.csproj" />
     <ProjectReference Include="..\Zurari.Runtime\Zurari.Runtime.csproj" />
     <ProjectReference Include="..\Zurari.Shell\Zurari.Shell.csproj" />
   </ItemGroup>

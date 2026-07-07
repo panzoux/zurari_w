@@ -1,7 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <!-- net8.0-windows because this project references Zurari.Controls (WPF) to inspect its assembly. -->
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
 
@@ -22,6 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Zurari.Controls\Zurari.Controls.csproj" />
     <ProjectReference Include="..\..\src\Zurari.Core\Zurari.Core.csproj" />
     <ProjectReference Include="..\..\src\Zurari.Runtime\Zurari.Runtime.csproj" />
     <ProjectReference Include="..\..\src\Zurari.Shell\Zurari.Shell.csproj" />

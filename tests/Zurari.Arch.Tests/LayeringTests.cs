@@ -43,6 +43,22 @@ public class LayeringTests
     }
 
     [Fact]
+    public void Controls_depends_on_no_other_zurari_layer()
+    {
+        // ColumnBrowser is a dumb view: view models in, input events out.
+        // The State→VM adapter lives in Zurari.App (Phase 3), never in Controls.
+        AssertSuccess(
+            Types.InAssembly(typeof(Zurari.Controls.ColumnBrowser).Assembly)
+                .ShouldNot()
+                .HaveDependencyOnAny(
+                    "Zurari.Core",
+                    "Zurari.Runtime",
+                    "Zurari.Shell",
+                    "Zurari.App")
+                .GetResult());
+    }
+
+    [Fact]
     public void Shell_does_not_depend_on_runtime_or_app()
     {
         AssertSuccess(
