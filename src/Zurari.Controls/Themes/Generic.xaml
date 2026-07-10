@@ -27,4 +27,65 @@
         </Setter>
     </Style>
 
+    <Style TargetType="{x:Type local:ColumnView}">
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type local:ColumnView}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <DockPanel Grid.Column="0">
+                            <TextBlock DockPanel.Dock="Top"
+                                       Padding="6,4"
+                                       FontWeight="SemiBold"
+                                       TextTrimming="CharacterEllipsis"
+                                       Text="{Binding Column.Title, RelativeSource={RelativeSource TemplatedParent}}" />
+                            <ListBox x:Name="PART_List"
+                                     BorderThickness="0"
+                                     Background="Transparent"
+                                     ItemsSource="{Binding Column.Entries, RelativeSource={RelativeSource TemplatedParent}}"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     VirtualizingPanel.IsVirtualizing="True"
+                                     VirtualizingPanel.VirtualizationMode="Recycling">
+                                <ListBox.ItemContainerStyle>
+                                    <Style TargetType="{x:Type ListBoxItem}">
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                        <Setter Property="Padding" Value="6,2" />
+                                    </Style>
+                                </ListBox.ItemContainerStyle>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Right"
+                                                       Margin="8,0,0,0"
+                                                       Foreground="Gray"
+                                                       Text="{Binding SizeText}" />
+                                            <TextBlock TextTrimming="CharacterEllipsis"
+                                                       Text="{Binding Name}" />
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </DockPanel>
+                        <Thumb x:Name="PART_ResizeThumb"
+                               Grid.Column="1"
+                               Width="5"
+                               Cursor="SizeWE">
+                            <Thumb.Template>
+                                <ControlTemplate TargetType="{x:Type Thumb}">
+                                    <Border Background="Transparent"
+                                            BorderBrush="#FFB0B0B0"
+                                            BorderThickness="0,0,1,0" />
+                                </ControlTemplate>
+                            </Thumb.Template>
+                        </Thumb>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
 </ResourceDictionary>
