@@ -38,11 +38,24 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <DockPanel Grid.Column="0">
-                            <TextBlock DockPanel.Dock="Top"
-                                       Padding="6,4"
-                                       FontWeight="SemiBold"
-                                       TextTrimming="CharacterEllipsis"
-                                       Text="{Binding Column.Title, RelativeSource={RelativeSource TemplatedParent}}" />
+                            <Border DockPanel.Dock="Top" x:Name="HeaderBorder">
+                                <Border.Style>
+                                    <Style TargetType="{x:Type Border}">
+                                        <Setter Property="Background" Value="Transparent" />
+                                        <Style.Triggers>
+                                            <DataTrigger
+                                                Binding="{Binding Column.IsFocused, RelativeSource={RelativeSource TemplatedParent}}"
+                                                Value="True">
+                                                <Setter Property="Background" Value="#FFDCE8FA" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <TextBlock Padding="6,4"
+                                           FontWeight="SemiBold"
+                                           TextTrimming="CharacterEllipsis"
+                                           Text="{Binding Column.Title, RelativeSource={RelativeSource TemplatedParent}}" />
+                            </Border>
                             <ListBox x:Name="PART_List"
                                      BorderThickness="0"
                                      Background="Transparent"
@@ -54,6 +67,35 @@
                                     <Style TargetType="{x:Type ListBoxItem}">
                                         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                         <Setter Property="Padding" Value="6,2" />
+                                        <Style.Triggers>
+                                            <!-- Cursor row: selection reflects ColumnVm.CursorIndex only
+                                                 (ColumnView keeps SelectedIndex in sync; it never lets
+                                                 a stray user selection stick). Weak highlight by default -
+                                                 columns behind the focused one still show where the cursor
+                                                 was left, Finder-style. -->
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter Property="Background" Value="#FFD6D6D6" />
+                                            </Trigger>
+                                            <!-- Strong highlight only in the focused column. IsColumnFocused
+                                                 is an inheritable attached property set once on the owning
+                                                 ColumnView, not on WPF's own keyboard-focus state, so the
+                                                 accent tracks ColumnVm.IsFocused regardless of which element
+                                                 actually has keyboard focus. -->
+                                            <MultiTrigger>
+                                                <MultiTrigger.Conditions>
+                                                    <Condition Property="IsSelected" Value="True" />
+                                                    <Condition Property="local:ColumnView.IsColumnFocused" Value="True" />
+                                                </MultiTrigger.Conditions>
+                                                <Setter Property="Background" Value="#FF3D8AE2" />
+                                                <Setter Property="Foreground" Value="White" />
+                                            </MultiTrigger>
+                                            <!-- Marked entries (multi-selection) stay visibly distinct
+                                                 regardless of cursor/selection state. -->
+                                            <DataTrigger Binding="{Binding IsMarked}" Value="True">
+                                                <Setter Property="FontWeight" Value="Bold" />
+                                                <Setter Property="Foreground" Value="#FF0A5FBF" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
                                     </Style>
                                 </ListBox.ItemContainerStyle>
                                 <ListBox.ItemTemplate>

@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 
 namespace Zurari.Controls;
 
@@ -93,11 +94,28 @@ public sealed class ColumnBrowser : Control
             columnWidths.Add(DefaultColumnWidth);
         }
 
+        ColumnView? focusedView = null;
         for (var i = 0; i < columns.Count; i++)
         {
             var view = (ColumnView)children[i];
             view.Column = columns[i];
             view.Width = columnWidths[i];
+            if (columns[i].IsFocused)
+            {
+                focusedView = view;
+            }
+        }
+
+        // Bring the focused column into the horizontal viewport. BringIntoView walks
+        // up through PART_HorizontalScroll (or any ancestor ScrollViewer) on its own,
+        // so no direct reference to the scroll viewer template part is needed here.
+        // Deferred to the Loaded priority so layout has assigned the view its
+        // final size before the scroll computation runs (a freshly (re)sized
+        // column has no arranged bounds yet at the point Columns is assigned).
+        if (focusedView is not null)
+        {
+            var target = focusedView;
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() => target.BringIntoView()));
         }
     }
 
