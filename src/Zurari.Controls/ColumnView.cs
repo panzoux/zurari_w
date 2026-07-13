@@ -1,8 +1,16 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
+using System.Windows.Media;
 
 namespace Zurari.Controls;
+
+/// <summary>
+/// Raw pointer-press data for one entry row, before <see cref="ColumnBrowser"/> adds
+/// the column index (which this view does not know about itself).
+/// </summary>
+internal readonly record struct EntryPointerPressInfo(int EntryIndex, ModifierKeys Modifiers, MouseButton Button);
 
 /// <summary>
 /// One column of a <see cref="ColumnBrowser"/>: title header, virtualized entry
@@ -65,6 +73,16 @@ public sealed class ColumnView : Control
     /// <summary>Raised when a resize drag completes.</summary>
     internal event EventHandler? ResizeCompleted;
 
+    /// <summary>
+    /// Raised on a mouse-button press over an entry row. <see cref="ColumnBrowser"/>
+    /// translates this into the public <see cref="EntryPointerPressedEventArgs"/>
+    /// (adding the column index, which this view does not know about itself).
+    /// </summary>
+    internal event EventHandler<EntryPointerPressInfo>? EntryPointerPressed;
+
+    /// <summary>Raised on a double-click over an entry row, carrying the entry index.</summary>
+    internal event EventHandler<int>? EntryActivationRequested;
+
     internal ListBox? List { get; private set; }
 
     /// <summary>Gets the <see cref="IsColumnFocusedProperty"/> attached value.</summary>
@@ -88,12 +106,14 @@ public sealed class ColumnView : Control
         if (List is not null)
         {
             List.SelectionChanged -= OnListSelectionChanged;
+            List.PreviewMouseDown -= OnListPreviewMouseDown;
         }
 
         List = GetTemplateChild(ListPartName) as ListBox;
         if (List is not null)
         {
             List.SelectionChanged += OnListSelectionChanged;
+            List.PreviewMouseDown += OnListPreviewMouseDown;
         }
 
         if (GetTemplateChild(ThumbPartName) is Thumb thumb)
@@ -161,5 +181,97 @@ public sealed class ColumnView : Control
         {
             suppressSelectionChanged = false;
         }
+    }
+
+    /// <summary>
+    /// Translates a raw mouse-button press on an entry row into
+    /// <see cref="EntryPointerPressed"/> (and <see cref="EntryActivationRequested"/> on a
+    /// double-click). Selection here is purely visual and reverted by
+    /// <see cref="OnListSelectionChanged"/> — this view never decides where the cursor goes.
+    /// </summary>
+    private void OnListPreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        var entryIndex = FindEntryIndex(e.OriginalSource as DependencyObject);
+        if (entryIndex is null)
+        {
+            return;
+        }
+
+        EntryPointerPressed?.Invoke(
+            this, new EntryPointerPressInfo(entryIndex.Value, Keyboard.Modifiers, e.ChangedButton));
+
+        if (e.ClickCount == 2 && e.ChangedButton == MouseButton.Left)
+        {
+            EntryActivationRequested?.Invoke(this, entryIndex.Value);
+        }
+    }
+
+    /// <summary>Walks up from a click's <c>OriginalSource</c> to the containing <see cref="ListBoxItem"/>.</summary>
+    private int? FindEntryIndex(DependencyObject? source)
+    {
+        if (List is null)
+        {
+            return null;
+        }
+
+        while (source is not null && source is not ListBoxItem)
+        {
+            source = source is Visual visual
+                ? VisualTreeHelper.GetParent(visual)
+                : LogicalTreeHelper.GetParent(source);
+        }
+
+        if (source is not ListBoxItem item)
+        {
+            return null;
+        }
+
+        var index = List.ItemContainerGenerator.IndexFromContainer(item);
+        return index >= 0 ? index : null;
+    }
+
+    /// <summary>
+    /// Estimates how many rows currently fit in the list's viewport, for the
+    /// PageUp/PageDown hint in <see cref="CursorMoveRequestedEventArgs"/>. Returns 0 when
+    /// it cannot be determined (no items realized yet, or the viewport has not been measured).
+    /// </summary>
+    internal int GetVisibleRowCount()
+    {
+        if (List is null || List.Items.Count == 0)
+        {
+            return 0;
+        }
+
+        if (FindVisualChild<ScrollViewer>(List) is not { ViewportHeight: > 0 } scrollViewer)
+        {
+            return 0;
+        }
+
+        if (List.ItemContainerGenerator.ContainerFromIndex(0) is not FrameworkElement { ActualHeight: > 0 } container)
+        {
+            return 0;
+        }
+
+        return Math.Max(1, (int)(scrollViewer.ViewportHeight / container.ActualHeight));
+    }
+
+    private static T? FindVisualChild<T>(DependencyObject root)
+        where T : DependencyObject
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T typed)
+            {
+                return typed;
+            }
+
+            if (FindVisualChild<T>(child) is { } nested)
+            {
+                return nested;
+            }
+        }
+
+        return null;
     }
 }

@@ -59,12 +59,18 @@
                             <ListBox x:Name="PART_List"
                                      BorderThickness="0"
                                      Background="Transparent"
+                                     Focusable="False"
                                      ItemsSource="{Binding Column.Entries, RelativeSource={RelativeSource TemplatedParent}}"
                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                      VirtualizingPanel.IsVirtualizing="True"
                                      VirtualizingPanel.VirtualizationMode="Recycling">
                                 <ListBox.ItemContainerStyle>
                                     <Style TargetType="{x:Type ListBoxItem}">
+                                        <!-- Keyboard focus must stay on ColumnBrowser (the only element that
+                                             translates input into events); rows are never independently
+                                             focusable/tab-stoppable, mouse hit-testing still works fine. -->
+                                        <Setter Property="Focusable" Value="False" />
+                                        <Setter Property="IsTabStop" Value="False" />
                                         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                         <Setter Property="Padding" Value="6,2" />
                                         <Style.Triggers>
