@@ -12,12 +12,18 @@
         <DockPanel DockPanel.Dock="Top" Margin="8,8,8,4">
             <TextBlock DockPanel.Dock="Left" Text="Dataset:" VerticalAlignment="Center" Margin="0,0,8,0" />
             <ComboBox x:Name="DatasetSelector" Width="220" HorizontalAlignment="Left"
-                      SelectionChanged="OnDatasetSelected" />
+                      SelectionChanged="OnDatasetSelected">
+                <ComboBoxItem Content="Small" />
+                <ComboBoxItem Content="Huge" />
+                <ComboBoxItem Content="CJK" />
+                <ComboBoxItem Content="Empty" />
+                <ComboBoxItem Content="Deep" />
+            </ComboBox>
         </DockPanel>
         <Grid Margin="8,4,8,8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="240" />
+                <ColumnDefinition Width="280" />
             </Grid.ColumnDefinitions>
             <controls:ColumnBrowser x:Name="Browser" Grid.Column="0" />
             <!-- Preview pane placeholder (Phase 5 will fill this) -->

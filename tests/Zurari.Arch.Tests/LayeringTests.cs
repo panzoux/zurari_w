@@ -67,4 +67,19 @@ public class LayeringTests
                 .HaveDependencyOnAny("Zurari.Runtime", "Zurari.App")
                 .GetResult());
     }
+
+    [Fact]
+    public void Gallery_depends_on_no_other_zurari_layer_than_controls()
+    {
+        // Gallery is a dev harness over fake data: Controls only, never Core/Runtime/Shell/App.
+        AssertSuccess(
+            Types.InAssembly(typeof(Zurari.Gallery.MainWindow).Assembly)
+                .ShouldNot()
+                .HaveDependencyOnAny(
+                    "Zurari.Core",
+                    "Zurari.Runtime",
+                    "Zurari.Shell",
+                    "Zurari.App")
+                .GetResult());
+    }
 }

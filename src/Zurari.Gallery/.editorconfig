@@ -1,0 +1,6 @@
+# Overrides for Zurari.Gallery only (merges with the root .editorconfig).
+[*.cs]
+# System.Random drives the deterministic fake datasets (seeded: same seed -> same
+# names/sizes/dates). Not security-sensitive, and a cryptographic RNG would defeat
+# the determinism this project relies on for reproducible dev-harness data.
+dotnet_diagnostic.CA5394.severity = none
