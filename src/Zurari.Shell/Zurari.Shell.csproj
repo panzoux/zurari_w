@@ -5,7 +5,10 @@
   </ItemGroup>
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <!-- net8.0-windows + UseWPF: ShellIconCache converts HICON to ImageSource via
+         System.Windows.Interop.Imaging (see docs/superpowers/plans/2026-07-16-phase4-shell-integration.md). -->
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>

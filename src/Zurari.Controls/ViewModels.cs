@@ -1,3 +1,5 @@
+using System.Windows.Media;
+
 namespace Zurari.Controls;
 
 /// <summary>Kind of an entry shown in a column. Only affects visuals.</summary>
@@ -22,7 +24,8 @@ public sealed record EntryVm(
     EntryKind Kind,
     bool IsMarked,
     string? SizeText,
-    string? DateText);
+    string? DateText,
+    ImageSource? Icon = null);
 
 /// <summary>
 /// One column (the contents of one directory). Immutable snapshot.

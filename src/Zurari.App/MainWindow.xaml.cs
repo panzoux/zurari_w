@@ -3,6 +3,7 @@ using System.Windows.Input;
 using Zurari.Controls;
 using Zurari.Core;
 using Zurari.Runtime;
+using Zurari.Shell;
 
 namespace Zurari.App;
 
@@ -16,6 +17,7 @@ public sealed partial class MainWindow : Window, IDisposable
 {
     private readonly WorkerRuntime runtime;
     private readonly MessageLoop loop;
+    private readonly ShellIconCache iconCache = new();
 
     public MainWindow()
     {
@@ -71,7 +73,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void Render(AppState state)
     {
-        Browser.Columns = StateProjection.Project(state);
+        Browser.Columns = StateProjection.Project(state, e => iconCache.GetIcon(e.Kind, e.Name));
 
         var focused = state.Columns[state.FocusedColumn];
         var focusedPath = focused.Path.Length == 0 ? "ドライブ" : focused.Path;

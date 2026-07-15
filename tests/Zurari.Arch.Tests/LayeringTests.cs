@@ -69,6 +69,18 @@ public class LayeringTests
     }
 
     [Fact]
+    public void Shell_does_not_depend_on_controls()
+    {
+        // Shell stays below the view layer: it hands raw ImageSource/HICON data to callers,
+        // it never knows about Zurari.Controls' view-model shapes.
+        AssertSuccess(
+            Types.InAssembly(typeof(Zurari.Shell.ShellServices).Assembly)
+                .ShouldNot()
+                .HaveDependencyOnAny("Zurari.Controls")
+                .GetResult());
+    }
+
+    [Fact]
     public void App_does_not_use_file_or_directory_io_directly()
     {
         // App is a thin shell: file I/O must go through an Effect executed by Zurari.Runtime.

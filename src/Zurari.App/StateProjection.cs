@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Windows.Media;
 using Zurari.Core;
 
 namespace Zurari.App;
@@ -12,26 +13,32 @@ public static class StateProjection
 {
     private static readonly string[] SizeUnits = ["KB", "MB", "GB", "TB", "PB"];
 
-    /// <summary>Projects every column of <paramref name="state"/> into a <see cref="Controls.ColumnVm"/>.</summary>
-    public static IReadOnlyList<Controls.ColumnVm> Project(AppState state)
+    /// <summary>
+    /// Projects every column of <paramref name="state"/> into a <see cref="Controls.ColumnVm"/>.
+    /// <paramref name="iconResolver"/> is optional so callers without a shell (tests, headless
+    /// runs) can omit it — entries then simply project with a <c>null</c> icon.
+    /// </summary>
+    public static IReadOnlyList<Controls.ColumnVm> Project(
+        AppState state,
+        Func<Entry, ImageSource?>? iconResolver = null)
     {
         ArgumentNullException.ThrowIfNull(state);
 
         var result = new Controls.ColumnVm[state.Columns.Length];
         for (var i = 0; i < state.Columns.Length; i++)
         {
-            result[i] = ProjectColumn(state.Columns[i], isFocused: i == state.FocusedColumn);
+            result[i] = ProjectColumn(state.Columns[i], isFocused: i == state.FocusedColumn, iconResolver);
         }
 
         return result;
     }
 
-    private static Controls.ColumnVm ProjectColumn(Column column, bool isFocused)
+    private static Controls.ColumnVm ProjectColumn(Column column, bool isFocused, Func<Entry, ImageSource?>? iconResolver)
     {
         var entries = new Controls.EntryVm[column.Entries.Length];
         for (var i = 0; i < column.Entries.Length; i++)
         {
-            entries[i] = ProjectEntry(column.Entries[i]);
+            entries[i] = ProjectEntry(column.Entries[i], iconResolver);
         }
 
         return new Controls.ColumnVm(
@@ -66,13 +73,14 @@ public static class StateProjection
         return separatorIndex < 0 ? trimmed : trimmed[(separatorIndex + 1)..];
     }
 
-    private static Controls.EntryVm ProjectEntry(Entry entry) =>
+    private static Controls.EntryVm ProjectEntry(Entry entry, Func<Entry, ImageSource?>? iconResolver) =>
         new(
             Name: entry.Name,
             Kind: ProjectKind(entry.Kind),
             IsMarked: entry.IsMarked,
             SizeText: ProjectSize(entry),
-            DateText: ProjectDate(entry.Modified));
+            DateText: ProjectDate(entry.Modified),
+            Icon: iconResolver?.Invoke(entry));
 
     private static Controls.EntryKind ProjectKind(EntryKind kind) => kind switch
     {

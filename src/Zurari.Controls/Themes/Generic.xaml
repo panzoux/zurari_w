@@ -128,6 +128,13 @@
                                                        Margin="8,0,0,0"
                                                        Foreground="Gray"
                                                        Text="{Binding SizeText}" />
+                                            <Image DockPanel.Dock="Left"
+                                                   Width="16"
+                                                   Height="16"
+                                                   Margin="0,0,4,0"
+                                                   SnapsToDevicePixels="True"
+                                                   UseLayoutRounding="True"
+                                                   Source="{Binding Icon}" />
                                             <TextBlock TextTrimming="CharacterEllipsis"
                                                        Text="{Binding Name}" />
                                         </DockPanel>
