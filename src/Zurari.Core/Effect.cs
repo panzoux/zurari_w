@@ -11,4 +11,12 @@ public abstract record Effect
     private protected Effect()
     {
     }
+
+    /// <summary>
+    /// Enumerate the directory at <paramref name="Path"/> and report it back as
+    /// <see cref="Msg.DirectoryLoaded"/> or <see cref="Msg.DirectoryLoadFailed"/> for
+    /// <paramref name="ColumnIndex"/>. An empty <paramref name="Path"/> means the virtual root:
+    /// the Runtime enumerates drives instead of a filesystem directory.
+    /// </summary>
+    public sealed record ReadDirectory(int ColumnIndex, string Path) : Effect;
 }
