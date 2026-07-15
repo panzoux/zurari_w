@@ -34,6 +34,9 @@ dotnet_diagnostic.CA1848.severity = none
 dotnet_diagnostic.CA2007.severity = none
 # Nested types / visibility style choices we accept for Msg/Effect unions.
 dotnet_diagnostic.CA1034.severity = none
+
 # ShellIconCache: icons are cosmetic, never load-bearing - any interop failure must degrade to
 # null rather than throw, so a broad catch around the SHGetFileInfoW/Imaging call is intentional.
+# Scoped to this file only so the rest of the codebase keeps the analyzer.
+[src/Zurari.Shell/ShellIconCache.cs]
 dotnet_diagnostic.CA1031.severity = none
