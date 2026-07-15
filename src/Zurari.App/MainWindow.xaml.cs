@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Interop;
 using Zurari.Controls;
 using Zurari.Core;
 using Zurari.Runtime;
@@ -32,10 +33,7 @@ public sealed partial class MainWindow : Window, IDisposable
         Browser.ColumnFocusRequested += (_, e) => loop.Dispatch(new Msg.FocusColumn(e.ColumnIndex));
         Browser.EntryActivated += (_, e) => loop.Dispatch(new Msg.EnterDirectory(e.ColumnIndex, e.EntryIndex));
         Browser.NavigateUpRequested += (_, e) => loop.Dispatch(new Msg.GoToParent(e.ColumnIndex));
-        Browser.EntryPointerPressed += (_, e) => loop.Dispatch(
-            e.Modifiers == ModifierKeys.None && e.Button == MouseButton.Left
-                ? new Msg.EnterDirectory(e.ColumnIndex, e.EntryIndex)
-                : new Msg.CursorTo(e.ColumnIndex, e.EntryIndex));
+        Browser.EntryPointerPressed += OnEntryPointerPressed;
 
         Closed += (_, _) => Dispose();
         Loaded += (_, _) => Browser.Focus();
@@ -84,6 +82,63 @@ public sealed partial class MainWindow : Window, IDisposable
             CursorMove.End => new Msg.CursorEnd(e.ColumnIndex),
             _ => new Msg.Noop(),
         };
+    }
+
+    /// <summary>
+    /// Left click (unmodified) enters a directory; anything else (right click, modified click)
+    /// just moves the cursor there. A right click additionally shows the shell context menu for
+    /// the entry, blocking synchronously until the user picks a command or dismisses it, and - if
+    /// a command was invoked - dispatches <see cref="Msg.Refresh"/> since the shell may have
+    /// renamed/deleted/pasted something that this pane needs to reflect.
+    /// </summary>
+    private void OnEntryPointerPressed(object? sender, EntryPointerPressedEventArgs e)
+    {
+        loop.Dispatch(
+            e.Modifiers == ModifierKeys.None && e.Button == MouseButton.Left
+                ? new Msg.EnterDirectory(e.ColumnIndex, e.EntryIndex)
+                : new Msg.CursorTo(e.ColumnIndex, e.EntryIndex));
+
+        if (e.Button != MouseButton.Right)
+        {
+            return;
+        }
+
+        var fullPath = ResolveFullPath(e.ColumnIndex, e.EntryIndex);
+        if (fullPath is null)
+        {
+            return;
+        }
+
+        var ownerHwnd = new WindowInteropHelper(this).Handle;
+        if (ShellContextMenu.Show(ownerHwnd, [fullPath], (int)e.ScreenPosition.X, (int)e.ScreenPosition.Y))
+        {
+            loop.Dispatch(new Msg.Refresh());
+        }
+    }
+
+    /// <summary>
+    /// Resolves the full filesystem path of an entry the same way <c>Transition</c> does
+    /// (<c>Path.Combine(column.Path, entry.Name)</c>, with the root column's empty
+    /// <see cref="Column.Path"/> meaning entries are drives already named like <c>"C:\\"</c>).
+    /// Returns <c>null</c> if the indices no longer match the current state (e.g. a race with a
+    /// directory reload).
+    /// </summary>
+    private string? ResolveFullPath(int columnIndex, int entryIndex)
+    {
+        var state = loop.State;
+        if (columnIndex < 0 || columnIndex >= state.Columns.Length)
+        {
+            return null;
+        }
+
+        var column = state.Columns[columnIndex];
+        if (entryIndex < 0 || entryIndex >= column.Entries.Length)
+        {
+            return null;
+        }
+
+        var entry = column.Entries[entryIndex];
+        return column.Path.Length == 0 ? entry.Name : System.IO.Path.Combine(column.Path, entry.Name);
     }
 
     private void OnWindowKeyDown(object sender, KeyEventArgs e)

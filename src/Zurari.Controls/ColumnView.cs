@@ -10,7 +10,8 @@ namespace Zurari.Controls;
 /// Raw pointer-press data for one entry row, before <see cref="ColumnBrowser"/> adds
 /// the column index (which this view does not know about itself).
 /// </summary>
-internal readonly record struct EntryPointerPressInfo(int EntryIndex, ModifierKeys Modifiers, MouseButton Button);
+internal readonly record struct EntryPointerPressInfo(
+    int EntryIndex, ModifierKeys Modifiers, MouseButton Button, Point ScreenPosition);
 
 /// <summary>
 /// One column of a <see cref="ColumnBrowser"/>: title header, virtualized entry
@@ -197,8 +198,9 @@ public sealed class ColumnView : Control
             return;
         }
 
+        var screenPosition = PointToScreen(e.GetPosition(this));
         EntryPointerPressed?.Invoke(
-            this, new EntryPointerPressInfo(entryIndex.Value, Keyboard.Modifiers, e.ChangedButton));
+            this, new EntryPointerPressInfo(entryIndex.Value, Keyboard.Modifiers, e.ChangedButton, screenPosition));
 
         if (e.ClickCount == 2 && e.ChangedButton == MouseButton.Left)
         {

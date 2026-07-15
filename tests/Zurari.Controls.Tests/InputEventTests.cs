@@ -157,6 +157,8 @@ public class InputEventTests
         Assert.NotNull(list);
         var item = list!.ItemContainerGenerator.ContainerFromIndex(4) as ListBoxItem;
         Assert.NotNull(item);
+        var columnView = FindAncestor<ColumnView>(item!);
+        Assert.NotNull(columnView);
 
         EntryPointerPressedEventArgs? pressed = null;
         browser.EntryPointerPressed += (_, e) => pressed = e;
@@ -167,6 +169,16 @@ public class InputEventTests
         Assert.Equal(0, pressed!.ColumnIndex);
         Assert.Equal(4, pressed.EntryIndex);
         Assert.Equal(MouseButton.Left, pressed.Button);
+
+        // ColumnView.OnListPreviewMouseDown is expected to report PointToScreen(GetPosition(this))
+        // for the owning ColumnView. The test's synthetic mouse-down carries no real device
+        // position (it reflects wherever the environment's actual cursor happens to be, which
+        // varies by machine/CI - not a fixed off-screen offset), so instead of asserting a
+        // specific coordinate, re-derive the same value independently right after the press and
+        // require it to match exactly: this proves the reported ScreenPosition really is a
+        // PointToScreen conversion relative to the column, not e.g. an un-translated client point.
+        var expectedScreenPosition = columnView!.PointToScreen(Mouse.GetPosition(columnView));
+        Assert.Equal(expectedScreenPosition, pressed.ScreenPosition);
 
         // The list's selection is a pure projection of the VM cursor; a mouse press
         // on a row must not hijack it (the host decides whether/how the cursor moves).
@@ -270,6 +282,22 @@ public class InputEventTests
             .FirstOrDefault(f => f.Name.Contains("count", StringComparison.OrdinalIgnoreCase));
         Assert.NotNull(field);
         field!.SetValue(e, clickCount);
+    }
+
+    private static T? FindAncestor<T>(DependencyObject node) where T : DependencyObject
+    {
+        var current = node;
+        while (current is not null)
+        {
+            if (current is T match)
+            {
+                return match;
+            }
+
+            current = current is Visual visual ? VisualTreeHelper.GetParent(visual) : null;
+        }
+
+        return null;
     }
 
     private static ListBox? FindListBox(DependencyObject root, int columnIndex)

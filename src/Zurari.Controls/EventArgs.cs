@@ -1,3 +1,4 @@
+using System.Windows;
 using System.Windows.Input;
 
 namespace Zurari.Controls;
@@ -49,7 +50,7 @@ public sealed class NavigateUpRequestedEventArgs(int columnIndex) : EventArgs
 /// (e.g. Ctrl+click toggles a mark); the control only reports the input.
 /// </summary>
 public sealed class EntryPointerPressedEventArgs(
-    int columnIndex, int entryIndex, ModifierKeys modifiers, MouseButton button) : EventArgs
+    int columnIndex, int entryIndex, ModifierKeys modifiers, MouseButton button, Point screenPosition) : EventArgs
 {
     public int ColumnIndex { get; } = columnIndex;
 
@@ -58,6 +59,12 @@ public sealed class EntryPointerPressedEventArgs(
     public ModifierKeys Modifiers { get; } = modifiers;
 
     public MouseButton Button { get; } = button;
+
+    /// <summary>
+    /// Screen (device) coordinates of the press, e.g. for positioning a context menu.
+    /// The control only reports where the press happened; it never interprets it.
+    /// </summary>
+    public Point ScreenPosition { get; } = screenPosition;
 }
 
 /// <summary>Raised after a column-width drag completes, so the host can persist widths.</summary>

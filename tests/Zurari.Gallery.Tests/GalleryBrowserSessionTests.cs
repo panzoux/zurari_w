@@ -138,11 +138,11 @@ public class GalleryBrowserSessionTests
         var session = new GalleryBrowserSession(SampleTree());
 
         session.HandleEntryPointerPressed(
-            new EntryPointerPressedEventArgs(0, 0, ModifierKeys.Control, MouseButton.Left));
+            new EntryPointerPressedEventArgs(0, 0, ModifierKeys.Control, MouseButton.Left, default));
         Assert.True(session.Columns[0].Entries[0].IsMarked);
 
         session.HandleEntryPointerPressed(
-            new EntryPointerPressedEventArgs(0, 0, ModifierKeys.Control, MouseButton.Left));
+            new EntryPointerPressedEventArgs(0, 0, ModifierKeys.Control, MouseButton.Left, default));
         Assert.False(session.Columns[0].Entries[0].IsMarked);
     }
 
@@ -152,7 +152,7 @@ public class GalleryBrowserSessionTests
         var session = new GalleryBrowserSession(SampleTree());
 
         session.HandleEntryPointerPressed(
-            new EntryPointerPressedEventArgs(0, 1, ModifierKeys.None, MouseButton.Left));
+            new EntryPointerPressedEventArgs(0, 1, ModifierKeys.None, MouseButton.Left, default));
 
         Assert.Equal(1, session.Columns[0].CursorIndex);
         Assert.False(session.Columns[0].Entries[1].IsMarked);

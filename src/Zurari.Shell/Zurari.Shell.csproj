@@ -4,6 +4,12 @@
     <ProjectReference Include="..\Zurari.Core\Zurari.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Lets Zurari.Shell.Tests assert on ShellContextMenuInterop's hand-copied GUID/struct-layout
+         constants directly, instead of duplicating them (or reflection) in the test project. -->
+    <InternalsVisibleTo Include="Zurari.Shell.Tests" />
+  </ItemGroup>
+
   <PropertyGroup>
     <!-- net8.0-windows + UseWPF: ShellIconCache converts HICON to ImageSource via
          System.Windows.Interop.Imaging (see docs/superpowers/plans/2026-07-16-phase4-shell-integration.md). -->

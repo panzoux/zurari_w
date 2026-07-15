@@ -173,7 +173,9 @@ public sealed class ColumnBrowser : Control
         }
 
         EntryPointerPressed?.Invoke(
-            this, new EntryPointerPressedEventArgs(index, info.EntryIndex, info.Modifiers, info.Button));
+            this,
+            new EntryPointerPressedEventArgs(
+                index, info.EntryIndex, info.Modifiers, info.Button, info.ScreenPosition));
 
         var columns = Columns;
         if (columns is not null && index < columns.Count && !columns[index].IsFocused)

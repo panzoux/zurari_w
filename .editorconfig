@@ -40,3 +40,11 @@ dotnet_diagnostic.CA1034.severity = none
 # Scoped to this file only so the rest of the codebase keeps the analyzer.
 [src/Zurari.Shell/ShellIconCache.cs]
 dotnet_diagnostic.CA1031.severity = none
+
+# ShellContextMenu.Show: showing a context menu is best-effort UI over a long chain of raw
+# Win32/COM interop calls (SHParseDisplayName, SHBindToParent, GetUIObjectOf, TrackPopupMenuEx,
+# InvokeCommand). Any failure along that chain (invalid path, COM error, user-dismissal quirks)
+# must degrade to "nothing happened" (the documented `false` return) rather than crash the app,
+# so a single broad catch around the whole operation is intentional. Scoped to this file only.
+[src/Zurari.Shell/ShellContextMenu.cs]
+dotnet_diagnostic.CA1031.severity = none
