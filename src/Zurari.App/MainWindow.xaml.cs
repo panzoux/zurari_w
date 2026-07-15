@@ -16,6 +16,7 @@ namespace Zurari.App;
 public sealed partial class MainWindow : Window, IDisposable
 {
     private readonly WorkerRuntime runtime;
+    private readonly ShellEffectExecutor shellExecutor;
     private readonly MessageLoop loop;
     private readonly ShellIconCache iconCache = new();
 
@@ -24,7 +25,8 @@ public sealed partial class MainWindow : Window, IDisposable
         InitializeComponent();
 
         runtime = new WorkerRuntime(post: PostToLoop);
-        loop = new MessageLoop(AppState.Initial, runtime.Submit, Render);
+        shellExecutor = new ShellEffectExecutor(post: PostToLoop);
+        loop = new MessageLoop(AppState.Initial, RunEffect, Render);
 
         Browser.CursorMoveRequested += (_, e) => loop.Dispatch(ToCursorMsg(e));
         Browser.ColumnFocusRequested += (_, e) => loop.Dispatch(new Msg.FocusColumn(e.ColumnIndex));
@@ -42,8 +44,30 @@ public sealed partial class MainWindow : Window, IDisposable
         loop.Dispatch(new Msg.Refresh());
     }
 
-    /// <summary>Disposes the <see cref="WorkerRuntime"/> owned by this window.</summary>
-    public void Dispose() => runtime.Dispose();
+    /// <summary>Disposes the <see cref="WorkerRuntime"/> and <see cref="ShellEffectExecutor"/> owned by this window.</summary>
+    public void Dispose()
+    {
+        runtime.Dispose();
+        shellExecutor.Dispose();
+    }
+
+    /// <summary>
+    /// Routes an <see cref="Effect"/> to the executor that can perform it: filesystem effects go
+    /// to <see cref="WorkerRuntime"/>, shell effects go to <see cref="ShellEffectExecutor"/>. Pure
+    /// dispatch by effect type — no decisions beyond "which executor".
+    /// </summary>
+    private void RunEffect(Effect effect)
+    {
+        switch (effect)
+        {
+            case Effect.ReadDirectory _:
+                runtime.Submit(effect);
+                break;
+            case Effect.DeleteToRecycleBin _:
+                shellExecutor.Submit(effect);
+                break;
+        }
+    }
 
     private void PostToLoop(Msg msg) => Dispatcher.BeginInvoke(() => loop.Dispatch(msg));
 
@@ -68,6 +92,39 @@ public sealed partial class MainWindow : Window, IDisposable
         {
             loop.Dispatch(new Msg.Refresh());
             e.Handled = true;
+        }
+        else if (e.Key == Key.Delete)
+        {
+            TryDeleteFocusedEntry();
+            e.Handled = true;
+        }
+    }
+
+    private void TryDeleteFocusedEntry()
+    {
+        var state = loop.State;
+        var columnIndex = state.FocusedColumn;
+        var column = state.Columns[columnIndex];
+        if (column.Cursor < 0 || column.Cursor >= column.Entries.Length)
+        {
+            return;
+        }
+
+        var entry = column.Entries[column.Cursor];
+        if (entry.Kind == Zurari.Core.EntryKind.Drive)
+        {
+            return;
+        }
+
+        var result = MessageBox.Show(
+            this,
+            $"{entry.Name} をゴミ箱に移動しますか?",
+            "削除の確認",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+        if (result == MessageBoxResult.Yes)
+        {
+            loop.Dispatch(new Msg.DeleteEntry(columnIndex, column.Cursor));
         }
     }
 

@@ -19,4 +19,12 @@ public abstract record Effect
     /// the Runtime enumerates drives instead of a filesystem directory.
     /// </summary>
     public sealed record ReadDirectory(int ColumnIndex, string Path) : Effect;
+
+    /// <summary>
+    /// Move <paramref name="TargetFullPath"/> to the recycle bin. Reports the outcome back as
+    /// <see cref="Msg.DeleteCompleted"/> or <see cref="Msg.DeleteFailed"/> for
+    /// <paramref name="ColumnIndex"/>/<paramref name="Path"/> (the containing column, so a
+    /// successful delete can trigger a re-read of that column).
+    /// </summary>
+    public sealed record DeleteToRecycleBin(int ColumnIndex, string Path, string TargetFullPath) : Effect;
 }

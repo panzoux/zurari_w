@@ -31,6 +31,9 @@ public static class Transition
             Msg.Refresh => Refresh(state),
             Msg.DirectoryLoaded m => (DirectoryLoaded(state, m.ColumnIndex, m.Path, m.Entries), NoEffects),
             Msg.DirectoryLoadFailed m => (DirectoryLoadFailed(state, m.ColumnIndex, m.Path, m.Error), NoEffects),
+            Msg.DeleteEntry m => DeleteEntry(state, m.ColumnIndex, m.EntryIndex),
+            Msg.DeleteCompleted m => DeleteCompleted(state, m.ColumnIndex, m.Path),
+            Msg.DeleteFailed m => (DeleteFailed(state, m.ColumnIndex, m.Path, m.Error), NoEffects),
             _ => (state, NoEffects),
         };
     }
@@ -164,6 +167,66 @@ public static class Transition
     }
 
     private static AppState DirectoryLoadFailed(AppState state, int columnIndex, string path, string error)
+    {
+        if (!InRange(state, columnIndex))
+        {
+            return state;
+        }
+
+        var column = state.Columns[columnIndex];
+        if (column.Path != path)
+        {
+            return state;
+        }
+
+        var updated = column with { Load = LoadState.Error, ErrorMessage = error };
+        return WithColumn(state, columnIndex, updated);
+    }
+
+    private static (AppState, IReadOnlyList<Effect>) DeleteEntry(AppState state, int columnIndex, int entryIndex)
+    {
+        if (!InRange(state, columnIndex))
+        {
+            return (state, NoEffects);
+        }
+
+        var column = state.Columns[columnIndex];
+        if (entryIndex < 0 || entryIndex >= column.Entries.Length)
+        {
+            return (state, NoEffects);
+        }
+
+        var entry = column.Entries[entryIndex];
+        if (entry.Kind == EntryKind.Drive)
+        {
+            return (state, NoEffects);
+        }
+
+        var targetFullPath = column.Path.Length == 0
+            ? entry.Name
+            : System.IO.Path.Combine(column.Path, entry.Name);
+
+        var newState = WithColumn(state, columnIndex, column with { Load = LoadState.Loading });
+        return (newState, [new Effect.DeleteToRecycleBin(columnIndex, column.Path, targetFullPath)]);
+    }
+
+    private static (AppState, IReadOnlyList<Effect>) DeleteCompleted(AppState state, int columnIndex, string path)
+    {
+        if (!InRange(state, columnIndex))
+        {
+            return (state, NoEffects);
+        }
+
+        var column = state.Columns[columnIndex];
+        if (column.Path != path)
+        {
+            return (state, NoEffects);
+        }
+
+        return (state, [new Effect.ReadDirectory(columnIndex, path)]);
+    }
+
+    private static AppState DeleteFailed(AppState state, int columnIndex, string path, string error)
     {
         if (!InRange(state, columnIndex))
         {

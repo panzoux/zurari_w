@@ -401,6 +401,131 @@ public class TransitionTests
 
         Assert.Equal(state, next);
     }
+
+    [Fact]
+    public void DeleteEntry_on_file_marks_column_loading_and_emits_DeleteToRecycleBin()
+    {
+        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 1, Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        var (next, effects) = Transition.Apply(state, new Msg.DeleteEntry(0, 1));
+
+        Assert.Equal(LoadState.Loading, next.Columns[0].Load);
+        Assert.Equal(3, next.Columns[0].Entries.Length);
+
+        var effect = Assert.IsType<Effect.DeleteToRecycleBin>(Assert.Single(effects));
+        Assert.Equal(0, effect.ColumnIndex);
+        Assert.Equal(@"C:\", effect.Path);
+        Assert.Equal(@"C:\a.txt", effect.TargetFullPath);
+    }
+
+    [Fact]
+    public void DeleteEntry_on_directory_marks_column_loading_and_emits_DeleteToRecycleBin()
+    {
+        var column = new Column(@"C:\", [Dir, File1], Cursor: 0, Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        var (next, effects) = Transition.Apply(state, new Msg.DeleteEntry(0, 0));
+
+        Assert.Equal(LoadState.Loading, next.Columns[0].Load);
+        var effect = Assert.IsType<Effect.DeleteToRecycleBin>(Assert.Single(effects));
+        Assert.Equal(@"C:\sub", effect.TargetFullPath);
+    }
+
+    [Fact]
+    public void DeleteEntry_on_drive_is_a_no_op()
+    {
+        var state = StateWithColumns(new Column("", [Drive], Cursor: 0, Load: LoadState.Loaded));
+
+        var (next, effects) = Transition.Apply(state, new Msg.DeleteEntry(0, 0));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void DeleteEntry_with_out_of_range_entry_index_is_a_no_op()
+    {
+        var state = StateWithColumns(new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded));
+
+        var (next, effects) = Transition.Apply(state, new Msg.DeleteEntry(0, 7));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void DeleteEntry_with_out_of_range_column_is_a_no_op()
+    {
+        var state = StateWithColumns(new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded));
+
+        var (next, effects) = Transition.Apply(state, new Msg.DeleteEntry(9, 0));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void DeleteCompleted_reemits_ReadDirectory_and_keeps_column_loading()
+    {
+        var column = new Column(@"C:\", [Dir, File1], Cursor: 0, Load: LoadState.Loading);
+        var state = StateWithColumns(column);
+
+        var (next, effects) = Transition.Apply(state, new Msg.DeleteCompleted(0, @"C:\"));
+
+        Assert.Equal(LoadState.Loading, next.Columns[0].Load);
+        var effect = Assert.IsType<Effect.ReadDirectory>(Assert.Single(effects));
+        Assert.Equal(0, effect.ColumnIndex);
+        Assert.Equal(@"C:\", effect.Path);
+    }
+
+    [Fact]
+    public void DeleteCompleted_with_wrong_path_is_ignored_as_stale()
+    {
+        var column = new Column(@"C:\", [Dir], Load: LoadState.Loading);
+        var state = StateWithColumns(column);
+
+        var (next, effects) = Transition.Apply(state, new Msg.DeleteCompleted(0, @"C:\stale"));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void DeleteCompleted_with_out_of_range_column_is_ignored_as_stale()
+    {
+        var state = StateWithColumns(new Column(@"C:\", [], Load: LoadState.Loading));
+
+        var (next, effects) = Transition.Apply(state, new Msg.DeleteCompleted(9, @"C:\"));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void DeleteFailed_sets_error_and_keeps_old_entries()
+    {
+        var column = new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loading);
+        var state = StateWithColumns(column);
+
+        var (next, effects) = Transition.Apply(state, new Msg.DeleteFailed(0, @"C:\", "access denied"));
+
+        Assert.Equal(LoadState.Error, next.Columns[0].Load);
+        Assert.Equal("access denied", next.Columns[0].ErrorMessage);
+        Assert.Single(next.Columns[0].Entries);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void DeleteFailed_with_wrong_path_is_ignored_as_stale()
+    {
+        var column = new Column(@"C:\", [], Load: LoadState.Loading);
+        var state = StateWithColumns(column);
+
+        var (next, _) = Transition.Apply(state, new Msg.DeleteFailed(0, @"C:\stale", "oops"));
+
+        Assert.Equal(state, next);
+    }
 }
 
 /// <summary>
@@ -449,7 +574,10 @@ public class TransitionProperties
         GenColumnIndex.Select(i => (Msg)new Msg.GoToParent(i)),
         Gen.Const<Msg>(new Msg.Refresh()),
         Gen.Select(GenColumnIndex, GenPath, GenEntries).Select(t => (Msg)new Msg.DirectoryLoaded(t.Item1, t.Item2, t.Item3)),
-        Gen.Select(GenColumnIndex, GenPath).Select(t => (Msg)new Msg.DirectoryLoadFailed(t.Item1, t.Item2, "error")));
+        Gen.Select(GenColumnIndex, GenPath).Select(t => (Msg)new Msg.DirectoryLoadFailed(t.Item1, t.Item2, "error")),
+        Gen.Select(GenColumnIndex, GenEntryIndex).Select(t => (Msg)new Msg.DeleteEntry(t.Item1, t.Item2)),
+        Gen.Select(GenColumnIndex, GenPath).Select(t => (Msg)new Msg.DeleteCompleted(t.Item1, t.Item2)),
+        Gen.Select(GenColumnIndex, GenPath).Select(t => (Msg)new Msg.DeleteFailed(t.Item1, t.Item2, "error")));
 
     [Fact]
     public void Any_msg_sequence_yields_valid_state_and_effects()

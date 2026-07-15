@@ -67,4 +67,26 @@ public abstract record Msg
     /// <see cref="DirectoryLoaded"/>.
     /// </summary>
     public sealed record DirectoryLoadFailed(int ColumnIndex, string Path, string Error) : Msg;
+
+    /// <summary>
+    /// Delete the entry at <paramref name="EntryIndex"/> in <paramref name="ColumnIndex"/> to the
+    /// recycle bin. Drive entries are ignored (there is nothing to delete). Marks the column
+    /// <see cref="LoadState.Loading"/> (keeping its entries visible) and emits
+    /// <see cref="Effect.DeleteToRecycleBin"/>.
+    /// </summary>
+    public sealed record DeleteEntry(int ColumnIndex, int EntryIndex) : Msg;
+
+    /// <summary>
+    /// A <c>DeleteToRecycleBin</c> effect succeeded. Subject to the same staleness check as
+    /// <see cref="DirectoryLoaded"/> (<paramref name="ColumnIndex"/> in range and that column's
+    /// path still equals <paramref name="Path"/>). Re-emits <see cref="Effect.ReadDirectory"/> for
+    /// the column; it stays <see cref="LoadState.Loading"/> until that completes.
+    /// </summary>
+    public sealed record DeleteCompleted(int ColumnIndex, string Path) : Msg;
+
+    /// <summary>
+    /// A <c>DeleteToRecycleBin</c> effect failed. Subject to the same staleness check as
+    /// <see cref="DeleteCompleted"/>.
+    /// </summary>
+    public sealed record DeleteFailed(int ColumnIndex, string Path, string Error) : Msg;
 }
