@@ -119,6 +119,52 @@ public class TransitionTests
         Assert.Equal(2, next.Columns[0].Cursor);
     }
 
+    [Fact]
+    public void CursorTo_moves_cursor_to_given_entry()
+    {
+        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        var (next, effects) = Transition.Apply(state, new Msg.CursorTo(0, 2));
+
+        Assert.Equal(2, next.Columns[0].Cursor);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void CursorTo_clamps_out_of_range_entry_index()
+    {
+        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        var (next, _) = Transition.Apply(state, new Msg.CursorTo(0, 99));
+
+        Assert.Equal(2, next.Columns[0].Cursor);
+    }
+
+    [Fact]
+    public void CursorTo_on_empty_column_stays_minus_one()
+    {
+        var column = new Column(@"C:\", [], Cursor: -1, Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        var (next, _) = Transition.Apply(state, new Msg.CursorTo(0, 0));
+
+        Assert.Equal(-1, next.Columns[0].Cursor);
+    }
+
+    [Fact]
+    public void CursorTo_with_out_of_range_column_is_ignored()
+    {
+        var column = new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        var (next, effects) = Transition.Apply(state, new Msg.CursorTo(9, 0));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
     [Theory]
     [InlineData(-1)]
     [InlineData(5)]
@@ -378,6 +424,7 @@ public class TransitionProperties
         Gen.Select(GenColumnIndex, GenPageSize).Select(t => (Msg)new Msg.CursorPageDown(t.Item1, t.Item2)),
         GenColumnIndex.Select(i => (Msg)new Msg.CursorHome(i)),
         GenColumnIndex.Select(i => (Msg)new Msg.CursorEnd(i)),
+        Gen.Select(GenColumnIndex, GenEntryIndex).Select(t => (Msg)new Msg.CursorTo(t.Item1, t.Item2)),
         GenColumnIndex.Select(i => (Msg)new Msg.FocusColumn(i)),
         Gen.Select(GenColumnIndex, GenEntryIndex).Select(t => (Msg)new Msg.EnterDirectory(t.Item1, t.Item2)),
         GenColumnIndex.Select(i => (Msg)new Msg.GoToParent(i)),

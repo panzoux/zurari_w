@@ -69,6 +69,19 @@ public class LayeringTests
     }
 
     [Fact]
+    public void App_does_not_use_file_or_directory_io_directly()
+    {
+        // App is a thin shell: file I/O must go through an Effect executed by Zurari.Runtime.
+        // BannedApiAnalyzers already enforces this at build time (App/BannedSymbols.txt); this
+        // test double-checks it mechanically, matching the equivalent Core assertion above.
+        AssertSuccess(
+            Types.InAssembly(typeof(Zurari.App.StateProjection).Assembly)
+                .ShouldNot()
+                .HaveDependencyOnAny("System.IO.File", "System.IO.Directory")
+                .GetResult());
+    }
+
+    [Fact]
     public void Gallery_depends_on_no_other_zurari_layer_than_controls()
     {
         // Gallery is a dev harness over fake data: Controls only, never Core/Runtime/Shell/App.

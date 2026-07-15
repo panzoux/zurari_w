@@ -29,6 +29,7 @@
     <ProjectReference Include="..\..\src\Zurari.Runtime\Zurari.Runtime.csproj" />
     <ProjectReference Include="..\..\src\Zurari.Shell\Zurari.Shell.csproj" />
     <ProjectReference Include="..\..\src\Zurari.Gallery\Zurari.Gallery.csproj" />
+    <ProjectReference Include="..\..\src\Zurari.App\Zurari.App.csproj" />
   </ItemGroup>
 
 </Project>

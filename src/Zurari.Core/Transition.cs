@@ -24,6 +24,7 @@ public static class Transition
             Msg.CursorPageDown m => (MoveCursor(state, m.ColumnIndex, delta: Math.Max(1, m.PageSize)), NoEffects),
             Msg.CursorHome m => (MoveCursorTo(state, m.ColumnIndex, index: 0), NoEffects),
             Msg.CursorEnd m => (MoveCursorTo(state, m.ColumnIndex, index: int.MaxValue), NoEffects),
+            Msg.CursorTo m => (MoveCursorTo(state, m.ColumnIndex, m.EntryIndex), NoEffects),
             Msg.FocusColumn m => (FocusColumn(state, m.ColumnIndex), NoEffects),
             Msg.EnterDirectory m => EnterDirectory(state, m.ColumnIndex, m.EntryIndex),
             Msg.GoToParent m => (GoToParent(state, m.ColumnIndex), NoEffects),

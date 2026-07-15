@@ -33,6 +33,12 @@ public abstract record Msg
     /// <summary>Move the cursor of <paramref name="ColumnIndex"/> to its last entry.</summary>
     public sealed record CursorEnd(int ColumnIndex) : Msg;
 
+    /// <summary>
+    /// Move the cursor of <paramref name="ColumnIndex"/> directly to <paramref name="EntryIndex"/>
+    /// (clamped into range). Used for pointer clicks, which pick an absolute row rather than a delta.
+    /// </summary>
+    public sealed record CursorTo(int ColumnIndex, int EntryIndex) : Msg;
+
     /// <summary>Give keyboard focus to <paramref name="ColumnIndex"/>.</summary>
     public sealed record FocusColumn(int ColumnIndex) : Msg;
 
