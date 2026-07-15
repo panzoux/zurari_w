@@ -94,7 +94,10 @@ public static class Transition
         var entry = column.Entries[entryIndex];
         if (entry.Kind == EntryKind.File)
         {
-            return (state, NoEffects);
+            var fileTruncated = state.Columns.Take(columnIndex + 1).ToImmutableArray();
+            fileTruncated = fileTruncated.SetItem(columnIndex, column with { Cursor = entryIndex });
+            var fileState = state with { Columns = fileTruncated, FocusedColumn = columnIndex };
+            return (fileState, NoEffects);
         }
 
         var childPath = column.Path.Length == 0

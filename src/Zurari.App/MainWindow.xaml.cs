@@ -28,7 +28,10 @@ public sealed partial class MainWindow : Window, IDisposable
         Browser.ColumnFocusRequested += (_, e) => loop.Dispatch(new Msg.FocusColumn(e.ColumnIndex));
         Browser.EntryActivated += (_, e) => loop.Dispatch(new Msg.EnterDirectory(e.ColumnIndex, e.EntryIndex));
         Browser.NavigateUpRequested += (_, e) => loop.Dispatch(new Msg.GoToParent(e.ColumnIndex));
-        Browser.EntryPointerPressed += (_, e) => loop.Dispatch(new Msg.CursorTo(e.ColumnIndex, e.EntryIndex));
+        Browser.EntryPointerPressed += (_, e) => loop.Dispatch(
+            e.Modifiers == ModifierKeys.None && e.Button == MouseButton.Left
+                ? new Msg.EnterDirectory(e.ColumnIndex, e.EntryIndex)
+                : new Msg.CursorTo(e.ColumnIndex, e.EntryIndex));
 
         Closed += (_, _) => Dispose();
         Loaded += (_, _) => Browser.Focus();

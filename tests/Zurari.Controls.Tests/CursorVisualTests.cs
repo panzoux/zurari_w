@@ -140,6 +140,55 @@ public class CursorVisualTests
         Assert.True(ColumnView.GetIsColumnFocused(focusedList!));
     }
 
+    [StaFact]
+    public void Directory_row_shows_chevron_and_file_row_does_not()
+    {
+        var entries = new[]
+        {
+            new EntryVm("sub", EntryKind.Directory, IsMarked: false, SizeText: null, DateText: null),
+            new EntryVm("a.txt", EntryKind.File, IsMarked: false, SizeText: null, DateText: null),
+        };
+        var columns = new[] { new ColumnVm("col", entries, CursorIndex: -1, IsFocused: true) };
+        var browser = new ColumnBrowser { Columns = columns };
+        using var host = new TestWindow(browser);
+        TestWindow.DoEvents();
+
+        var list = FindListBox(browser, 0);
+        Assert.NotNull(list);
+
+        var directoryRow = list!.ItemContainerGenerator.ContainerFromIndex(0) as ListBoxItem;
+        var fileRow = list.ItemContainerGenerator.ContainerFromIndex(1) as ListBoxItem;
+        Assert.NotNull(directoryRow);
+        Assert.NotNull(fileRow);
+
+        var directoryChevron = FindChevron(directoryRow!);
+        Assert.NotNull(directoryChevron);
+        Assert.Equal(Visibility.Visible, directoryChevron!.Visibility);
+
+        var fileChevron = FindChevron(fileRow!);
+        Assert.True(fileChevron is null || fileChevron.Visibility != Visibility.Visible);
+    }
+
+    private static TextBlock? FindChevron(DependencyObject root)
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is TextBlock { Text: "›" } textBlock)
+            {
+                return textBlock;
+            }
+
+            var nested = FindChevron(child);
+            if (nested is not null)
+            {
+                return nested;
+            }
+        }
+
+        return null;
+    }
+
     private static ListBox? FindListBox(DependencyObject root, int columnIndex)
     {
         var found = new List<ListBox>();

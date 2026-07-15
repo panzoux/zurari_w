@@ -238,13 +238,32 @@ public class TransitionTests
     }
 
     [Fact]
-    public void EnterDirectory_on_file_is_a_no_op()
+    public void EnterDirectory_on_file_selects_it_and_moves_focus_without_effects()
     {
-        var state = StateWithColumns(new Column(@"C:\", [File1], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded));
 
-        var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(0, 0));
+        var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(0, 2));
 
-        Assert.Equal(state, next);
+        Assert.Single(next.Columns);
+        Assert.Equal(2, next.Columns[0].Cursor);
+        Assert.Equal(0, next.FocusedColumn);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void EnterDirectory_on_file_truncates_columns_to_its_right()
+    {
+        var state = StateWithColumns(
+            new Column(@"C:\", [Dir, File1], Cursor: 0, Load: LoadState.Loaded),
+            new Column(@"C:\sub", [File1], Cursor: 0, Load: LoadState.Loaded),
+            new Column(@"C:\sub\stale", [], Load: LoadState.Loading)) with
+        { FocusedColumn = 2 };
+
+        var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(0, 1));
+
+        Assert.Single(next.Columns);
+        Assert.Equal(1, next.Columns[0].Cursor);
+        Assert.Equal(0, next.FocusedColumn);
         Assert.Empty(effects);
     }
 

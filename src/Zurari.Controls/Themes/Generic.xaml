@@ -80,7 +80,7 @@
                                                  columns behind the focused one still show where the cursor
                                                  was left, Finder-style. -->
                                             <Trigger Property="IsSelected" Value="True">
-                                                <Setter Property="Background" Value="#FFD6D6D6" />
+                                                <Setter Property="Background" Value="#FFE0E0E0" />
                                             </Trigger>
                                             <!-- Strong highlight only in the focused column. IsColumnFocused
                                                  is an inheritable attached property set once on the owning
@@ -92,8 +92,7 @@
                                                     <Condition Property="IsSelected" Value="True" />
                                                     <Condition Property="local:ColumnView.IsColumnFocused" Value="True" />
                                                 </MultiTrigger.Conditions>
-                                                <Setter Property="Background" Value="#FF3D8AE2" />
-                                                <Setter Property="Foreground" Value="White" />
+                                                <Setter Property="Background" Value="#FFB3D3F2" />
                                             </MultiTrigger>
                                             <!-- Marked entries (multi-selection) stay visibly distinct
                                                  regardless of cursor/selection state. -->
@@ -107,6 +106,24 @@
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
                                         <DockPanel>
+                                            <TextBlock DockPanel.Dock="Right"
+                                                       Margin="4,0,0,0"
+                                                       Foreground="Gray">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="{x:Type TextBlock}">
+                                                        <Setter Property="Text" Value="&#x203A;" />
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Kind}" Value="Directory">
+                                                                <Setter Property="Visibility" Value="Visible" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Kind}" Value="Drive">
+                                                                <Setter Property="Visibility" Value="Visible" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
                                             <TextBlock DockPanel.Dock="Right"
                                                        Margin="8,0,0,0"
                                                        Foreground="Gray"
