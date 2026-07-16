@@ -4,6 +4,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
+using System.Windows.Threading;
 
 namespace Zurari.Controls;
 
@@ -78,11 +79,27 @@ public sealed class ColumnView : Control
         typeof(ColumnView),
         new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.Inherits));
 
+    /// <summary>
+    /// Identifies the attached <c>IsRubberBandHover</c> property: set directly on individual
+    /// realized <see cref="ListBoxItem"/> containers (never inherited - unlike
+    /// <see cref="IsColumnFocusedProperty"/>/<see cref="IsDropTargetProperty"/>) while a rubber-band
+    /// drag's live range covers that row, so <c>Generic.xaml</c> can render a lighter preview
+    /// highlight before the drag is released and marks are actually applied.
+    /// </summary>
+    public static readonly DependencyProperty IsRubberBandHoverProperty = DependencyProperty.RegisterAttached(
+        "IsRubberBandHover",
+        typeof(bool),
+        typeof(ColumnView),
+        new FrameworkPropertyMetadata(false));
+
     private bool suppressSelectionChanged;
 
     private readonly DragGestureTracker dragTracker = new();
     private readonly RubberBandTracker rubberBandTracker = new();
+    private readonly DispatcherTimer autoScrollTimer = new() { Interval = TimeSpan.FromMilliseconds(50) };
     private Rectangle? rubberBandVisual;
+    private ScrollViewer? listScrollViewer;
+    private Point lastMovePositionInList;
 
     static ColumnView()
     {
@@ -97,6 +114,7 @@ public sealed class ColumnView : Control
         DragOver += OnDragOver;
         DragLeave += OnDragLeave;
         Drop += OnDrop;
+        autoScrollTimer.Tick += OnAutoScrollTick;
     }
 
     /// <summary>Snapshot of the column to display.</summary>
@@ -177,10 +195,31 @@ public sealed class ColumnView : Control
         obj.SetValue(IsDropTargetProperty, value);
     }
 
+    /// <summary>Gets the <see cref="IsRubberBandHoverProperty"/> attached value.</summary>
+    public static bool GetIsRubberBandHover(DependencyObject obj)
+    {
+        ArgumentNullException.ThrowIfNull(obj);
+        return (bool)obj.GetValue(IsRubberBandHoverProperty);
+    }
+
+    /// <summary>Sets the <see cref="IsRubberBandHoverProperty"/> attached value.</summary>
+    public static void SetIsRubberBandHover(DependencyObject obj, bool value)
+    {
+        ArgumentNullException.ThrowIfNull(obj);
+        obj.SetValue(IsRubberBandHoverProperty, value);
+    }
+
     /// <inheritdoc />
     public override void OnApplyTemplate()
     {
         base.OnApplyTemplate();
+
+        // The old List (if any) is about to be discarded along with its containers: an
+        // in-flight auto-scroll or cached ScrollViewer reference must not survive into the
+        // new template.
+        StopAutoScroll();
+        listScrollViewer = null;
+
         if (List is not null)
         {
             List.SelectionChanged -= OnListSelectionChanged;
@@ -283,7 +322,8 @@ public sealed class ColumnView : Control
             // no EntryClicked - this is not a row interaction.
             if (e.ChangedButton == MouseButton.Left && List is not null)
             {
-                rubberBandTracker.Press(e.GetPosition(List), onEmptySpace: true);
+                var positionInList = e.GetPosition(List);
+                rubberBandTracker.Press(positionInList, onEmptySpace: true, FindNearestRowIndex(positionInList));
                 List.CaptureMouse();
             }
 
@@ -328,33 +368,237 @@ public sealed class ColumnView : Control
             return;
         }
 
-        var rect = rubberBandTracker.Move(e.GetPosition(List));
-        UpdateRubberBandVisual(rect);
+        UpdateDuringMove(e.GetPosition(List));
     }
 
     /// <summary>
-    /// Draws (or hides) the rubber-band feedback rectangle. Live row highlighting during the
-    /// drag is out of scope - the rectangle itself is the only feedback while dragging; the
-    /// covered rows are computed once, at <see cref="OnListPreviewMouseUp"/>.
+    /// Advances the rubber-band gesture for the pointer at <paramref name="positionInList"/>
+    /// (list-relative coordinates): updates the rectangle overlay, the live row-index range and
+    /// its hover highlight, and starts/stops auto-scroll depending on whether the pointer is
+    /// outside the viewport. Shared by <see cref="OnListPreviewMouseMove"/> and
+    /// <see cref="OnAutoScrollTick"/> (which replays the last known pointer position after each
+    /// scroll step, since a real pointer move is not what drove that tick).
     /// </summary>
-    private void UpdateRubberBandVisual(Rect? rect)
+    private void UpdateDuringMove(Point positionInList)
+    {
+        lastMovePositionInList = positionInList;
+        var rect = rubberBandTracker.Move(positionInList);
+        UpdateRubberBandVisual(rect, positionInList);
+
+        if (rect is null)
+        {
+            UpdateRubberBandHoverHighlight(null);
+            StopAutoScroll();
+            return;
+        }
+
+        var currentIndex = FindNearestRowIndex(positionInList);
+        var range = rubberBandTracker.UpdateCurrentIndex(currentIndex);
+        UpdateRubberBandHoverHighlight(range);
+        UpdateAutoScroll(positionInList);
+    }
+
+    /// <summary>
+    /// Draws (or hides) the rubber-band feedback rectangle. The vertical span is NOT taken
+    /// directly from <paramref name="rect"/> (which reflects the fixed press-time origin) but
+    /// recomputed from the anchor row's current pixel position - see
+    /// <see cref="ResolveAnchorPixelY"/> - so the rectangle stays correct as auto-scroll moves the
+    /// anchor row off-screen; the horizontal span is unaffected (no horizontal auto-scroll).
+    /// </summary>
+    private void UpdateRubberBandVisual(Rect? rect, Point currentPositionInList)
     {
         if (rubberBandVisual is null)
         {
             return;
         }
 
-        if (rect is not { } r)
+        if (rect is not { } r || List is null)
         {
             rubberBandVisual.Visibility = Visibility.Collapsed;
             return;
         }
 
+        var anchorY = ResolveAnchorPixelY(rubberBandTracker.AnchorIndex);
+        var currentY = Math.Clamp(currentPositionInList.Y, 0, Math.Max(0, List.ActualHeight));
+        var top = Math.Min(anchorY, currentY);
+        var bottom = Math.Max(anchorY, currentY);
+
         Canvas.SetLeft(rubberBandVisual, r.X);
-        Canvas.SetTop(rubberBandVisual, r.Y);
+        Canvas.SetTop(rubberBandVisual, top);
         rubberBandVisual.Width = r.Width;
-        rubberBandVisual.Height = r.Height;
+        rubberBandVisual.Height = bottom - top;
         rubberBandVisual.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>
+    /// Sets/clears <see cref="IsRubberBandHoverProperty"/> on every currently realized row
+    /// container, matching <paramref name="range"/> (or clearing all of them when <c>null</c>).
+    /// Iterating every realized container each call - not just the ones inside
+    /// <paramref name="range"/> - is what clears stale flags left on recycled containers whose
+    /// index moved outside the range since the last update.
+    /// </summary>
+    private void UpdateRubberBandHoverHighlight((int From, int To)? range)
+    {
+        if (List is null)
+        {
+            return;
+        }
+
+        for (var i = 0; i < List.Items.Count; i++)
+        {
+            if (List.ItemContainerGenerator.ContainerFromIndex(i) is not ListBoxItem item)
+            {
+                continue;
+            }
+
+            SetIsRubberBandHover(item, range is { } r && i >= r.From && i <= r.To);
+        }
+    }
+
+    /// <summary>
+    /// Resolves the current pixel Y (in <see cref="List"/>-relative, i.e. viewport-relative,
+    /// coordinates) of <paramref name="anchorIndex"/>'s row: its realized container's top when the
+    /// row is still realized, otherwise the viewport edge it has scrolled past (top edge if the
+    /// anchor is above the lowest realized index, bottom edge otherwise - realized indices are
+    /// contiguous under virtualization, so the first realized row tells us which direction).
+    /// </summary>
+    private double ResolveAnchorPixelY(int anchorIndex)
+    {
+        if (List is null)
+        {
+            return 0;
+        }
+
+        if (anchorIndex >= 0 && List.ItemContainerGenerator.ContainerFromIndex(anchorIndex) is ListBoxItem anchorItem)
+        {
+            return anchorItem.TransformToAncestor(List).TransformBounds(new Rect(anchorItem.RenderSize)).Top;
+        }
+
+        for (var i = 0; i < List.Items.Count; i++)
+        {
+            if (List.ItemContainerGenerator.ContainerFromIndex(i) is ListBoxItem)
+            {
+                return anchorIndex < i ? 0 : List.ActualHeight;
+            }
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Starts (or stops) <see cref="autoScrollTimer"/> depending on whether
+    /// <paramref name="positionInList"/> is currently outside <see cref="List"/>'s viewport.
+    /// </summary>
+    private void UpdateAutoScroll(Point positionInList)
+    {
+        if (List is null)
+        {
+            StopAutoScroll();
+            return;
+        }
+
+        var step = ComputeAutoScrollStep(positionInList.Y, 0, List.ActualHeight);
+        if (step == 0)
+        {
+            StopAutoScroll();
+            return;
+        }
+
+        if (!autoScrollTimer.IsEnabled)
+        {
+            autoScrollTimer.Start();
+        }
+    }
+
+    private void StopAutoScroll()
+    {
+        if (autoScrollTimer.IsEnabled)
+        {
+            autoScrollTimer.Stop();
+        }
+    }
+
+    /// <summary>
+    /// One auto-scroll tick: scrolls <see cref="List"/> by the step <see cref="ComputeAutoScrollStep"/>
+    /// reports for the last known pointer position, then replays that position through
+    /// <see cref="UpdateDuringMove"/> so the rectangle/live-range/hover highlight catch up with the
+    /// new scroll offset. Stops itself once the gesture is no longer active or the pointer has
+    /// moved back inside the viewport (the next real mouse move already does that too, but the
+    /// timer must not spin forever if it somehow misses that).
+    /// </summary>
+    private void OnAutoScrollTick(object? sender, EventArgs e)
+    {
+        if (List is null || !rubberBandTracker.IsActive)
+        {
+            StopAutoScroll();
+            return;
+        }
+
+        if (GetListScrollViewer() is not { } scrollViewer)
+        {
+            StopAutoScroll();
+            return;
+        }
+
+        var step = ComputeAutoScrollStep(lastMovePositionInList.Y, 0, List.ActualHeight);
+        if (step == 0)
+        {
+            StopAutoScroll();
+            return;
+        }
+
+        scrollViewer.ScrollToVerticalOffset(scrollViewer.VerticalOffset + step);
+        UpdateDuringMove(lastMovePositionInList);
+    }
+
+    /// <summary>
+    /// Pure auto-scroll step function: how many items (negative = up, positive = down) to scroll
+    /// per tick for a pointer at <paramref name="pointerY"/> relative to the viewport
+    /// [<paramref name="viewportTop"/>, <paramref name="viewportBottom"/>] - 0 while the pointer is
+    /// inside the viewport, 1..3 (proportional to how far outside) otherwise. Kept as a standalone
+    /// static method (rather than inline in <see cref="OnAutoScrollTick"/>) specifically so it is
+    /// unit-testable without a live pointer/STA window - see the class remarks on why the timer
+    /// loop itself is not.
+    /// </summary>
+    internal static int ComputeAutoScrollStep(double pointerY, double viewportTop, double viewportBottom)
+    {
+        if (pointerY < viewportTop)
+        {
+            return -StepsForOvershoot(viewportTop - pointerY);
+        }
+
+        if (pointerY > viewportBottom)
+        {
+            return StepsForOvershoot(pointerY - viewportBottom);
+        }
+
+        return 0;
+    }
+
+    private static int StepsForOvershoot(double overshoot)
+    {
+        if (overshoot > 120)
+        {
+            return 3;
+        }
+
+        return overshoot > 50 ? 2 : 1;
+    }
+
+    private ScrollViewer? GetListScrollViewer()
+    {
+        if (listScrollViewer is not null)
+        {
+            return listScrollViewer;
+        }
+
+        if (List is null)
+        {
+            return null;
+        }
+
+        listScrollViewer = FindVisualChild<ScrollViewer>(List);
+        return listScrollViewer;
     }
 
     /// <summary>
@@ -377,37 +621,50 @@ public sealed class ColumnView : Control
 
         dragTracker.Release();
 
+        // LiveRange must be read before Release() - Release() resets the anchor/current
+        // indices along with the rest of the gesture state.
+        var finalRange = rubberBandTracker.LiveRange;
         var rubberBandRect = rubberBandTracker.Release();
+        StopAutoScroll();
+        UpdateRubberBandHoverHighlight(null);
+
         if (List is not null && List.IsMouseCaptured)
         {
             List.ReleaseMouseCapture();
         }
 
-        UpdateRubberBandVisual(null);
+        UpdateRubberBandVisual(null, default);
 
-        if (rubberBandRect is { } rect)
+        if (rubberBandRect is not null && finalRange is { } range)
         {
-            RaiseMarkRangeIfCovered(rect, Keyboard.Modifiers.HasFlag(ModifierKeys.Control));
+            MarkRangeRequested?.Invoke(
+                this,
+                new MarkRangeRequestInfo(range.From, range.To, Keyboard.Modifiers.HasFlag(ModifierKeys.Control)));
         }
     }
 
     /// <summary>
-    /// Converts <paramref name="rect"/>'s vertical span into an entry-index range using the
+    /// Finds the row index at <paramref name="positionInList"/> (list-relative coordinates) among
     /// currently REALIZED containers (<see cref="ItemContainerGenerator"/>) - with
     /// <c>CanContentScroll</c> item virtualization, rows outside the viewport simply have no
-    /// container. A rectangle extending above/below all realized rows clamps to the
-    /// first/last realized row (auto-scroll during rubber-band is out of scope). Raises
-    /// <see cref="MarkRangeRequested"/> only when at least one row is covered.
+    /// container, so this doubles as "nearest visible row": an exact hit returns that row; a
+    /// position above all realized rows clamps to the first, below clamps to the last (covers
+    /// both the rubber-band anchor - "nearest row to the press, including empty space below the
+    /// last row" - and the live current-index during a drag - "first/last visible index when the
+    /// pointer is outside the viewport"). -1 when the column has no realized rows at all (an
+    /// empty column).
     /// </summary>
-    private void RaiseMarkRangeIfCovered(Rect rect, bool additive)
+    private int FindNearestRowIndex(Point positionInList)
     {
         if (List is null)
         {
-            return;
+            return -1;
         }
 
-        int? minIndex = null;
-        int? maxIndex = null;
+        int? firstIndex = null;
+        int? lastIndex = null;
+        double firstTop = 0;
+        double lastBottom = 0;
 
         for (var i = 0; i < List.Items.Count; i++)
         {
@@ -417,21 +674,30 @@ public sealed class ColumnView : Control
             }
 
             var bounds = item.TransformToAncestor(List).TransformBounds(new Rect(item.RenderSize));
-            if (bounds.Bottom < rect.Top || bounds.Top > rect.Bottom)
+            if (positionInList.Y >= bounds.Top && positionInList.Y < bounds.Bottom)
             {
-                continue;
+                return i;
             }
 
-            minIndex = minIndex is { } mn ? Math.Min(mn, i) : i;
-            maxIndex = maxIndex is { } mx ? Math.Max(mx, i) : i;
+            if (firstIndex is null || bounds.Top < firstTop)
+            {
+                firstIndex = i;
+                firstTop = bounds.Top;
+            }
+
+            if (lastIndex is null || bounds.Bottom > lastBottom)
+            {
+                lastIndex = i;
+                lastBottom = bounds.Bottom;
+            }
         }
 
-        if (minIndex is null || maxIndex is null)
+        if (firstIndex is null || lastIndex is null)
         {
-            return;
+            return -1;
         }
 
-        MarkRangeRequested?.Invoke(this, new MarkRangeRequestInfo(minIndex.Value, maxIndex.Value, additive));
+        return positionInList.Y < firstTop ? firstIndex.Value : lastIndex.Value;
     }
 
     /// <summary>

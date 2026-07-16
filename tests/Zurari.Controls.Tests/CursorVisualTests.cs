@@ -98,8 +98,15 @@ public class CursorVisualTests
         Assert.Equal(3, list.SelectedIndex);
     }
 
+    // Marked entries (R3): row background (Explorer/Finder-style) instead of the old bold+colored
+    // text. Asserted via the container's own Background brush - the trigger-driven property -
+    // rather than pixel colors, per Generic.xaml's ItemContainerStyle trigger order.
+    private static readonly Color MarkedBackground = (Color)ColorConverter.ConvertFromString("#FFCCE8FF")!;
+    private static readonly Color RubberBandHoverBackground = (Color)ColorConverter.ConvertFromString("#FFE3F0FB")!;
+    private static readonly Color StrongCursorBackground = (Color)ColorConverter.ConvertFromString("#FFB3D3F2")!;
+
     [StaFact]
-    public void Marked_entries_render_with_bold_font_weight_and_unmarked_do_not()
+    public void Marked_entries_render_with_a_background_and_unmarked_do_not_and_stay_unbold()
     {
         var entries = new[]
         {
@@ -120,8 +127,60 @@ public class CursorVisualTests
         Assert.NotNull(marked);
 
         Assert.NotEqual(FontWeights.Bold, plain!.FontWeight);
-        Assert.Equal(FontWeights.Bold, marked!.FontWeight);
+        Assert.NotEqual(FontWeights.Bold, marked!.FontWeight);
+        Assert.NotEqual(MarkedBackground, GetBackgroundColor(plain));
+        Assert.Equal(MarkedBackground, GetBackgroundColor(marked));
     }
+
+    [StaFact]
+    public void Cursor_row_that_is_also_marked_reads_as_the_strong_cursor_blue_in_the_focused_column()
+    {
+        var entries = new[]
+        {
+            new EntryVm("cursor-and-marked", EntryKind.File, IsMarked: true, SizeText: null, DateText: null),
+        };
+        var columns = new[] { new ColumnVm("col", entries, CursorIndex: 0, IsFocused: true) };
+        var browser = new ColumnBrowser { Columns = columns };
+        using var host = new TestWindow(browser);
+        TestWindow.DoEvents();
+
+        var list = FindListBox(browser, 0);
+        Assert.NotNull(list);
+
+        var row = list!.ItemContainerGenerator.ContainerFromIndex(0) as ListBoxItem;
+        Assert.NotNull(row);
+
+        Assert.Equal(StrongCursorBackground, GetBackgroundColor(row));
+    }
+
+    [StaFact]
+    public void IsRubberBandHover_attached_property_renders_the_lighter_preview_background()
+    {
+        var entries = new[]
+        {
+            new EntryVm("plain", EntryKind.File, IsMarked: false, SizeText: null, DateText: null),
+        };
+        var columns = new[] { new ColumnVm("col", entries, CursorIndex: -1, IsFocused: true) };
+        var browser = new ColumnBrowser { Columns = columns };
+        using var host = new TestWindow(browser);
+        TestWindow.DoEvents();
+
+        var list = FindListBox(browser, 0);
+        Assert.NotNull(list);
+
+        var row = list!.ItemContainerGenerator.ContainerFromIndex(0) as ListBoxItem;
+        Assert.NotNull(row);
+
+        Assert.NotEqual(RubberBandHoverBackground, GetBackgroundColor(row));
+
+        ColumnView.SetIsRubberBandHover(row!, true);
+        TestWindow.DoEvents();
+
+        Assert.Equal(RubberBandHoverBackground, GetBackgroundColor(row));
+    }
+
+    private static Color GetBackgroundColor(ListBoxItem item) =>
+        item.Background is SolidColorBrush brush ? brush.Color : Colors.Transparent;
 
     [StaFact]
     public void Focused_column_is_marked_via_attached_property_distinct_from_unfocused_column()

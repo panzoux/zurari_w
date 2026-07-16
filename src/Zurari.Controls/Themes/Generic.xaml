@@ -77,6 +77,24 @@
                                         <Setter Property="IsTabStop" Value="False" />
                                         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                         <Setter Property="Padding" Value="6,2" />
+                                        <!-- Trigger ORDER is deliberate (later triggers win when several
+                                             apply at once - standard WPF style-trigger precedence):
+                                               1. IsSelected (weak cursor, #FFE0E0E0)
+                                               2. IsRubberBandHover (#FFE3F0FB) - live drag preview; a row
+                                                  merely hovered by an in-progress rubber-band is a weaker,
+                                                  more ephemeral signal than the persistent cursor/marked
+                                                  states below, but it should still read over the plain
+                                                  weak-cursor background so the user can see the drag doing
+                                                  something.
+                                               3. IsMarked (#FFCCE8FF) - persistent multi-selection state;
+                                                  wins over both the weak cursor and the hover preview, so a
+                                                  marked row in an unfocused column stays visibly marked even
+                                                  while a rubber-band is passing over some other row.
+                                               4. IsSelected + IsColumnFocused (#FFB3D3F2, strong cursor) -
+                                                  last, so the cursor row in the FOCUSED column always reads
+                                                  as the strong cursor blue even when also marked; unfocused
+                                                  columns never get this trigger; their marked rows show only
+                                                  the weaker step 3 background as a result. -->
                                         <Style.Triggers>
                                             <!-- Cursor row: selection reflects ColumnVm.CursorIndex only
                                                  (ColumnView keeps SelectedIndex in sync; it never lets
@@ -86,11 +104,25 @@
                                             <Trigger Property="IsSelected" Value="True">
                                                 <Setter Property="Background" Value="#FFE0E0E0" />
                                             </Trigger>
+                                            <!-- Live rubber-band drag preview (R2): IsRubberBandHover is
+                                                 set directly on the container (not inherited) by ColumnView
+                                                 while the row falls inside the drag's current index range;
+                                                 cleared on every move/release. Lighter than a real mark. -->
+                                            <Trigger Property="local:ColumnView.IsRubberBandHover" Value="True">
+                                                <Setter Property="Background" Value="#FFE3F0FB" />
+                                            </Trigger>
+                                            <!-- Marked entries (multi-selection): Explorer/Finder-style row
+                                                 background instead of bold+colored text, so marked rows
+                                                 read the same way as a native file manager's selection. -->
+                                            <DataTrigger Binding="{Binding IsMarked}" Value="True">
+                                                <Setter Property="Background" Value="#FFCCE8FF" />
+                                            </DataTrigger>
                                             <!-- Strong highlight only in the focused column. IsColumnFocused
                                                  is an inheritable attached property set once on the owning
                                                  ColumnView, not on WPF's own keyboard-focus state, so the
                                                  accent tracks ColumnVm.IsFocused regardless of which element
-                                                 actually has keyboard focus. -->
+                                                 actually has keyboard focus. Declared last so cursor+marked
+                                                 in the focused column reads as the strong cursor blue. -->
                                             <MultiTrigger>
                                                 <MultiTrigger.Conditions>
                                                     <Condition Property="IsSelected" Value="True" />
@@ -98,12 +130,6 @@
                                                 </MultiTrigger.Conditions>
                                                 <Setter Property="Background" Value="#FFB3D3F2" />
                                             </MultiTrigger>
-                                            <!-- Marked entries (multi-selection) stay visibly distinct
-                                                 regardless of cursor/selection state. -->
-                                            <DataTrigger Binding="{Binding IsMarked}" Value="True">
-                                                <Setter Property="FontWeight" Value="Bold" />
-                                                <Setter Property="Foreground" Value="#FF0A5FBF" />
-                                            </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
                                 </ListBox.ItemContainerStyle>

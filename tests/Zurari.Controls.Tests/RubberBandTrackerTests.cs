@@ -144,4 +144,91 @@ public class RubberBandTrackerTests
         Assert.NotNull(rect);
         Assert.Equal(second.X, rect!.Value.X);
     }
+
+    [Fact]
+    public void LiveRange_is_null_before_the_drag_threshold_is_crossed()
+    {
+        var tracker = new RubberBandTracker();
+        var origin = new Point(100, 100);
+        tracker.Press(origin, onEmptySpace: true, anchorIndex: 5);
+
+        Assert.Null(tracker.UpdateCurrentIndex(5));
+    }
+
+    [Fact]
+    public void LiveRange_is_null_when_the_anchor_index_is_negative()
+    {
+        // e.g. an empty column: FindNearestRowIndex has nothing to hit-test against.
+        var tracker = new RubberBandTracker();
+        var origin = new Point(100, 100);
+        tracker.Press(origin, onEmptySpace: true, anchorIndex: -1);
+        tracker.Move(PastThreshold(origin));
+
+        Assert.Null(tracker.UpdateCurrentIndex(-1));
+    }
+
+    [Fact]
+    public void LiveRange_spans_anchor_to_current_when_dragging_downward()
+    {
+        var tracker = new RubberBandTracker();
+        var origin = new Point(100, 100);
+        tracker.Press(origin, onEmptySpace: true, anchorIndex: 3);
+        tracker.Move(PastThreshold(origin));
+
+        var range = tracker.UpdateCurrentIndex(9);
+
+        Assert.Equal((3, 9), range);
+    }
+
+    [Fact]
+    public void LiveRange_reverses_direction_when_the_pointer_moves_back_above_the_anchor()
+    {
+        var tracker = new RubberBandTracker();
+        var origin = new Point(100, 100);
+        tracker.Press(origin, onEmptySpace: true, anchorIndex: 6);
+        tracker.Move(PastThreshold(origin));
+
+        var downward = tracker.UpdateCurrentIndex(10);
+        Assert.Equal((6, 10), downward);
+
+        var upward = tracker.UpdateCurrentIndex(2);
+
+        Assert.Equal((2, 6), upward);
+    }
+
+    [Fact]
+    public void LiveRange_is_a_single_row_when_current_equals_anchor()
+    {
+        var tracker = new RubberBandTracker();
+        var origin = new Point(100, 100);
+        tracker.Press(origin, onEmptySpace: true, anchorIndex: 4);
+        tracker.Move(PastThreshold(origin));
+
+        var range = tracker.UpdateCurrentIndex(4);
+
+        Assert.Equal((4, 4), range);
+    }
+
+    [Fact]
+    public void AnchorIndex_is_minus_one_when_the_press_was_not_on_empty_space()
+    {
+        var tracker = new RubberBandTracker();
+        tracker.Press(new Point(100, 100), onEmptySpace: false, anchorIndex: 7);
+
+        Assert.Equal(-1, tracker.AnchorIndex);
+    }
+
+    [Fact]
+    public void Release_clears_the_live_range_for_the_next_gesture()
+    {
+        var tracker = new RubberBandTracker();
+        var origin = new Point(100, 100);
+        tracker.Press(origin, onEmptySpace: true, anchorIndex: 1);
+        tracker.Move(PastThreshold(origin));
+        tracker.UpdateCurrentIndex(5);
+        tracker.Release();
+
+        Assert.Equal(-1, tracker.AnchorIndex);
+        Assert.Null(tracker.LiveRange);
+    }
 }
