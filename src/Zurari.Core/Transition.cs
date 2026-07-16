@@ -32,7 +32,7 @@ public static class Transition
             Msg.DirectoryLoaded m => (DirectoryLoaded(state, m.ColumnIndex, m.Path, m.Entries), NoEffects),
             Msg.DirectoryLoadFailed m => (DirectoryLoadFailed(state, m.ColumnIndex, m.Path, m.Error), NoEffects),
             Msg.DeleteEntry m => DeleteEntry(state, m.ColumnIndex, m.EntryIndex),
-            Msg.DropFiles m => DropFiles(state, m.ColumnIndex, m.Paths, m.IsMove),
+            Msg.DropFiles m => DropFiles(state, m.ColumnIndex, m.TargetEntryIndex, m.Paths, m.ShiftHeld, m.CtrlHeld),
             Msg.ShellOpCompleted m => ShellOpCompleted(state, m.ColumnIndex, m.Path),
             Msg.ShellOpFailed m => (ShellOpFailed(state, m.ColumnIndex, m.Path, m.Error), NoEffects),
             _ => (state, NoEffects),
@@ -212,7 +212,7 @@ public static class Transition
     }
 
     private static (AppState, IReadOnlyList<Effect>) DropFiles(
-        AppState state, int columnIndex, ImmutableArray<string> paths, bool isMove)
+        AppState state, int columnIndex, int targetEntryIndex, ImmutableArray<string> paths, bool shiftHeld, bool ctrlHeld)
     {
         if (!InRange(state, columnIndex))
         {
@@ -220,13 +220,123 @@ public static class Transition
         }
 
         var column = state.Columns[columnIndex];
-        if (column.Path.Length == 0 || paths.IsDefaultOrEmpty)
+        if (paths.IsDefaultOrEmpty)
         {
             return (state, NoEffects);
         }
 
+        var dest = ResolveDropDest(column, targetEntryIndex);
+        if (dest is null)
+        {
+            return (state, NoEffects);
+        }
+
+        var filtered = FilterDropSources(dest, paths);
+        if (filtered.Length == 0)
+        {
+            return (state, NoEffects);
+        }
+
+        var isMove = shiftHeld || (!ctrlHeld && SameVolume(dest, filtered[0]));
+
         var newState = WithColumn(state, columnIndex, column with { Load = LoadState.Loading });
-        return (newState, [new Effect.ShellCopyOrMove(columnIndex, column.Path, paths, isMove)]);
+        return (newState, [new Effect.ShellCopyOrMove(columnIndex, column.Path, dest, filtered, isMove)]);
+    }
+
+    /// <summary>
+    /// Resolves where a drop onto <paramref name="column"/> should land: the child path of
+    /// <paramref name="targetEntryIndex"/> when it names a Directory or Drive row, otherwise the
+    /// column's own path - unless that is the virtual root's empty path with no container row
+    /// targeted, which means nothing (returns null).
+    /// </summary>
+    private static string? ResolveDropDest(Column column, int targetEntryIndex)
+    {
+        if (targetEntryIndex >= 0 && targetEntryIndex < column.Entries.Length)
+        {
+            var entry = column.Entries[targetEntryIndex];
+            if (entry.Kind is EntryKind.Directory or EntryKind.Drive)
+            {
+                return column.Path.Length == 0
+                    ? entry.Name
+                    : System.IO.Path.Combine(column.Path, entry.Name);
+            }
+        }
+
+        return column.Path.Length == 0 ? null : column.Path;
+    }
+
+    /// <summary>
+    /// Drops any source that would be a no-op relative to <paramref name="dest"/>: already located
+    /// there (its parent equals <paramref name="dest"/>), the destination itself, or an ancestor of
+    /// the destination (which would make the transfer recursive). Comparisons are
+    /// case-insensitive and ignore a trailing path separator.
+    /// </summary>
+    private static ImmutableArray<string> FilterDropSources(string dest, ImmutableArray<string> paths)
+    {
+        var normalizedDest = NormalizePath(dest);
+        var builder = ImmutableArray.CreateBuilder<string>(paths.Length);
+
+        foreach (var source in paths)
+        {
+            if (string.IsNullOrEmpty(source))
+            {
+                continue;
+            }
+
+            var normalizedSource = NormalizePath(source);
+
+            if (string.Equals(normalizedSource, normalizedDest, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var parent = TryGetDirectoryName(source);
+            if (parent is not null
+                && string.Equals(NormalizePath(parent), normalizedDest, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (normalizedDest.StartsWith(
+                    normalizedSource + System.IO.Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            builder.Add(source);
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static string NormalizePath(string path) => path.TrimEnd('\\', '/');
+
+    private static string? TryGetDirectoryName(string path)
+    {
+        try
+        {
+            return System.IO.Path.GetDirectoryName(path);
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Explorer's default transfer kind: move within a volume, copy across volumes.</summary>
+    private static bool SameVolume(string dest, string firstSource)
+    {
+        try
+        {
+            return string.Equals(
+                System.IO.Path.GetPathRoot(dest),
+                System.IO.Path.GetPathRoot(firstSource),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
     }
 
     private static (AppState, IReadOnlyList<Effect>) ShellOpCompleted(AppState state, int columnIndex, string path)

@@ -182,7 +182,10 @@ public sealed class ShellEffectExecutor : IDisposable
 
     /// <summary>
     /// Copies or moves <see cref="Effect.ShellCopyOrMove.Paths"/> into
-    /// <see cref="Effect.ShellCopyOrMove.DestPath"/> via <c>IFileOperation</c>. Unlike the recycle-bin
+    /// <see cref="Effect.ShellCopyOrMove.DestPath"/> via <c>IFileOperation</c> - which may be a
+    /// subdirectory row rather than the column's own path - and reports the outcome keyed by
+    /// <see cref="Effect.ShellCopyOrMove.ColumnPath"/> so the staleness check and re-read target
+    /// the column, not the row. Unlike the recycle-bin
     /// delete above, this deliberately omits <c>FOF_SILENT</c>/<c>FOF_NOERRORUI</c>/
     /// <c>FOF_NOCONFIRMATION</c> in normal operation — the whole point of delegating to
     /// <c>IFileOperation</c> instead of writing a copy loop (see the Phase 4 design notes) is to
@@ -239,11 +242,11 @@ public sealed class ShellEffectExecutor : IDisposable
                 return;
             }
 
-            post(new Msg.ShellOpCompleted(effect.ColumnIndex, effect.DestPath));
+            post(new Msg.ShellOpCompleted(effect.ColumnIndex, effect.ColumnPath));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            post(new Msg.ShellOpFailed(effect.ColumnIndex, effect.DestPath, ex.Message));
+            post(new Msg.ShellOpFailed(effect.ColumnIndex, effect.ColumnPath, ex.Message));
         }
         finally
         {

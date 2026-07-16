@@ -99,14 +99,69 @@ public class DragDropTests
     }
 
     [Fact]
-    public void FileDropRequestedEventArgs_carries_column_paths_and_move_flag()
+    public void FileDropRequestedEventArgs_carries_column_paths_target_and_modifiers()
     {
         string[] paths = ["C:\\a.txt", "C:\\b.txt"];
 
-        var args = new FileDropRequestedEventArgs(columnIndex: 1, paths: paths, isMove: true);
+        var args = new FileDropRequestedEventArgs(
+            columnIndex: 1, paths: paths, targetEntryIndex: 3, shiftHeld: true, ctrlHeld: false);
 
         Assert.Equal(1, args.ColumnIndex);
         Assert.Equal(paths, args.Paths);
-        Assert.True(args.IsMove);
+        Assert.Equal(3, args.TargetEntryIndex);
+        Assert.True(args.ShiftHeld);
+        Assert.False(args.CtrlHeld);
+    }
+
+    [Fact]
+    public void EntryClickedEventArgs_carries_column_and_entry_index()
+    {
+        var args = new EntryClickedEventArgs(columnIndex: 2, entryIndex: 5);
+
+        Assert.Equal(2, args.ColumnIndex);
+        Assert.Equal(5, args.EntryIndex);
+    }
+
+    [Fact]
+    public void Tracker_FiredThisGesture_is_false_before_and_true_after_a_threshold_crossing()
+    {
+        var tracker = new DragGestureTracker();
+        var origin = new Point(100, 100);
+        tracker.Press(origin, pressedEntryIndex: 3);
+
+        Assert.False(tracker.FiredThisGesture);
+
+        tracker.Move(PastThreshold(origin), leftButtonDown: true);
+
+        Assert.True(tracker.FiredThisGesture);
+    }
+
+    [Fact]
+    public void Tracker_FiredThisGesture_resets_on_release()
+    {
+        var tracker = new DragGestureTracker();
+        var origin = new Point(100, 100);
+        tracker.Press(origin, pressedEntryIndex: 3);
+        tracker.Move(PastThreshold(origin), leftButtonDown: true);
+
+        tracker.Release();
+
+        Assert.False(tracker.FiredThisGesture);
+    }
+
+    [Fact]
+    public void Tracker_PressedEntryIndex_reflects_the_most_recent_press_and_clears_on_release()
+    {
+        var tracker = new DragGestureTracker();
+
+        Assert.Null(tracker.PressedEntryIndex);
+
+        tracker.Press(new Point(10, 10), pressedEntryIndex: 4);
+
+        Assert.Equal(4, tracker.PressedEntryIndex);
+
+        tracker.Release();
+
+        Assert.Null(tracker.PressedEntryIndex);
     }
 }

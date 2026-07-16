@@ -142,7 +142,7 @@ public class ShellEffectExecutorTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var executor = new ShellEffectExecutor(queue.Enqueue, suppressUi: true);
-            executor.Submit(new Effect.ShellCopyOrMove(0, destDir, [srcFile], IsMove: false));
+            executor.Submit(new Effect.ShellCopyOrMove(0, destDir, destDir, [srcFile], IsMove: false));
 
             var msg = WaitForMsg(queue, TimeSpan.FromSeconds(15));
             var completed = Assert.IsType<Msg.ShellOpCompleted>(msg);
@@ -159,6 +159,39 @@ public class ShellEffectExecutorTests
     }
 
     [StaFact]
+    public void ShellCopyOrMove_into_a_subdirectory_row_reports_completed_against_the_column_path()
+    {
+        var srcDir = CreateTempDir();
+        var columnDir = CreateTempDir();
+        try
+        {
+            var srcFile = Path.Combine(srcDir, "source.txt");
+            File.WriteAllText(srcFile, "hello");
+
+            var subDir = Path.Combine(columnDir, "row-target");
+            Directory.CreateDirectory(subDir);
+
+            var queue = new ConcurrentQueue<Msg>();
+            using var executor = new ShellEffectExecutor(queue.Enqueue, suppressUi: true);
+            // ColumnPath (columnDir) differs from DestPath (subDir): a row-granular drop onto a
+            // directory row within the column, not the column's own background.
+            executor.Submit(new Effect.ShellCopyOrMove(0, columnDir, subDir, [srcFile], IsMove: false));
+
+            var msg = WaitForMsg(queue, TimeSpan.FromSeconds(15));
+            var completed = Assert.IsType<Msg.ShellOpCompleted>(msg);
+            Assert.Equal(0, completed.ColumnIndex);
+            Assert.Equal(columnDir, completed.Path);
+            Assert.True(File.Exists(srcFile));
+            Assert.True(File.Exists(Path.Combine(subDir, "source.txt")));
+        }
+        finally
+        {
+            Directory.Delete(srcDir, recursive: true);
+            Directory.Delete(columnDir, recursive: true);
+        }
+    }
+
+    [StaFact]
     public void ShellCopyOrMove_move_of_temp_file_reports_completed_and_removes_source()
     {
         var srcDir = CreateTempDir();
@@ -170,7 +203,7 @@ public class ShellEffectExecutorTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var executor = new ShellEffectExecutor(queue.Enqueue, suppressUi: true);
-            executor.Submit(new Effect.ShellCopyOrMove(0, destDir, [srcFile], IsMove: true));
+            executor.Submit(new Effect.ShellCopyOrMove(0, destDir, destDir, [srcFile], IsMove: true));
 
             var msg = WaitForMsg(queue, TimeSpan.FromSeconds(15));
             var completed = Assert.IsType<Msg.ShellOpCompleted>(msg);
@@ -195,7 +228,7 @@ public class ShellEffectExecutorTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var executor = new ShellEffectExecutor(queue.Enqueue, suppressUi: true);
-            executor.Submit(new Effect.ShellCopyOrMove(3, destDir, [missing], IsMove: false));
+            executor.Submit(new Effect.ShellCopyOrMove(3, destDir, destDir, [missing], IsMove: false));
 
             var msg = WaitForMsg(queue, TimeSpan.FromSeconds(15));
             var failed = Assert.IsType<Msg.ShellOpFailed>(msg);

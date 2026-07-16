@@ -15,9 +15,12 @@ internal readonly record struct EntryPointerPressInfo(
 
 /// <summary>
 /// Raw file-drop data for a drop onto this view, before <see cref="ColumnBrowser"/> adds the
-/// column index (which this view does not know about itself).
+/// column index (which this view does not know about itself). <paramref name="TargetEntryIndex"/>
+/// is the row the pointer was over at drop time (-1 for the column background); the host decides
+/// what that means (row-granular transfer target vs. the column's own path).
 /// </summary>
-internal readonly record struct FileDropInfo(IReadOnlyList<string> Paths, bool IsMove);
+internal readonly record struct FileDropInfo(
+    IReadOnlyList<string> Paths, int TargetEntryIndex, bool ShiftHeld, bool CtrlHeld);
 
 /// <summary>
 /// One column of a <see cref="ColumnBrowser"/>: title header, virtualized entry
@@ -107,6 +110,13 @@ public sealed class ColumnView : Control
 
     /// <summary>Raised on a double-click over an entry row, carrying the entry index.</summary>
     internal event EventHandler<int>? EntryActivationRequested;
+
+    /// <summary>
+    /// Raised once per left-button press-then-release on an entry row that never crossed the
+    /// system drag threshold (a true click, as opposed to the press that also starts a drag - see
+    /// <see cref="EntryDragRequested"/>). Carries the entry index that was pressed.
+    /// </summary>
+    internal event EventHandler<int>? EntryClicked;
 
     /// <summary>
     /// Raised once per left-button drag gesture that starts on an entry row and crosses the system
@@ -281,11 +291,22 @@ public sealed class ColumnView : Control
         }
     }
 
+    /// <summary>
+    /// A true click (button released without the drag threshold ever firing) raises
+    /// <see cref="EntryClicked"/> for the row that was pressed, before the tracker resets for the
+    /// next gesture. A drag that did fire raises nothing here - the drag itself already reported
+    /// via <see cref="EntryDragRequested"/>.
+    /// </summary>
     private void OnListPreviewMouseUp(object sender, MouseButtonEventArgs e)
     {
         if (e.ChangedButton != MouseButton.Left)
         {
             return;
+        }
+
+        if (dragTracker.PressedEntryIndex is { } pressedEntryIndex && !dragTracker.FiredThisGesture)
+        {
+            EntryClicked?.Invoke(this, pressedEntryIndex);
         }
 
         dragTracker.Release();
@@ -315,9 +336,9 @@ public sealed class ColumnView : Control
     private void OnDragLeave(object sender, DragEventArgs e) => SetIsDropTarget(this, false);
 
     /// <summary>
-    /// Extracts the dropped file paths and raises <see cref="FileDropRequested"/>.
-    /// <see cref="FileDropInfo.IsMove"/> is true when Shift was held or the negotiated effect
-    /// (<see cref="DragEventArgs.Effects"/>) is Move-only.
+    /// Extracts the dropped file paths, hit-tests which row (if any) the pointer was over, and
+    /// raises <see cref="FileDropRequested"/>. Modifier state is reported raw (Shift/Ctrl held) -
+    /// the host, not this view, decides what that means for copy vs. move.
     /// </summary>
     private void OnDrop(object sender, DragEventArgs e)
     {
@@ -328,8 +349,10 @@ public sealed class ColumnView : Control
             return;
         }
 
-        var isMove = (e.KeyStates & DragDropKeyStates.ShiftKey) != 0 || e.Effects == DragDropEffects.Move;
-        FileDropRequested?.Invoke(this, new FileDropInfo(paths, isMove));
+        var targetEntryIndex = FindEntryIndex(e.OriginalSource as DependencyObject) ?? -1;
+        var shiftHeld = (e.KeyStates & DragDropKeyStates.ShiftKey) != 0;
+        var ctrlHeld = (e.KeyStates & DragDropKeyStates.ControlKey) != 0;
+        FileDropRequested?.Invoke(this, new FileDropInfo(paths, targetEntryIndex, shiftHeld, ctrlHeld));
         e.Handled = true;
     }
 

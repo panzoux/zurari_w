@@ -232,6 +232,57 @@ public class InputEventTests
     }
 
     [StaFact]
+    public void Click_without_drag_raises_entry_clicked_with_the_pressed_entry_index()
+    {
+        var columns = VirtualizationTests.MakeColumns(columnCount: 1, entryCount: 10);
+        var browser = new ColumnBrowser { Columns = columns };
+        using var host = new TestWindow(browser);
+        TestWindow.DoEvents();
+
+        var list = FindListBox(browser, 0);
+        Assert.NotNull(list);
+        var item = list!.ItemContainerGenerator.ContainerFromIndex(4) as ListBoxItem;
+        Assert.NotNull(item);
+
+        EntryClickedEventArgs? clicked = null;
+        EntryDragRequestedEventArgs? dragged = null;
+        browser.EntryClicked += (_, e) => clicked = e;
+        browser.EntryDragRequested += (_, e) => dragged = e;
+
+        RaisePress(item!, MouseButton.Left);
+        Assert.Null(clicked); // not raised on press, only on release-without-drag
+
+        RaiseRelease(item!, MouseButton.Left);
+
+        Assert.NotNull(clicked);
+        Assert.Equal(0, clicked!.ColumnIndex);
+        Assert.Equal(4, clicked.EntryIndex);
+        Assert.Null(dragged);
+    }
+
+    [StaFact]
+    public void Right_button_press_and_release_never_raises_entry_clicked()
+    {
+        var columns = VirtualizationTests.MakeColumns(columnCount: 1, entryCount: 10);
+        var browser = new ColumnBrowser { Columns = columns };
+        using var host = new TestWindow(browser);
+        TestWindow.DoEvents();
+
+        var list = FindListBox(browser, 0);
+        Assert.NotNull(list);
+        var item = list!.ItemContainerGenerator.ContainerFromIndex(4) as ListBoxItem;
+        Assert.NotNull(item);
+
+        EntryClickedEventArgs? clicked = null;
+        browser.EntryClicked += (_, e) => clicked = e;
+
+        RaisePress(item!, MouseButton.Right);
+        RaiseRelease(item!, MouseButton.Right);
+
+        Assert.Null(clicked);
+    }
+
+    [StaFact]
     public void List_box_and_its_items_are_not_keyboard_focusable_so_arrow_keys_reach_the_browser()
     {
         var columns = VirtualizationTests.MakeColumns(columnCount: 1, entryCount: 10);
@@ -270,6 +321,15 @@ public class InputEventTests
             RoutedEvent = routedEvent,
         };
         SetClickCount(e, clickCount);
+        target.RaiseEvent(e);
+    }
+
+    private static void RaiseRelease(UIElement target, MouseButton button)
+    {
+        var e = new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, button)
+        {
+            RoutedEvent = Mouse.PreviewMouseUpEvent,
+        };
         target.RaiseEvent(e);
     }
 

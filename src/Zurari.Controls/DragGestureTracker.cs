@@ -15,6 +15,19 @@ internal sealed class DragGestureTracker
     private int? entryIndex;
     private bool fired;
 
+    /// <summary>
+    /// True from a successful threshold-fire until the next <see cref="Release"/>. Lets callers
+    /// distinguish a plain click (never fired) from a drag (fired) at button-up time.
+    /// </summary>
+    public bool FiredThisGesture => fired;
+
+    /// <summary>
+    /// The entry index passed to the most recent <see cref="Press"/>, or <c>null</c> once
+    /// <see cref="Release"/> has run (or before any <see cref="Press"/>). Lets callers recover
+    /// which row a gesture started on at button-up time without keeping their own copy.
+    /// </summary>
+    public int? PressedEntryIndex => entryIndex;
+
     /// <summary>Starts a new gesture at <paramref name="position"/> over the given entry.</summary>
     public void Press(Point position, int pressedEntryIndex)
     {

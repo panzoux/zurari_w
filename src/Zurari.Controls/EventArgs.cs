@@ -46,6 +46,18 @@ public sealed class NavigateUpRequestedEventArgs(int columnIndex) : EventArgs
 }
 
 /// <summary>
+/// Raised for a true click (press-then-release without crossing the drag threshold) on an entry
+/// row. The host maps this to directory activation; a press that turns into a drag instead raises
+/// <see cref="EntryDragRequestedEventArgs"/>, never this.
+/// </summary>
+public sealed class EntryClickedEventArgs(int columnIndex, int entryIndex) : EventArgs
+{
+    public int ColumnIndex { get; } = columnIndex;
+
+    public int EntryIndex { get; } = entryIndex;
+}
+
+/// <summary>
 /// Raised for a pointer press on an entry. The host interprets modifiers
 /// (e.g. Ctrl+click toggles a mark); the control only reports the input.
 /// </summary>
@@ -87,14 +99,22 @@ public sealed class EntryDragRequestedEventArgs(int columnIndex, int entryIndex)
 
 /// <summary>
 /// Raised when files are dropped from Explorer (or another app) onto a column. The control only
-/// reports the drop; the host decides how to copy/move.
+/// reports the drop (which row, if any, the pointer was over; raw modifier state); the host
+/// decides the destination and whether to copy or move.
 /// </summary>
-public sealed class FileDropRequestedEventArgs(int columnIndex, IReadOnlyList<string> paths, bool isMove) : EventArgs
+public sealed class FileDropRequestedEventArgs(
+    int columnIndex, IReadOnlyList<string> paths, int targetEntryIndex, bool shiftHeld, bool ctrlHeld) : EventArgs
 {
     public int ColumnIndex { get; } = columnIndex;
 
     public IReadOnlyList<string> Paths { get; } = paths;
 
-    /// <summary>True when the drop should move rather than copy (Shift held, or a Move-only effect).</summary>
-    public bool IsMove { get; } = isMove;
+    /// <summary>The row the pointer was over at drop time, or -1 for the column background.</summary>
+    public int TargetEntryIndex { get; } = targetEntryIndex;
+
+    /// <summary>True when Shift was held at drop time.</summary>
+    public bool ShiftHeld { get; } = shiftHeld;
+
+    /// <summary>True when Ctrl was held at drop time.</summary>
+    public bool CtrlHeld { get; } = ctrlHeld;
 }

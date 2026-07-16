@@ -63,6 +63,14 @@ public sealed class ColumnBrowser : Control
     /// <summary>Raised for Enter / double-click / → on a directory entry.</summary>
     public event EventHandler<EntryActivatedEventArgs>? EntryActivated;
 
+    /// <summary>
+    /// Raised for a true click (press-then-release without crossing the drag threshold) on an
+    /// entry row - the host maps this to directory activation, distinct from
+    /// <see cref="EntryPointerPressed"/> which fires on every press including ones that turn
+    /// into a drag.
+    /// </summary>
+    public event EventHandler<EntryClickedEventArgs>? EntryClicked;
+
     /// <summary>Raised for Backspace / ← (the control does not special-case the root column).</summary>
     public event EventHandler<NavigateUpRequestedEventArgs>? NavigateUpRequested;
 
@@ -114,6 +122,7 @@ public sealed class ColumnBrowser : Control
             view.ResizeCompleted += OnColumnResizeCompleted;
             view.EntryPointerPressed += OnColumnEntryPointerPressed;
             view.EntryActivationRequested += OnColumnEntryActivationRequested;
+            view.EntryClicked += OnColumnEntryClicked;
             view.EntryDragRequested += OnColumnEntryDragRequested;
             view.FileDropRequested += OnColumnFileDropRequested;
             children.Add(view);
@@ -212,6 +221,22 @@ public sealed class ColumnBrowser : Control
         EntryActivated?.Invoke(this, new EntryActivatedEventArgs(index, entryIndex));
     }
 
+    private void OnColumnEntryClicked(object? sender, int entryIndex)
+    {
+        if (sender is not ColumnView view || columnsPanel is null)
+        {
+            return;
+        }
+
+        var index = columnsPanel.Children.IndexOf(view);
+        if (index < 0)
+        {
+            return;
+        }
+
+        EntryClicked?.Invoke(this, new EntryClickedEventArgs(index, entryIndex));
+    }
+
     private void OnColumnEntryDragRequested(object? sender, int entryIndex)
     {
         if (sender is not ColumnView view || columnsPanel is null)
@@ -241,7 +266,9 @@ public sealed class ColumnBrowser : Control
             return;
         }
 
-        FileDropRequested?.Invoke(this, new FileDropRequestedEventArgs(index, info.Paths, info.IsMove));
+        FileDropRequested?.Invoke(
+            this,
+            new FileDropRequestedEventArgs(index, info.Paths, info.TargetEntryIndex, info.ShiftHeld, info.CtrlHeld));
     }
 
     /// <inheritdoc />

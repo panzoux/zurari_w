@@ -34,9 +34,10 @@ public sealed partial class MainWindow : Window, IDisposable
         Browser.EntryActivated += (_, e) => loop.Dispatch(new Msg.EnterDirectory(e.ColumnIndex, e.EntryIndex));
         Browser.NavigateUpRequested += (_, e) => loop.Dispatch(new Msg.GoToParent(e.ColumnIndex));
         Browser.EntryPointerPressed += OnEntryPointerPressed;
+        Browser.EntryClicked += (_, e) => loop.Dispatch(new Msg.EnterDirectory(e.ColumnIndex, e.EntryIndex));
         Browser.EntryDragRequested += OnEntryDragRequested;
-        Browser.FileDropRequested += (_, e) =>
-            loop.Dispatch(new Msg.DropFiles(e.ColumnIndex, [.. e.Paths], e.IsMove));
+        Browser.FileDropRequested += (_, e) => loop.Dispatch(
+            new Msg.DropFiles(e.ColumnIndex, e.TargetEntryIndex, [.. e.Paths], e.ShiftHeld, e.CtrlHeld));
 
         Closed += (_, _) => Dispose();
         Loaded += (_, _) => Browser.Focus();
@@ -89,18 +90,17 @@ public sealed partial class MainWindow : Window, IDisposable
     }
 
     /// <summary>
-    /// Left click (unmodified) enters a directory; anything else (right click, modified click)
-    /// just moves the cursor there. A right click additionally shows the shell context menu for
-    /// the entry, blocking synchronously until the user picks a command or dismisses it, and - if
-    /// a command was invoked - dispatches <see cref="Msg.Refresh"/> since the shell may have
-    /// renamed/deleted/pasted something that this pane needs to reflect.
+    /// Every press just moves the cursor there - directory activation happens on release-without-
+    /// drag instead (see <see cref="Zurari.Controls.EntryClickedEventArgs"/>), so a press that
+    /// turns into a drag never enters a directory out from under column 3, which would otherwise
+    /// collapse the very column the drag needs as a drop target. A right click additionally shows
+    /// the shell context menu for the entry, blocking synchronously until the user picks a command
+    /// or dismisses it, and - if a command was invoked - dispatches <see cref="Msg.Refresh"/> since
+    /// the shell may have renamed/deleted/pasted something that this pane needs to reflect.
     /// </summary>
     private void OnEntryPointerPressed(object? sender, EntryPointerPressedEventArgs e)
     {
-        loop.Dispatch(
-            e.Modifiers == ModifierKeys.None && e.Button == MouseButton.Left
-                ? new Msg.EnterDirectory(e.ColumnIndex, e.EntryIndex)
-                : new Msg.CursorTo(e.ColumnIndex, e.EntryIndex));
+        loop.Dispatch(new Msg.CursorTo(e.ColumnIndex, e.EntryIndex));
 
         if (e.Button != MouseButton.Right)
         {

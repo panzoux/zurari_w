@@ -31,12 +31,15 @@ public abstract record Effect
     public sealed record DeleteToRecycleBin(int ColumnIndex, string Path, string TargetFullPath) : Effect;
 
     /// <summary>
-    /// Copy or move <paramref name="Paths"/> into <paramref name="DestPath"/> (the directory shown
-    /// by <paramref name="ColumnIndex"/>) via the shell's <c>IFileOperation</c>, which owns its own
-    /// progress/overwrite UI. Reports the outcome back as <see cref="Msg.ShellOpCompleted"/> or
-    /// <see cref="Msg.ShellOpFailed"/> for <paramref name="ColumnIndex"/>/<paramref name="DestPath"/>
-    /// (so a successful transfer can trigger a re-read of the destination column).
+    /// Copy or move <paramref name="Paths"/> into <paramref name="DestPath"/> via the shell's
+    /// <c>IFileOperation</c>, which owns its own progress/overwrite UI. <paramref name="DestPath"/>
+    /// may be a subdirectory row within the column rather than the column's own path (a
+    /// row-granular drop), so the outcome is reported back against <paramref name="ColumnPath"/> -
+    /// the path shown by <paramref name="ColumnIndex"/> at the time the drop was issued - as
+    /// <see cref="Msg.ShellOpCompleted"/> or <see cref="Msg.ShellOpFailed"/>, matching the
+    /// staleness contract every other column-keyed result follows (ignored unless the column still
+    /// shows that path) and triggering a re-read of the column, not the row that was dropped onto.
     /// </summary>
     public sealed record ShellCopyOrMove(
-        int ColumnIndex, string DestPath, ImmutableArray<string> Paths, bool IsMove) : Effect;
+        int ColumnIndex, string ColumnPath, string DestPath, ImmutableArray<string> Paths, bool IsMove) : Effect;
 }

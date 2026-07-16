@@ -528,44 +528,79 @@ public class TransitionTests
     }
 
     [Fact]
-    public void DropFiles_marks_column_loading_and_emits_ShellCopyOrMove()
+    public void DropFiles_onto_column_background_marks_column_loading_and_emits_ShellCopyOrMove()
     {
         var column = new Column(@"C:\dest", [Dir, File1], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
         ImmutableArray<string> paths = [@"C:\src\a.txt", @"C:\src\b.txt"];
 
-        var (next, effects) = Transition.Apply(state, new Msg.DropFiles(0, paths, IsMove: false));
+        var (next, effects) = Transition.Apply(
+            state, new Msg.DropFiles(0, TargetEntryIndex: -1, paths, ShiftHeld: false, CtrlHeld: false));
 
         Assert.Equal(LoadState.Loading, next.Columns[0].Load);
         Assert.Equal(2, next.Columns[0].Entries.Length);
 
         var effect = Assert.IsType<Effect.ShellCopyOrMove>(Assert.Single(effects));
         Assert.Equal(0, effect.ColumnIndex);
+        Assert.Equal(@"C:\dest", effect.ColumnPath);
         Assert.Equal(@"C:\dest", effect.DestPath);
         Assert.Equal(paths, effect.Paths);
-        Assert.False(effect.IsMove);
+        Assert.True(effect.IsMove); // same volume (C:) by default
     }
 
     [Fact]
-    public void DropFiles_with_move_flag_emits_ShellCopyOrMove_with_IsMove_true()
+    public void DropFiles_onto_a_directory_row_resolves_dest_to_its_child_path()
     {
-        var column = new Column(@"C:\dest", [], Load: LoadState.Loaded);
+        var column = new Column(@"C:\dest", [Dir, File1], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
         ImmutableArray<string> paths = [@"C:\src\a.txt"];
 
-        var (_, effects) = Transition.Apply(state, new Msg.DropFiles(0, paths, IsMove: true));
+        var (next, effects) = Transition.Apply(
+            state, new Msg.DropFiles(0, TargetEntryIndex: 0, paths, ShiftHeld: false, CtrlHeld: false));
+
+        Assert.Equal(LoadState.Loading, next.Columns[0].Load);
 
         var effect = Assert.IsType<Effect.ShellCopyOrMove>(Assert.Single(effects));
-        Assert.True(effect.IsMove);
+        Assert.Equal(@"C:\dest", effect.ColumnPath);
+        Assert.Equal(@"C:\dest\sub", effect.DestPath);
+        Assert.Equal(paths, effect.Paths);
     }
 
     [Fact]
-    public void DropFiles_onto_root_column_is_ignored()
+    public void DropFiles_onto_a_file_row_falls_back_to_the_columns_own_path()
+    {
+        var column = new Column(@"C:\dest", [Dir, File1], Cursor: 0, Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+        ImmutableArray<string> paths = [@"C:\src\a.txt"];
+
+        var (_, effects) = Transition.Apply(
+            state, new Msg.DropFiles(0, TargetEntryIndex: 1, paths, ShiftHeld: false, CtrlHeld: false));
+
+        var effect = Assert.IsType<Effect.ShellCopyOrMove>(Assert.Single(effects));
+        Assert.Equal(@"C:\dest", effect.DestPath);
+    }
+
+    [Fact]
+    public void DropFiles_onto_a_drive_row_on_the_root_column_resolves_dest_to_the_drive()
+    {
+        var state = StateWithColumns(new Column("", [Drive], Cursor: 0, Load: LoadState.Loaded));
+        ImmutableArray<string> paths = [@"D:\src\a.txt"];
+
+        var (_, effects) = Transition.Apply(
+            state, new Msg.DropFiles(0, TargetEntryIndex: 0, paths, ShiftHeld: false, CtrlHeld: false));
+
+        var effect = Assert.IsType<Effect.ShellCopyOrMove>(Assert.Single(effects));
+        Assert.Equal(@"C:\", effect.DestPath);
+    }
+
+    [Fact]
+    public void DropFiles_onto_root_column_background_is_ignored()
     {
         var state = StateWithColumns(new Column("", [Drive], Cursor: 0, Load: LoadState.Loaded));
         ImmutableArray<string> paths = [@"C:\src\a.txt"];
 
-        var (next, effects) = Transition.Apply(state, new Msg.DropFiles(0, paths, IsMove: false));
+        var (next, effects) = Transition.Apply(
+            state, new Msg.DropFiles(0, TargetEntryIndex: -1, paths, ShiftHeld: false, CtrlHeld: false));
 
         Assert.Equal(state, next);
         Assert.Empty(effects);
@@ -576,7 +611,8 @@ public class TransitionTests
     {
         var state = StateWithColumns(new Column(@"C:\dest", [], Load: LoadState.Loaded));
 
-        var (next, effects) = Transition.Apply(state, new Msg.DropFiles(0, [], IsMove: false));
+        var (next, effects) = Transition.Apply(
+            state, new Msg.DropFiles(0, TargetEntryIndex: -1, [], ShiftHeld: false, CtrlHeld: false));
 
         Assert.Equal(state, next);
         Assert.Empty(effects);
@@ -588,10 +624,137 @@ public class TransitionTests
         var state = StateWithColumns(new Column(@"C:\dest", [], Load: LoadState.Loaded));
         ImmutableArray<string> paths = [@"C:\src\a.txt"];
 
-        var (next, effects) = Transition.Apply(state, new Msg.DropFiles(9, paths, IsMove: false));
+        var (next, effects) = Transition.Apply(
+            state, new Msg.DropFiles(9, TargetEntryIndex: -1, paths, ShiftHeld: false, CtrlHeld: false));
 
         Assert.Equal(state, next);
         Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void DropFiles_silently_ignores_a_source_already_located_at_dest()
+    {
+        var column = new Column(@"C:\dest", [], Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+        ImmutableArray<string> paths = [@"C:\dest\already-here.txt"];
+
+        var (next, effects) = Transition.Apply(
+            state, new Msg.DropFiles(0, TargetEntryIndex: -1, paths, ShiftHeld: false, CtrlHeld: false));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void DropFiles_silently_ignores_a_directory_dropped_onto_itself()
+    {
+        var column = new Column(@"C:\dest", [], Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+        ImmutableArray<string> paths = [@"C:\dest"];
+
+        var (next, effects) = Transition.Apply(
+            state, new Msg.DropFiles(0, TargetEntryIndex: -1, paths, ShiftHeld: false, CtrlHeld: false));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void DropFiles_silently_ignores_a_source_whose_subtree_contains_dest()
+    {
+        var column = new Column(@"C:\dest\child", [], Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+        ImmutableArray<string> paths = [@"C:\dest"];
+
+        var (next, effects) = Transition.Apply(
+            state, new Msg.DropFiles(0, TargetEntryIndex: -1, paths, ShiftHeld: false, CtrlHeld: false));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void DropFiles_filters_out_only_the_no_op_sources_keeping_the_rest()
+    {
+        var column = new Column(@"C:\dest", [], Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+        ImmutableArray<string> paths = [@"C:\dest\already-here.txt", @"C:\src\a.txt"];
+
+        var (_, effects) = Transition.Apply(
+            state, new Msg.DropFiles(0, TargetEntryIndex: -1, paths, ShiftHeld: false, CtrlHeld: false));
+
+        var effect = Assert.IsType<Effect.ShellCopyOrMove>(Assert.Single(effects));
+        Assert.Equal([@"C:\src\a.txt"], effect.Paths);
+    }
+
+    [Fact]
+    public void DropFiles_with_shift_held_forces_move_even_across_volumes()
+    {
+        var column = new Column(@"C:\dest", [], Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+        ImmutableArray<string> paths = [@"D:\src\a.txt"];
+
+        var (_, effects) = Transition.Apply(
+            state, new Msg.DropFiles(0, TargetEntryIndex: -1, paths, ShiftHeld: true, CtrlHeld: false));
+
+        var effect = Assert.IsType<Effect.ShellCopyOrMove>(Assert.Single(effects));
+        Assert.True(effect.IsMove);
+    }
+
+    [Fact]
+    public void DropFiles_with_ctrl_held_forces_copy_even_on_the_same_volume()
+    {
+        var column = new Column(@"C:\dest", [], Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+        ImmutableArray<string> paths = [@"C:\src\a.txt"];
+
+        var (_, effects) = Transition.Apply(
+            state, new Msg.DropFiles(0, TargetEntryIndex: -1, paths, ShiftHeld: false, CtrlHeld: true));
+
+        var effect = Assert.IsType<Effect.ShellCopyOrMove>(Assert.Single(effects));
+        Assert.False(effect.IsMove);
+    }
+
+    [Fact]
+    public void DropFiles_shift_wins_when_both_shift_and_ctrl_are_held()
+    {
+        var column = new Column(@"C:\dest", [], Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+        ImmutableArray<string> paths = [@"C:\src\a.txt"];
+
+        var (_, effects) = Transition.Apply(
+            state, new Msg.DropFiles(0, TargetEntryIndex: -1, paths, ShiftHeld: true, CtrlHeld: true));
+
+        var effect = Assert.IsType<Effect.ShellCopyOrMove>(Assert.Single(effects));
+        Assert.True(effect.IsMove);
+    }
+
+    [Fact]
+    public void DropFiles_defaults_to_move_when_source_and_dest_share_a_volume()
+    {
+        var column = new Column(@"C:\dest", [], Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+        ImmutableArray<string> paths = [@"C:\src\a.txt"];
+
+        var (_, effects) = Transition.Apply(
+            state, new Msg.DropFiles(0, TargetEntryIndex: -1, paths, ShiftHeld: false, CtrlHeld: false));
+
+        var effect = Assert.IsType<Effect.ShellCopyOrMove>(Assert.Single(effects));
+        Assert.True(effect.IsMove);
+    }
+
+    [Fact]
+    public void DropFiles_defaults_to_copy_when_source_and_dest_are_on_different_volumes()
+    {
+        var column = new Column(@"C:\dest", [], Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+        ImmutableArray<string> paths = [@"D:\src\a.txt"];
+
+        var (_, effects) = Transition.Apply(
+            state, new Msg.DropFiles(0, TargetEntryIndex: -1, paths, ShiftHeld: false, CtrlHeld: false));
+
+        var effect = Assert.IsType<Effect.ShellCopyOrMove>(Assert.Single(effects));
+        Assert.False(effect.IsMove);
     }
 }
 
@@ -648,7 +811,10 @@ public class TransitionProperties
         Gen.Select(GenColumnIndex, GenPath, GenEntries).Select(t => (Msg)new Msg.DirectoryLoaded(t.Item1, t.Item2, t.Item3)),
         Gen.Select(GenColumnIndex, GenPath).Select(t => (Msg)new Msg.DirectoryLoadFailed(t.Item1, t.Item2, "error")),
         Gen.Select(GenColumnIndex, GenEntryIndex).Select(t => (Msg)new Msg.DeleteEntry(t.Item1, t.Item2)),
-        Gen.Select(GenColumnIndex, GenPaths, GenIsMove).Select(t => (Msg)new Msg.DropFiles(t.Item1, t.Item2, t.Item3)),
+        Gen.Select(
+            Gen.Select(GenColumnIndex, GenEntryIndex),
+            Gen.Select(GenPaths, GenIsMove, GenIsMove))
+            .Select(t => (Msg)new Msg.DropFiles(t.Item1.Item1, t.Item1.Item2, t.Item2.Item1, t.Item2.Item2, t.Item2.Item3)),
         Gen.Select(GenColumnIndex, GenPath).Select(t => (Msg)new Msg.ShellOpCompleted(t.Item1, t.Item2)),
         Gen.Select(GenColumnIndex, GenPath).Select(t => (Msg)new Msg.ShellOpFailed(t.Item1, t.Item2, "error")));
 

@@ -77,13 +77,22 @@ public abstract record Msg
     public sealed record DeleteEntry(int ColumnIndex, int EntryIndex) : Msg;
 
     /// <summary>
-    /// Drop <paramref name="Paths"/> onto <paramref name="ColumnIndex"/> to be copied or moved
-    /// there. Ignored if the column is out of range, its <c>Path</c> is the virtual root (dropping
-    /// onto the drive list makes no sense), or <paramref name="Paths"/> is empty. Marks the column
+    /// Drop <paramref name="Paths"/> onto <paramref name="ColumnIndex"/>, to be copied or moved
+    /// there. When <paramref name="TargetEntryIndex"/> names a Directory or Drive row in that
+    /// column, the destination is that entry's child path; otherwise (background drop, or a row
+    /// that is not a container) the destination is the column's own path. Ignored if the column is
+    /// out of range, the resolved destination is empty (dropping onto the virtual root's
+    /// background), or <paramref name="Paths"/> is empty. Sources that would be no-ops relative to
+    /// the destination (already there, the destination itself, or an ancestor of the destination)
+    /// are silently filtered out; if nothing remains, the drop is a complete no-op (no effect, no
+    /// error). <paramref name="ShiftHeld"/> forces a move, <paramref name="CtrlHeld"/> forces a
+    /// copy (Shift wins if both are held); otherwise the transfer moves when source and destination
+    /// share a volume root and copies otherwise (Explorer's default). Marks the column
     /// <see cref="LoadState.Loading"/> (keeping its entries visible) and emits
     /// <see cref="Effect.ShellCopyOrMove"/>.
     /// </summary>
-    public sealed record DropFiles(int ColumnIndex, ImmutableArray<string> Paths, bool IsMove) : Msg;
+    public sealed record DropFiles(
+        int ColumnIndex, int TargetEntryIndex, ImmutableArray<string> Paths, bool ShiftHeld, bool CtrlHeld) : Msg;
 
     /// <summary>
     /// A shell operation (<see cref="Effect.DeleteToRecycleBin"/> or
