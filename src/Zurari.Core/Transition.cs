@@ -459,7 +459,11 @@ public static class Transition
             return (state, NoEffects);
         }
 
-        return (state, [new Effect.ReadDirectory(columnIndex, path)]);
+        // A move/delete changes the SOURCE directory too, and that directory may be
+        // visible as another column (e.g. dragging a file out of column 3 into column 2).
+        // Re-read every column, not just the one the operation targeted; marks survive
+        // via the name-match carry-over in DirectoryLoaded.
+        return Refresh(state);
     }
 
     private static AppState ShellOpFailed(AppState state, int columnIndex, string path, string error)

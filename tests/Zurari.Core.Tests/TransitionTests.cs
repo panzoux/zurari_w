@@ -683,17 +683,24 @@ public class TransitionTests
     }
 
     [Fact]
-    public void ShellOpCompleted_reemits_ReadDirectory_and_keeps_column_loading()
+    public void ShellOpCompleted_refreshes_every_column_so_move_sources_update_too()
     {
-        var column = new Column(@"C:\", [Dir, File1], Cursor: 0, Load: LoadState.Loading);
-        var state = StateWithColumns(column);
+        // A move out of column 1 dropped onto column 0 completes against column 0,
+        // but column 1 (the source directory) changed on disk as well.
+        var state = StateWithColumns(
+            new Column(@"C:\", [Dir, File1], Cursor: 0, Load: LoadState.Loading),
+            new Column(@"C:\sub", [File2], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(state, new Msg.ShellOpCompleted(0, @"C:\"));
 
-        Assert.Equal(LoadState.Loading, next.Columns[0].Load);
-        var effect = Assert.IsType<Effect.ReadDirectory>(Assert.Single(effects));
-        Assert.Equal(0, effect.ColumnIndex);
-        Assert.Equal(@"C:\", effect.Path);
+        Assert.All(next.Columns, c => Assert.Equal(LoadState.Loading, c.Load));
+        Assert.Equal(2, effects.Count);
+        var first = Assert.IsType<Effect.ReadDirectory>(effects[0]);
+        Assert.Equal(0, first.ColumnIndex);
+        Assert.Equal(@"C:\", first.Path);
+        var second = Assert.IsType<Effect.ReadDirectory>(effects[1]);
+        Assert.Equal(1, second.ColumnIndex);
+        Assert.Equal(@"C:\sub", second.Path);
     }
 
     [Fact]
