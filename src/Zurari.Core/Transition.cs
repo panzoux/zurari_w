@@ -40,6 +40,7 @@ public static class Transition
             Msg.ToggleMarkAtCursor m => (ToggleMarkAtCursor(state, m.ColumnIndex), NoEffects),
             Msg.ClearMarks m => (ClearMarks(state, m.ColumnIndex), NoEffects),
             Msg.DeleteMarked m => DeleteMarked(state, m.ColumnIndex),
+            Msg.MarkRange m => (MarkRange(state, m.ColumnIndex, m.FromIndex, m.ToIndex, m.Additive), NoEffects),
             _ => (state, NoEffects),
         };
     }
@@ -316,6 +317,38 @@ public static class Transition
 
         var newState = WithColumn(state, columnIndex, column with { Load = LoadState.Loading });
         return (newState, [new Effect.DeleteToRecycleBin(columnIndex, column.Path, targets.ToImmutable())]);
+    }
+
+    private static AppState MarkRange(AppState state, int columnIndex, int fromIndex, int toIndex, bool additive)
+    {
+        if (!InRange(state, columnIndex))
+        {
+            return state;
+        }
+
+        var column = state.Columns[columnIndex];
+        if (column.Entries.Length == 0)
+        {
+            return state;
+        }
+
+        var lastIndex = column.Entries.Length - 1;
+        var from = Math.Clamp(Math.Min(fromIndex, toIndex), 0, lastIndex);
+        var to = Math.Clamp(Math.Max(fromIndex, toIndex), 0, lastIndex);
+        var clampedTo = Math.Clamp(toIndex, 0, lastIndex);
+
+        var newEntries = column.Entries.Select((e, i) =>
+        {
+            var inRange = i >= from && i <= to;
+            if (inRange)
+            {
+                return e.IsMarked ? e : e with { IsMarked = true };
+            }
+
+            return additive || !e.IsMarked ? e : e with { IsMarked = false };
+        }).ToImmutableArray();
+
+        return WithColumn(state, columnIndex, column with { Entries = newEntries, Cursor = clampedTo });
     }
 
     private static (AppState, IReadOnlyList<Effect>) DropFiles(

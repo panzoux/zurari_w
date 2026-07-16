@@ -283,6 +283,30 @@ public class InputEventTests
     }
 
     [StaFact]
+    public void Press_and_release_on_empty_space_below_the_rows_raises_neither_entry_clicked_nor_pointer_pressed()
+    {
+        // Few short entries in a tall-enough host so there is empty space below the last row.
+        var columns = VirtualizationTests.MakeColumns(columnCount: 1, entryCount: 3);
+        var browser = new ColumnBrowser { Columns = columns };
+        using var host = new TestWindow(browser, height: 800);
+        TestWindow.DoEvents();
+
+        var list = FindListBox(browser, 0);
+        Assert.NotNull(list);
+
+        EntryClickedEventArgs? clicked = null;
+        EntryPointerPressedEventArgs? pressed = null;
+        browser.EntryClicked += (_, e) => clicked = e;
+        browser.EntryPointerPressed += (_, e) => pressed = e;
+
+        RaisePress(list!, MouseButton.Left);
+        RaiseRelease(list!, MouseButton.Left);
+
+        Assert.Null(clicked);
+        Assert.Null(pressed);
+    }
+
+    [StaFact]
     public void List_box_and_its_items_are_not_keyboard_focusable_so_arrow_keys_reach_the_browser()
     {
         var columns = VirtualizationTests.MakeColumns(columnCount: 1, entryCount: 10);

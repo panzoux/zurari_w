@@ -38,6 +38,8 @@ public sealed partial class MainWindow : Window, IDisposable
         Browser.EntryDragRequested += OnEntryDragRequested;
         Browser.FileDropRequested += (_, e) => loop.Dispatch(
             new Msg.DropFiles(e.ColumnIndex, e.TargetEntryIndex, [.. e.Paths], e.ShiftHeld, e.CtrlHeld));
+        Browser.MarkRangeRequested += (_, e) => loop.Dispatch(
+            new Msg.MarkRange(e.ColumnIndex, e.FromIndex, e.ToIndex, e.Additive));
 
         Closed += (_, _) => Dispose();
         Loaded += (_, _) => Browser.Focus();

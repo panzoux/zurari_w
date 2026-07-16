@@ -137,4 +137,14 @@ public abstract record Msg
     /// <see cref="Effect.DeleteToRecycleBin"/> carrying all marked full paths.
     /// </summary>
     public sealed record DeleteMarked(int ColumnIndex) : Msg;
+
+    /// <summary>
+    /// Marks every entry in <paramref name="ColumnIndex"/> between <paramref name="FromIndex"/> and
+    /// <paramref name="ToIndex"/> (either order; both clamped into the column's entries range), then
+    /// moves the cursor to the clamped <paramref name="ToIndex"/>. When <paramref name="Additive"/>
+    /// is <c>false</c>, every entry outside the range is unmarked (replaces the selection); when
+    /// <c>true</c>, existing marks outside the range are preserved. Used by rubber-band (rectangle)
+    /// multi-select. Out-of-range column or an empty column is a no-op.
+    /// </summary>
+    public sealed record MarkRange(int ColumnIndex, int FromIndex, int ToIndex, bool Additive) : Msg;
 }

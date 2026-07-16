@@ -3,8 +3,15 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Shapes;
 
 namespace Zurari.Controls;
+
+/// <summary>
+/// Raw rubber-band release data for one column, before <see cref="ColumnBrowser"/> adds the
+/// column index (which this view does not know about itself).
+/// </summary>
+internal readonly record struct MarkRangeRequestInfo(int FromIndex, int ToIndex, bool Additive);
 
 /// <summary>
 /// Raw pointer-press data for one entry row, before <see cref="ColumnBrowser"/> adds
@@ -29,10 +36,12 @@ internal readonly record struct FileDropInfo(
 /// </summary>
 [TemplatePart(Name = ListPartName, Type = typeof(ListBox))]
 [TemplatePart(Name = ThumbPartName, Type = typeof(Thumb))]
+[TemplatePart(Name = RubberBandPartName, Type = typeof(Rectangle))]
 public sealed class ColumnView : Control
 {
     internal const string ListPartName = "PART_List";
     internal const string ThumbPartName = "PART_ResizeThumb";
+    internal const string RubberBandPartName = "PART_RubberBand";
 
     /// <summary>Identifies the <see cref="Column"/> dependency property.</summary>
     public static readonly DependencyProperty ColumnProperty = DependencyProperty.Register(
@@ -72,6 +81,8 @@ public sealed class ColumnView : Control
     private bool suppressSelectionChanged;
 
     private readonly DragGestureTracker dragTracker = new();
+    private readonly RubberBandTracker rubberBandTracker = new();
+    private Rectangle? rubberBandVisual;
 
     static ColumnView()
     {
@@ -129,6 +140,13 @@ public sealed class ColumnView : Control
     /// <summary>Raised when files are dropped from Explorer (or another app) onto this column.</summary>
     internal event EventHandler<FileDropInfo>? FileDropRequested;
 
+    /// <summary>
+    /// Raised when a rubber-band (rectangle) drag that started on empty space and covered at
+    /// least one entry row is released. Never raised for a rubber-band that covered no rows
+    /// (that release is silently dropped, not a click).
+    /// </summary>
+    internal event EventHandler<MarkRangeRequestInfo>? MarkRangeRequested;
+
     internal ListBox? List { get; private set; }
 
     /// <summary>Gets the <see cref="IsColumnFocusedProperty"/> attached value.</summary>
@@ -185,6 +203,8 @@ public sealed class ColumnView : Control
             thumb.DragDelta += (_, e) => ResizeDelta?.Invoke(this, e.HorizontalChange);
             thumb.DragCompleted += (_, _) => ResizeCompleted?.Invoke(this, EventArgs.Empty);
         }
+
+        rubberBandVisual = GetTemplateChild(RubberBandPartName) as Rectangle;
 
         SyncFromColumn();
     }
@@ -258,8 +278,21 @@ public sealed class ColumnView : Control
         var entryIndex = FindEntryIndex(e.OriginalSource as DependencyObject);
         if (entryIndex is null)
         {
+            // Empty space (below the rows, or the column background): start a rubber-band
+            // instead of the entry-row drag/click handling below. No EntryPointerPressed,
+            // no EntryClicked - this is not a row interaction.
+            if (e.ChangedButton == MouseButton.Left && List is not null)
+            {
+                rubberBandTracker.Press(e.GetPosition(List), onEmptySpace: true);
+                List.CaptureMouse();
+            }
+
             return;
         }
+
+        // Reset any stale rubber-band gesture (e.g. one whose Release never fired because
+        // capture was lost) so it cannot bleed into this entry-row press.
+        rubberBandTracker.Press(default, onEmptySpace: false);
 
         var screenPosition = PointToScreen(e.GetPosition(this));
         EntryPointerPressed?.Invoke(
@@ -289,6 +322,39 @@ public sealed class ColumnView : Control
         {
             EntryDragRequested?.Invoke(this, entryIndex);
         }
+
+        if (List is null)
+        {
+            return;
+        }
+
+        var rect = rubberBandTracker.Move(e.GetPosition(List));
+        UpdateRubberBandVisual(rect);
+    }
+
+    /// <summary>
+    /// Draws (or hides) the rubber-band feedback rectangle. Live row highlighting during the
+    /// drag is out of scope - the rectangle itself is the only feedback while dragging; the
+    /// covered rows are computed once, at <see cref="OnListPreviewMouseUp"/>.
+    /// </summary>
+    private void UpdateRubberBandVisual(Rect? rect)
+    {
+        if (rubberBandVisual is null)
+        {
+            return;
+        }
+
+        if (rect is not { } r)
+        {
+            rubberBandVisual.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        Canvas.SetLeft(rubberBandVisual, r.X);
+        Canvas.SetTop(rubberBandVisual, r.Y);
+        rubberBandVisual.Width = r.Width;
+        rubberBandVisual.Height = r.Height;
+        rubberBandVisual.Visibility = Visibility.Visible;
     }
 
     /// <summary>
@@ -310,6 +376,62 @@ public sealed class ColumnView : Control
         }
 
         dragTracker.Release();
+
+        var rubberBandRect = rubberBandTracker.Release();
+        if (List is not null && List.IsMouseCaptured)
+        {
+            List.ReleaseMouseCapture();
+        }
+
+        UpdateRubberBandVisual(null);
+
+        if (rubberBandRect is { } rect)
+        {
+            RaiseMarkRangeIfCovered(rect, Keyboard.Modifiers.HasFlag(ModifierKeys.Control));
+        }
+    }
+
+    /// <summary>
+    /// Converts <paramref name="rect"/>'s vertical span into an entry-index range using the
+    /// currently REALIZED containers (<see cref="ItemContainerGenerator"/>) - with
+    /// <c>CanContentScroll</c> item virtualization, rows outside the viewport simply have no
+    /// container. A rectangle extending above/below all realized rows clamps to the
+    /// first/last realized row (auto-scroll during rubber-band is out of scope). Raises
+    /// <see cref="MarkRangeRequested"/> only when at least one row is covered.
+    /// </summary>
+    private void RaiseMarkRangeIfCovered(Rect rect, bool additive)
+    {
+        if (List is null)
+        {
+            return;
+        }
+
+        int? minIndex = null;
+        int? maxIndex = null;
+
+        for (var i = 0; i < List.Items.Count; i++)
+        {
+            if (List.ItemContainerGenerator.ContainerFromIndex(i) is not ListBoxItem item)
+            {
+                continue;
+            }
+
+            var bounds = item.TransformToAncestor(List).TransformBounds(new Rect(item.RenderSize));
+            if (bounds.Bottom < rect.Top || bounds.Top > rect.Bottom)
+            {
+                continue;
+            }
+
+            minIndex = minIndex is { } mn ? Math.Min(mn, i) : i;
+            maxIndex = maxIndex is { } mx ? Math.Max(mx, i) : i;
+        }
+
+        if (minIndex is null || maxIndex is null)
+        {
+            return;
+        }
+
+        MarkRangeRequested?.Invoke(this, new MarkRangeRequestInfo(minIndex.Value, maxIndex.Value, additive));
     }
 
     /// <summary>

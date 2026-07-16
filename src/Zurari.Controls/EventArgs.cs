@@ -118,3 +118,20 @@ public sealed class FileDropRequestedEventArgs(
     /// <summary>True when Ctrl was held at drop time.</summary>
     public bool CtrlHeld { get; } = ctrlHeld;
 }
+
+/// <summary>
+/// Raised when a rubber-band (rectangle) drag on empty space is released over at least one entry
+/// row. The control only reports the resolved row range and whether Ctrl was held at release
+/// (additive) or not (replaces the selection); the host decides how marks are applied.
+/// </summary>
+public sealed class MarkRangeRequestedEventArgs(int columnIndex, int fromIndex, int toIndex, bool additive) : EventArgs
+{
+    public int ColumnIndex { get; } = columnIndex;
+
+    public int FromIndex { get; } = fromIndex;
+
+    public int ToIndex { get; } = toIndex;
+
+    /// <summary>True when Ctrl was held at release (add to the existing selection).</summary>
+    public bool Additive { get; } = additive;
+}

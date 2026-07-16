@@ -87,6 +87,12 @@ public sealed class ColumnBrowser : Control
     /// <summary>Raised when files are dropped from Explorer (or another app) onto a column.</summary>
     public event EventHandler<FileDropRequestedEventArgs>? FileDropRequested;
 
+    /// <summary>
+    /// Raised when a rubber-band (rectangle) drag on empty space in a column is released over at
+    /// least one entry row. The host maps this to a mark-range update.
+    /// </summary>
+    public event EventHandler<MarkRangeRequestedEventArgs>? MarkRangeRequested;
+
     /// <inheritdoc />
     public override void OnApplyTemplate()
     {
@@ -125,6 +131,7 @@ public sealed class ColumnBrowser : Control
             view.EntryClicked += OnColumnEntryClicked;
             view.EntryDragRequested += OnColumnEntryDragRequested;
             view.FileDropRequested += OnColumnFileDropRequested;
+            view.MarkRangeRequested += OnColumnMarkRangeRequested;
             children.Add(view);
         }
 
@@ -269,6 +276,23 @@ public sealed class ColumnBrowser : Control
         FileDropRequested?.Invoke(
             this,
             new FileDropRequestedEventArgs(index, info.Paths, info.TargetEntryIndex, info.ShiftHeld, info.CtrlHeld));
+    }
+
+    private void OnColumnMarkRangeRequested(object? sender, MarkRangeRequestInfo info)
+    {
+        if (sender is not ColumnView view || columnsPanel is null)
+        {
+            return;
+        }
+
+        var index = columnsPanel.Children.IndexOf(view);
+        if (index < 0)
+        {
+            return;
+        }
+
+        MarkRangeRequested?.Invoke(
+            this, new MarkRangeRequestedEventArgs(index, info.FromIndex, info.ToIndex, info.Additive));
     }
 
     /// <inheritdoc />

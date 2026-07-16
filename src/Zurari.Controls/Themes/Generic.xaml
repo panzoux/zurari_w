@@ -59,6 +59,7 @@
                                            TextTrimming="CharacterEllipsis"
                                            Text="{Binding Column.Title, RelativeSource={RelativeSource TemplatedParent}}" />
                             </Border>
+                            <Grid>
                             <ListBox x:Name="PART_List"
                                      BorderThickness="0"
                                      Background="Transparent"
@@ -144,6 +145,19 @@
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
                             </ListBox>
+                            <!-- Rubber-band (rectangle) select feedback. Positioned in code
+                                 (ColumnView) via Canvas.Left/Top and Width/Height; hidden
+                                 (Collapsed) except during an active drag. IsHitTestVisible=False
+                                 so it never steals the mouse events PART_List needs to keep
+                                 tracking the drag. -->
+                            <Canvas IsHitTestVisible="False">
+                                <Rectangle x:Name="PART_RubberBand"
+                                           Visibility="Collapsed"
+                                           Fill="#3399CCFF"
+                                           Stroke="#FF3399CC"
+                                           StrokeThickness="1" />
+                            </Canvas>
+                            </Grid>
                         </DockPanel>
                         <Thumb x:Name="PART_ResizeThumb"
                                Grid.Column="1"

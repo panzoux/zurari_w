@@ -659,6 +659,111 @@ public class TransitionTests
     }
 
     [Fact]
+    public void MarkRange_marks_every_entry_in_the_range_replacing_other_marks()
+    {
+        var column = new Column(
+            @"C:\",
+            [Dir with { IsMarked = true }, File1, File2, File1 with { IsMarked = true }],
+            Cursor: 0,
+            Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        var (next, effects) = Transition.Apply(state, new Msg.MarkRange(0, 1, 2, Additive: false));
+
+        Assert.False(next.Columns[0].Entries[0].IsMarked);
+        Assert.True(next.Columns[0].Entries[1].IsMarked);
+        Assert.True(next.Columns[0].Entries[2].IsMarked);
+        Assert.False(next.Columns[0].Entries[3].IsMarked);
+        Assert.Equal(2, next.Columns[0].Cursor);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void MarkRange_normalizes_a_reversed_from_to()
+    {
+        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        var (next, _) = Transition.Apply(state, new Msg.MarkRange(0, FromIndex: 2, ToIndex: 0, Additive: false));
+
+        Assert.All(next.Columns[0].Entries, e => Assert.True(e.IsMarked));
+        Assert.Equal(0, next.Columns[0].Cursor);
+    }
+
+    [Fact]
+    public void MarkRange_clamps_from_and_to_into_the_entries_range()
+    {
+        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        var (next, _) = Transition.Apply(state, new Msg.MarkRange(0, FromIndex: -5, ToIndex: 50, Additive: false));
+
+        Assert.All(next.Columns[0].Entries, e => Assert.True(e.IsMarked));
+        Assert.Equal(2, next.Columns[0].Cursor);
+    }
+
+    [Fact]
+    public void MarkRange_additive_keeps_existing_marks_outside_the_range()
+    {
+        var column = new Column(
+            @"C:\", [Dir with { IsMarked = true }, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        var (next, _) = Transition.Apply(state, new Msg.MarkRange(0, 1, 2, Additive: true));
+
+        Assert.True(next.Columns[0].Entries[0].IsMarked);
+        Assert.True(next.Columns[0].Entries[1].IsMarked);
+        Assert.True(next.Columns[0].Entries[2].IsMarked);
+    }
+
+    [Fact]
+    public void MarkRange_non_additive_unmarks_entries_outside_the_range()
+    {
+        var column = new Column(
+            @"C:\", [Dir with { IsMarked = true }, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        var (next, _) = Transition.Apply(state, new Msg.MarkRange(0, 1, 2, Additive: false));
+
+        Assert.False(next.Columns[0].Entries[0].IsMarked);
+        Assert.True(next.Columns[0].Entries[1].IsMarked);
+        Assert.True(next.Columns[0].Entries[2].IsMarked);
+    }
+
+    [Fact]
+    public void MarkRange_sets_cursor_to_the_clamped_to_index()
+    {
+        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        var (next, _) = Transition.Apply(state, new Msg.MarkRange(0, 0, 1, Additive: false));
+
+        Assert.Equal(1, next.Columns[0].Cursor);
+    }
+
+    [Fact]
+    public void MarkRange_on_empty_column_is_a_no_op()
+    {
+        var state = StateWithColumns(new Column(@"C:\", [], Cursor: -1, Load: LoadState.Loaded));
+
+        var (next, effects) = Transition.Apply(state, new Msg.MarkRange(0, 0, 0, Additive: false));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void MarkRange_with_out_of_range_column_is_a_no_op()
+    {
+        var state = StateWithColumns(new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded));
+
+        var (next, effects) = Transition.Apply(state, new Msg.MarkRange(9, 0, 0, Additive: false));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
     public void DirectoryLoaded_carries_marks_over_by_exact_name_match()
     {
         var column = new Column(@"C:\", [File1 with { IsMarked = true }, File2], Cursor: 0, Load: LoadState.Loading);
@@ -1044,7 +1149,11 @@ public class TransitionProperties
         Gen.Select(GenColumnIndex, GenEntryIndex).Select(t => (Msg)new Msg.ToggleMark(t.Item1, t.Item2)),
         GenColumnIndex.Select(i => (Msg)new Msg.ToggleMarkAtCursor(i)),
         GenColumnIndex.Select(i => (Msg)new Msg.ClearMarks(i)),
-        GenColumnIndex.Select(i => (Msg)new Msg.DeleteMarked(i)));
+        GenColumnIndex.Select(i => (Msg)new Msg.DeleteMarked(i)),
+        Gen.Select(
+            Gen.Select(GenColumnIndex, GenEntryIndex),
+            Gen.Select(GenEntryIndex, GenIsMove))
+            .Select(t => (Msg)new Msg.MarkRange(t.Item1.Item1, t.Item1.Item2, t.Item2.Item1, t.Item2.Item2)));
 
     [Fact]
     public void Any_msg_sequence_yields_valid_state_and_effects()
