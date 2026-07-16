@@ -93,14 +93,24 @@ public sealed partial class MainWindow : Window, IDisposable
     /// Every press just moves the cursor there - directory activation happens on release-without-
     /// drag instead (see <see cref="Zurari.Controls.EntryClickedEventArgs"/>), so a press that
     /// turns into a drag never enters a directory out from under column 3, which would otherwise
-    /// collapse the very column the drag needs as a drop target. A right click additionally shows
-    /// the shell context menu for the entry, blocking synchronously until the user picks a command
-    /// or dismisses it, and - if a command was invoked - dispatches <see cref="Msg.Refresh"/> since
-    /// the shell may have renamed/deleted/pasted something that this pane needs to reflect.
+    /// collapse the very column the drag needs as a drop target. Ctrl+left instead toggles the
+    /// entry's mark (does not move the cursor via <see cref="Msg.CursorTo"/> - <see cref="Msg.ToggleMark"/>
+    /// moves it itself). A right click additionally shows the shell context menu - for every marked
+    /// entry in the column when the pressed row is marked, otherwise just that entry - blocking
+    /// synchronously until the user picks a command or dismisses it, and - if a command was invoked
+    /// - dispatches <see cref="Msg.Refresh"/> since the shell may have renamed/deleted/pasted
+    /// something that this pane needs to reflect.
     /// </summary>
     private void OnEntryPointerPressed(object? sender, EntryPointerPressedEventArgs e)
     {
-        loop.Dispatch(new Msg.CursorTo(e.ColumnIndex, e.EntryIndex));
+        if (e.Button == MouseButton.Left && e.Modifiers == ModifierKeys.Control)
+        {
+            loop.Dispatch(new Msg.ToggleMark(e.ColumnIndex, e.EntryIndex));
+        }
+        else
+        {
+            loop.Dispatch(new Msg.CursorTo(e.ColumnIndex, e.EntryIndex));
+        }
 
         if (e.Button != MouseButton.Right)
         {
@@ -113,8 +123,14 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
+        var paths = IsEntryMarked(e.ColumnIndex, e.EntryIndex) ? ResolveMarkedFullPaths(e.ColumnIndex) : [fullPath];
+        if (paths.Count == 0)
+        {
+            paths = [fullPath];
+        }
+
         var ownerHwnd = new WindowInteropHelper(this).Handle;
-        if (ShellContextMenu.Show(ownerHwnd, [fullPath], (int)e.ScreenPosition.X, (int)e.ScreenPosition.Y))
+        if (ShellContextMenu.Show(ownerHwnd, paths, (int)e.ScreenPosition.X, (int)e.ScreenPosition.Y))
         {
             loop.Dispatch(new Msg.Refresh());
         }
@@ -124,8 +140,10 @@ public sealed partial class MainWindow : Window, IDisposable
     /// Drag-out gesture reported by <see cref="ColumnBrowser"/>: resolves the entry's full path
     /// (drive entries at the virtual root are skipped - dragging a drive letter out means nothing)
     /// and starts the actual OLE drag via <see cref="DragDrop.DoDragDrop"/>, which the control
-    /// itself never touches. If the drag ends as a move, the source location may no longer contain
-    /// the entry, so a <see cref="Msg.Refresh"/> is dispatched afterward.
+    /// itself never touches. When the dragged entry is marked, every marked entry's full path in
+    /// that column rides along instead of just the one dragged. If the drag ends as a move, the
+    /// source location may no longer contain the entry, so a <see cref="Msg.Refresh"/> is
+    /// dispatched afterward.
     /// </summary>
     private void OnEntryDragRequested(object? sender, EntryDragRequestedEventArgs e)
     {
@@ -146,7 +164,13 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
-        var data = new DataObject(DataFormats.FileDrop, new[] { fullPath });
+        var paths = IsEntryMarked(e.ColumnIndex, e.EntryIndex) ? ResolveMarkedFullPaths(e.ColumnIndex) : [fullPath];
+        if (paths.Count == 0)
+        {
+            paths = [fullPath];
+        }
+
+        var data = new DataObject(DataFormats.FileDrop, paths.ToArray());
         var result = DragDrop.DoDragDrop(Browser, data, DragDropEffects.Copy | DragDropEffects.Move);
         if (result == DragDropEffects.Move)
         {
@@ -179,6 +203,40 @@ public sealed partial class MainWindow : Window, IDisposable
         return column.Path.Length == 0 ? entry.Name : System.IO.Path.Combine(column.Path, entry.Name);
     }
 
+    private bool IsEntryMarked(int columnIndex, int entryIndex)
+    {
+        var state = loop.State;
+        if (columnIndex < 0 || columnIndex >= state.Columns.Length)
+        {
+            return false;
+        }
+
+        var column = state.Columns[columnIndex];
+        return entryIndex >= 0 && entryIndex < column.Entries.Length && column.Entries[entryIndex].IsMarked;
+    }
+
+    /// <summary>Full paths of every marked entry in <paramref name="columnIndex"/>, in entry order.</summary>
+    private List<string> ResolveMarkedFullPaths(int columnIndex)
+    {
+        var state = loop.State;
+        if (columnIndex < 0 || columnIndex >= state.Columns.Length)
+        {
+            return [];
+        }
+
+        var column = state.Columns[columnIndex];
+        var result = new List<string>();
+        foreach (var entry in column.Entries)
+        {
+            if (entry.IsMarked)
+            {
+                result.Add(column.Path.Length == 0 ? entry.Name : System.IO.Path.Combine(column.Path, entry.Name));
+            }
+        }
+
+        return result;
+    }
+
     private void OnWindowKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.F5)
@@ -188,9 +246,58 @@ public sealed partial class MainWindow : Window, IDisposable
         }
         else if (e.Key == Key.Delete)
         {
-            TryDeleteFocusedEntry();
+            TryDelete();
             e.Handled = true;
         }
+        else if (e.Key == Key.Space && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            loop.Dispatch(new Msg.ToggleMarkAtCursor(loop.State.FocusedColumn));
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape)
+        {
+            loop.Dispatch(new Msg.ClearMarks(loop.State.FocusedColumn));
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>
+    /// Deletes the marked entries of the focused column when it has any (Drives are never
+    /// eligible, so a column with only a marked drive falls through to the single-entry path
+    /// below); otherwise falls back to deleting just the cursor entry, as before marks existed.
+    /// </summary>
+    private void TryDelete()
+    {
+        var state = loop.State;
+        var columnIndex = state.FocusedColumn;
+        var column = state.Columns[columnIndex];
+
+        var markedCount = 0;
+        foreach (var entry in column.Entries)
+        {
+            if (entry.IsMarked && entry.Kind != Zurari.Core.EntryKind.Drive)
+            {
+                markedCount++;
+            }
+        }
+
+        if (markedCount > 0)
+        {
+            var markedResult = MessageBox.Show(
+                this,
+                $"選択した {markedCount} 件をゴミ箱に移動しますか?",
+                "削除の確認",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+            if (markedResult == MessageBoxResult.Yes)
+            {
+                loop.Dispatch(new Msg.DeleteMarked(columnIndex));
+            }
+
+            return;
+        }
+
+        TryDeleteFocusedEntry();
     }
 
     private void TryDeleteFocusedEntry()
@@ -228,6 +335,22 @@ public sealed partial class MainWindow : Window, IDisposable
         var focused = state.Columns[state.FocusedColumn];
         var focusedPath = focused.Path.Length == 0 ? "ドライブ" : focused.Path;
         Title = "zurari — " + focusedPath;
-        StatusText.Text = focusedPath + $" ({focused.Entries.Length} 件)";
+
+        var markedCount = 0;
+        foreach (var entry in focused.Entries)
+        {
+            if (entry.IsMarked)
+            {
+                markedCount++;
+            }
+        }
+
+        var statusText = focusedPath + $" ({focused.Entries.Length} 件)";
+        if (markedCount > 0)
+        {
+            statusText += $" | マーク: {markedCount}";
+        }
+
+        StatusText.Text = statusText;
     }
 }

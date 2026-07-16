@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Linq;
 
 namespace Zurari.Core;
 
@@ -35,6 +36,10 @@ public static class Transition
             Msg.DropFiles m => DropFiles(state, m.ColumnIndex, m.TargetEntryIndex, m.Paths, m.ShiftHeld, m.CtrlHeld),
             Msg.ShellOpCompleted m => ShellOpCompleted(state, m.ColumnIndex, m.Path),
             Msg.ShellOpFailed m => (ShellOpFailed(state, m.ColumnIndex, m.Path, m.Error), NoEffects),
+            Msg.ToggleMark m => (ToggleMark(state, m.ColumnIndex, m.EntryIndex), NoEffects),
+            Msg.ToggleMarkAtCursor m => (ToggleMarkAtCursor(state, m.ColumnIndex), NoEffects),
+            Msg.ClearMarks m => (ClearMarks(state, m.ColumnIndex), NoEffects),
+            Msg.DeleteMarked m => DeleteMarked(state, m.ColumnIndex),
             _ => (state, NoEffects),
         };
     }
@@ -156,15 +161,35 @@ public static class Transition
             return state;
         }
 
-        var cursor = entries.Length == 0 ? -1 : Math.Clamp(column.Cursor, 0, entries.Length - 1);
+        var carried = CarryMarks(column.Entries, entries);
+        var cursor = carried.Length == 0 ? -1 : Math.Clamp(column.Cursor, 0, carried.Length - 1);
         var updated = column with
         {
-            Entries = entries,
+            Entries = carried,
             Cursor = cursor,
             Load = LoadState.Loaded,
             ErrorMessage = null,
         };
         return WithColumn(state, columnIndex, updated);
+    }
+
+    /// <summary>
+    /// Carries <see cref="Entry.IsMarked"/> from <paramref name="oldEntries"/> onto
+    /// <paramref name="newEntries"/> by exact (ordinal) <see cref="Entry.Name"/> match, so a shell
+    /// op's post-completion <see cref="Msg.Refresh"/> does not silently drop the user's marks.
+    /// Entries whose name no longer exists simply drop their mark.
+    /// </summary>
+    private static ImmutableArray<Entry> CarryMarks(ImmutableArray<Entry> oldEntries, ImmutableArray<Entry> newEntries)
+    {
+        var markedNames = oldEntries.Where(e => e.IsMarked).Select(e => e.Name).ToHashSet(StringComparer.Ordinal);
+        if (markedNames.Count == 0)
+        {
+            return newEntries;
+        }
+
+        return newEntries
+            .Select(e => markedNames.Contains(e.Name) ? e with { IsMarked = true } : e)
+            .ToImmutableArray();
     }
 
     private static AppState DirectoryLoadFailed(AppState state, int columnIndex, string path, string error)
@@ -208,7 +233,89 @@ public static class Transition
             : System.IO.Path.Combine(column.Path, entry.Name);
 
         var newState = WithColumn(state, columnIndex, column with { Load = LoadState.Loading });
-        return (newState, [new Effect.DeleteToRecycleBin(columnIndex, column.Path, targetFullPath)]);
+        return (newState, [new Effect.DeleteToRecycleBin(columnIndex, column.Path, [targetFullPath])]);
+    }
+
+    private static AppState ToggleMark(AppState state, int columnIndex, int entryIndex)
+    {
+        if (!InRange(state, columnIndex))
+        {
+            return state;
+        }
+
+        var column = state.Columns[columnIndex];
+        if (entryIndex < 0 || entryIndex >= column.Entries.Length)
+        {
+            return state;
+        }
+
+        var entry = column.Entries[entryIndex];
+        var newEntries = column.Entries.SetItem(entryIndex, entry with { IsMarked = !entry.IsMarked });
+        return WithColumn(state, columnIndex, column with { Entries = newEntries, Cursor = entryIndex });
+    }
+
+    private static AppState ToggleMarkAtCursor(AppState state, int columnIndex)
+    {
+        if (!InRange(state, columnIndex))
+        {
+            return state;
+        }
+
+        var column = state.Columns[columnIndex];
+        if (column.Cursor < 0 || column.Cursor >= column.Entries.Length)
+        {
+            return state;
+        }
+
+        var entry = column.Entries[column.Cursor];
+        var newEntries = column.Entries.SetItem(column.Cursor, entry with { IsMarked = !entry.IsMarked });
+        var nextCursor = Math.Clamp(column.Cursor + 1, 0, newEntries.Length - 1);
+        return WithColumn(state, columnIndex, column with { Entries = newEntries, Cursor = nextCursor });
+    }
+
+    private static AppState ClearMarks(AppState state, int columnIndex)
+    {
+        if (!InRange(state, columnIndex))
+        {
+            return state;
+        }
+
+        var column = state.Columns[columnIndex];
+        if (!column.Entries.Any(e => e.IsMarked))
+        {
+            return state;
+        }
+
+        var newEntries = column.Entries.Select(e => e.IsMarked ? e with { IsMarked = false } : e).ToImmutableArray();
+        return WithColumn(state, columnIndex, column with { Entries = newEntries });
+    }
+
+    private static (AppState, IReadOnlyList<Effect>) DeleteMarked(AppState state, int columnIndex)
+    {
+        if (!InRange(state, columnIndex))
+        {
+            return (state, NoEffects);
+        }
+
+        var column = state.Columns[columnIndex];
+        var targets = ImmutableArray.CreateBuilder<string>();
+        foreach (var entry in column.Entries)
+        {
+            if (!entry.IsMarked || entry.Kind == EntryKind.Drive)
+            {
+                continue;
+            }
+
+            targets.Add(column.Path.Length == 0 ? entry.Name : System.IO.Path.Combine(column.Path, entry.Name));
+        }
+
+        if (targets.Count == 0)
+        {
+            return (state, NoEffects);
+        }
+
+        var newState = WithColumn(state, columnIndex, column with { Load = LoadState.Loading });
+        return (newState, [new Effect.DeleteToRecycleBin(columnIndex, column.Path, targets.ToImmutable())]);
     }
 
     private static (AppState, IReadOnlyList<Effect>) DropFiles(

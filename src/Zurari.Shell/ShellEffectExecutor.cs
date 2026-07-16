@@ -119,10 +119,17 @@ public sealed class ShellEffectExecutor : IDisposable
         }
     }
 
+    /// <summary>
+    /// Moves every path in <see cref="Effect.DeleteToRecycleBin.Targets"/> to the recycle bin as a
+    /// single batch: one <c>IShellItem</c> plus <c>DeleteItem</c> call per target, then one
+    /// <c>PerformOperations</c>. If any target fails to parse (or any <c>DeleteItem</c> call
+    /// fails), the whole batch is reported failed with that target's message - none of the queued
+    /// deletes have been performed yet at that point, since <c>PerformOperations</c> has not run.
+    /// </summary>
     private void ExecuteDeleteToRecycleBin(Effect.DeleteToRecycleBin effect)
     {
         object? fileOperation = null;
-        FileOperationInterop.IShellItem? item = null;
+        var items = new List<FileOperationInterop.IShellItem>();
         try
         {
             fileOperation = new FileOperationInterop.FileOperation();
@@ -135,15 +142,19 @@ public sealed class ShellEffectExecutor : IDisposable
                 | FileOperationInterop.FOF_NOERRORUI);
             ThrowIfFailed(hr, "SetOperationFlags");
 
-            hr = FileOperationInterop.SHCreateItemFromParsingName(
-                effect.TargetFullPath,
-                IntPtr.Zero,
-                FileOperationInterop.IidIShellItem,
-                out item);
-            ThrowIfFailed(hr, "SHCreateItemFromParsingName");
+            foreach (var targetFullPath in effect.Targets)
+            {
+                hr = FileOperationInterop.SHCreateItemFromParsingName(
+                    targetFullPath,
+                    IntPtr.Zero,
+                    FileOperationInterop.IidIShellItem,
+                    out var item);
+                ThrowIfFailed(hr, "SHCreateItemFromParsingName");
+                items.Add(item);
 
-            hr = op.DeleteItem(item, IntPtr.Zero);
-            ThrowIfFailed(hr, "DeleteItem");
+                hr = op.DeleteItem(item, IntPtr.Zero);
+                ThrowIfFailed(hr, "DeleteItem");
+            }
 
             hr = op.PerformOperations();
             ThrowIfFailed(hr, "PerformOperations");
@@ -168,7 +179,7 @@ public sealed class ShellEffectExecutor : IDisposable
         }
         finally
         {
-            if (item is not null)
+            foreach (var item in items)
             {
                 Marshal.ReleaseComObject(item);
             }

@@ -41,7 +41,7 @@ public class ShellEffectExecutorTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var executor = new ShellEffectExecutor(queue.Enqueue);
-            executor.Submit(new Effect.DeleteToRecycleBin(0, dir, filePath));
+            executor.Submit(new Effect.DeleteToRecycleBin(0, dir, [filePath]));
 
             var msg = WaitForMsg(queue, TimeSpan.FromSeconds(15));
             var completed = Assert.IsType<Msg.ShellOpCompleted>(msg);
@@ -67,7 +67,7 @@ public class ShellEffectExecutorTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var executor = new ShellEffectExecutor(queue.Enqueue);
-            executor.Submit(new Effect.DeleteToRecycleBin(0, dir, subDir));
+            executor.Submit(new Effect.DeleteToRecycleBin(0, dir, [subDir]));
 
             var msg = WaitForMsg(queue, TimeSpan.FromSeconds(15));
             var completed = Assert.IsType<Msg.ShellOpCompleted>(msg);
@@ -91,13 +91,42 @@ public class ShellEffectExecutorTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var executor = new ShellEffectExecutor(queue.Enqueue);
-            executor.Submit(new Effect.DeleteToRecycleBin(2, dir, missing));
+            executor.Submit(new Effect.DeleteToRecycleBin(2, dir, [missing]));
 
             var msg = WaitForMsg(queue, TimeSpan.FromSeconds(15));
             var failed = Assert.IsType<Msg.ShellOpFailed>(msg);
             Assert.Equal(2, failed.ColumnIndex);
             Assert.Equal(dir, failed.Path);
             Assert.False(string.IsNullOrEmpty(failed.Error));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [StaFact]
+    public void DeleteToRecycleBin_of_two_temp_files_reports_completed_and_removes_both()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var filePath1 = Path.Combine(dir, "victim1.txt");
+            var filePath2 = Path.Combine(dir, "victim2.txt");
+            File.WriteAllText(filePath1, "bye1");
+            File.WriteAllText(filePath2, "bye2");
+
+            var queue = new ConcurrentQueue<Msg>();
+            using var executor = new ShellEffectExecutor(queue.Enqueue);
+            executor.Submit(new Effect.DeleteToRecycleBin(0, dir, [filePath1, filePath2]));
+
+            var msg = WaitForMsg(queue, TimeSpan.FromSeconds(15));
+            var completed = Assert.IsType<Msg.ShellOpCompleted>(msg);
+            Assert.Equal(0, completed.ColumnIndex);
+            Assert.Equal(dir, completed.Path);
+            Assert.False(File.Exists(filePath1));
+            Assert.False(File.Exists(filePath2));
+            Assert.Empty(queue);
         }
         finally
         {
@@ -115,7 +144,7 @@ public class ShellEffectExecutorTests
             var executor = new ShellEffectExecutor(queue.Enqueue);
             for (var i = 0; i < 50; i++)
             {
-                executor.Submit(new Effect.DeleteToRecycleBin(i, dir, Path.Combine(dir, $"missing-{i}.txt")));
+                executor.Submit(new Effect.DeleteToRecycleBin(i, dir, [Path.Combine(dir, $"missing-{i}.txt")]));
             }
 
             var sw = System.Diagnostics.Stopwatch.StartNew();

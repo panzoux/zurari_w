@@ -109,4 +109,32 @@ public abstract record Msg
     /// <see cref="ShellOpCompleted"/>.
     /// </summary>
     public sealed record ShellOpFailed(int ColumnIndex, string Path, string Error) : Msg;
+
+    /// <summary>
+    /// Flip the mark of the entry at <paramref name="EntryIndex"/> in <paramref name="ColumnIndex"/>
+    /// and move that column's cursor to it. Out-of-range column or entry index is a no-op. Drive
+    /// entries can be marked like any other entry (harmless, since <see cref="DeleteMarked"/>
+    /// ignores marked drives).
+    /// </summary>
+    public sealed record ToggleMark(int ColumnIndex, int EntryIndex) : Msg;
+
+    /// <summary>
+    /// Flip the mark of the entry currently under <paramref name="ColumnIndex"/>'s cursor, then
+    /// advance the cursor by one (clamped to the last entry) - the classic filer Space behavior.
+    /// No-op when the column is out of range, empty, or its cursor is -1.
+    /// </summary>
+    public sealed record ToggleMarkAtCursor(int ColumnIndex) : Msg;
+
+    /// <summary>Unmark every entry in <paramref name="ColumnIndex"/>. Out-of-range column is a no-op.</summary>
+    public sealed record ClearMarks(int ColumnIndex) : Msg;
+
+    /// <summary>
+    /// Delete every marked Directory/File entry (marked Drives are ignored) in
+    /// <paramref name="ColumnIndex"/> to the recycle bin as a single batch. No-op if the column has
+    /// no such marked entry (or is out of range) - the App layer is expected to fall back to
+    /// <see cref="DeleteEntry"/> for the cursor entry in that case. Marks the column
+    /// <see cref="LoadState.Loading"/> (keeping its entries visible) and emits one
+    /// <see cref="Effect.DeleteToRecycleBin"/> carrying all marked full paths.
+    /// </summary>
+    public sealed record DeleteMarked(int ColumnIndex) : Msg;
 }

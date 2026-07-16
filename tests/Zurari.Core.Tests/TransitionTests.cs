@@ -416,7 +416,7 @@ public class TransitionTests
         var effect = Assert.IsType<Effect.DeleteToRecycleBin>(Assert.Single(effects));
         Assert.Equal(0, effect.ColumnIndex);
         Assert.Equal(@"C:\", effect.Path);
-        Assert.Equal(@"C:\a.txt", effect.TargetFullPath);
+        Assert.Equal([@"C:\a.txt"], effect.Targets);
     }
 
     [Fact]
@@ -429,7 +429,7 @@ public class TransitionTests
 
         Assert.Equal(LoadState.Loading, next.Columns[0].Load);
         var effect = Assert.IsType<Effect.DeleteToRecycleBin>(Assert.Single(effects));
-        Assert.Equal(@"C:\sub", effect.TargetFullPath);
+        Assert.Equal([@"C:\sub"], effect.Targets);
     }
 
     [Fact]
@@ -463,6 +463,223 @@ public class TransitionTests
 
         Assert.Equal(state, next);
         Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void ToggleMark_flips_mark_and_moves_cursor_to_it()
+    {
+        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        var (next, effects) = Transition.Apply(state, new Msg.ToggleMark(0, 2));
+
+        Assert.True(next.Columns[0].Entries[2].IsMarked);
+        Assert.Equal(2, next.Columns[0].Cursor);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void ToggleMark_flips_back_off_when_applied_twice()
+    {
+        var column = new Column(@"C:\", [Dir, File1], Cursor: 0, Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        var (once, _) = Transition.Apply(state, new Msg.ToggleMark(0, 1));
+        var (twice, _) = Transition.Apply(once, new Msg.ToggleMark(0, 1));
+
+        Assert.False(twice.Columns[0].Entries[1].IsMarked);
+    }
+
+    [Fact]
+    public void ToggleMark_can_mark_a_drive_entry()
+    {
+        var state = StateWithColumns(new Column("", [Drive], Cursor: 0, Load: LoadState.Loaded));
+
+        var (next, _) = Transition.Apply(state, new Msg.ToggleMark(0, 0));
+
+        Assert.True(next.Columns[0].Entries[0].IsMarked);
+    }
+
+    [Fact]
+    public void ToggleMark_with_out_of_range_entry_index_is_a_no_op()
+    {
+        var state = StateWithColumns(new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded));
+
+        var (next, effects) = Transition.Apply(state, new Msg.ToggleMark(0, 7));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void ToggleMark_with_out_of_range_column_is_a_no_op()
+    {
+        var state = StateWithColumns(new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded));
+
+        var (next, effects) = Transition.Apply(state, new Msg.ToggleMark(9, 0));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void ToggleMarkAtCursor_flips_cursor_entry_and_advances_cursor()
+    {
+        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        var (next, effects) = Transition.Apply(state, new Msg.ToggleMarkAtCursor(0));
+
+        Assert.True(next.Columns[0].Entries[0].IsMarked);
+        Assert.Equal(1, next.Columns[0].Cursor);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void ToggleMarkAtCursor_clamps_cursor_advance_at_last_entry()
+    {
+        var column = new Column(@"C:\", [Dir, File1], Cursor: 1, Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        var (next, _) = Transition.Apply(state, new Msg.ToggleMarkAtCursor(0));
+
+        Assert.True(next.Columns[0].Entries[1].IsMarked);
+        Assert.Equal(1, next.Columns[0].Cursor);
+    }
+
+    [Fact]
+    public void ToggleMarkAtCursor_on_empty_column_is_a_no_op()
+    {
+        var state = StateWithColumns(new Column(@"C:\", [], Cursor: -1, Load: LoadState.Loaded));
+
+        var (next, effects) = Transition.Apply(state, new Msg.ToggleMarkAtCursor(0));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void ToggleMarkAtCursor_with_out_of_range_column_is_a_no_op()
+    {
+        var state = StateWithColumns(new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded));
+
+        var (next, effects) = Transition.Apply(state, new Msg.ToggleMarkAtCursor(9));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void ClearMarks_unmarks_every_entry_in_the_column()
+    {
+        var column = new Column(
+            @"C:\", [Dir with { IsMarked = true }, File1 with { IsMarked = true }, File2], Cursor: 0, Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        var (next, effects) = Transition.Apply(state, new Msg.ClearMarks(0));
+
+        Assert.All(next.Columns[0].Entries, e => Assert.False(e.IsMarked));
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void ClearMarks_with_no_marks_is_a_no_op()
+    {
+        var state = StateWithColumns(new Column(@"C:\", [Dir, File1], Cursor: 0, Load: LoadState.Loaded));
+
+        var (next, effects) = Transition.Apply(state, new Msg.ClearMarks(0));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void ClearMarks_with_out_of_range_column_is_a_no_op()
+    {
+        var state = StateWithColumns(new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded));
+
+        var (next, effects) = Transition.Apply(state, new Msg.ClearMarks(9));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void DeleteMarked_emits_one_effect_with_all_marked_full_paths_in_entry_order()
+    {
+        var column = new Column(
+            @"C:\",
+            [Dir with { IsMarked = true }, File1, File2 with { IsMarked = true }],
+            Cursor: 0,
+            Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        var (next, effects) = Transition.Apply(state, new Msg.DeleteMarked(0));
+
+        Assert.Equal(LoadState.Loading, next.Columns[0].Load);
+        Assert.Equal(3, next.Columns[0].Entries.Length);
+
+        var effect = Assert.IsType<Effect.DeleteToRecycleBin>(Assert.Single(effects));
+        Assert.Equal(0, effect.ColumnIndex);
+        Assert.Equal(@"C:\", effect.Path);
+        Assert.Equal([@"C:\sub", @"C:\b.txt"], effect.Targets);
+    }
+
+    [Fact]
+    public void DeleteMarked_ignores_marked_drives()
+    {
+        var state = StateWithColumns(new Column("", [Drive with { IsMarked = true }], Cursor: 0, Load: LoadState.Loaded));
+
+        var (next, effects) = Transition.Apply(state, new Msg.DeleteMarked(0));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void DeleteMarked_with_no_marks_is_a_no_op()
+    {
+        var state = StateWithColumns(new Column(@"C:\", [Dir, File1], Cursor: 0, Load: LoadState.Loaded));
+
+        var (next, effects) = Transition.Apply(state, new Msg.DeleteMarked(0));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void DeleteMarked_with_out_of_range_column_is_a_no_op()
+    {
+        var state = StateWithColumns(new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded));
+
+        var (next, effects) = Transition.Apply(state, new Msg.DeleteMarked(9));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void DirectoryLoaded_carries_marks_over_by_exact_name_match()
+    {
+        var column = new Column(@"C:\", [File1 with { IsMarked = true }, File2], Cursor: 0, Load: LoadState.Loading);
+        var state = StateWithColumns(column);
+
+        var (next, _) = Transition.Apply(state, new Msg.DirectoryLoaded(0, @"C:\", [File1, File2]));
+
+        Assert.True(next.Columns[0].Entries[0].IsMarked);
+        Assert.False(next.Columns[0].Entries[1].IsMarked);
+    }
+
+    [Fact]
+    public void DirectoryLoaded_drops_marks_for_names_that_vanished()
+    {
+        var column = new Column(@"C:\", [File1 with { IsMarked = true }], Cursor: 0, Load: LoadState.Loading);
+        var state = StateWithColumns(column);
+
+        var (next, _) = Transition.Apply(state, new Msg.DirectoryLoaded(0, @"C:\", [File2]));
+
+        Assert.Single(next.Columns[0].Entries);
+        Assert.False(next.Columns[0].Entries[0].IsMarked);
     }
 
     [Fact]
@@ -816,7 +1033,11 @@ public class TransitionProperties
             Gen.Select(GenPaths, GenIsMove, GenIsMove))
             .Select(t => (Msg)new Msg.DropFiles(t.Item1.Item1, t.Item1.Item2, t.Item2.Item1, t.Item2.Item2, t.Item2.Item3)),
         Gen.Select(GenColumnIndex, GenPath).Select(t => (Msg)new Msg.ShellOpCompleted(t.Item1, t.Item2)),
-        Gen.Select(GenColumnIndex, GenPath).Select(t => (Msg)new Msg.ShellOpFailed(t.Item1, t.Item2, "error")));
+        Gen.Select(GenColumnIndex, GenPath).Select(t => (Msg)new Msg.ShellOpFailed(t.Item1, t.Item2, "error")),
+        Gen.Select(GenColumnIndex, GenEntryIndex).Select(t => (Msg)new Msg.ToggleMark(t.Item1, t.Item2)),
+        GenColumnIndex.Select(i => (Msg)new Msg.ToggleMarkAtCursor(i)),
+        GenColumnIndex.Select(i => (Msg)new Msg.ClearMarks(i)),
+        GenColumnIndex.Select(i => (Msg)new Msg.DeleteMarked(i)));
 
     [Fact]
     public void Any_msg_sequence_yields_valid_state_and_effects()

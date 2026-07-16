@@ -23,12 +23,12 @@ public abstract record Effect
     public sealed record ReadDirectory(int ColumnIndex, string Path) : Effect;
 
     /// <summary>
-    /// Move <paramref name="TargetFullPath"/> to the recycle bin. Reports the outcome back as
-    /// <see cref="Msg.ShellOpCompleted"/> or <see cref="Msg.ShellOpFailed"/> for
-    /// <paramref name="ColumnIndex"/>/<paramref name="Path"/> (the containing column, so a
-    /// successful delete can trigger a re-read of that column).
+    /// Move every path in <paramref name="Targets"/> to the recycle bin as a single batch
+    /// operation. Reports the outcome back as <see cref="Msg.ShellOpCompleted"/> or
+    /// <see cref="Msg.ShellOpFailed"/> for <paramref name="ColumnIndex"/>/<paramref name="Path"/>
+    /// (the containing column, so a successful delete can trigger a re-read of that column).
     /// </summary>
-    public sealed record DeleteToRecycleBin(int ColumnIndex, string Path, string TargetFullPath) : Effect;
+    public sealed record DeleteToRecycleBin(int ColumnIndex, string Path, ImmutableArray<string> Targets) : Effect;
 
     /// <summary>
     /// Copy or move <paramref name="Paths"/> into <paramref name="DestPath"/> via the shell's
