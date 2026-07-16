@@ -47,6 +47,7 @@ public class ShellEffectExecutorTests
             var completed = Assert.IsType<Msg.ShellOpCompleted>(msg);
             Assert.Equal(0, completed.ColumnIndex);
             Assert.Equal(dir, completed.Path);
+            Assert.Equal([dir], completed.AffectedDirs);
             Assert.False(File.Exists(filePath));
         }
         finally
@@ -73,6 +74,7 @@ public class ShellEffectExecutorTests
             var completed = Assert.IsType<Msg.ShellOpCompleted>(msg);
             Assert.Equal(0, completed.ColumnIndex);
             Assert.Equal(dir, completed.Path);
+            Assert.Equal([dir], completed.AffectedDirs);
             Assert.False(Directory.Exists(subDir));
         }
         finally
@@ -124,6 +126,7 @@ public class ShellEffectExecutorTests
             var completed = Assert.IsType<Msg.ShellOpCompleted>(msg);
             Assert.Equal(0, completed.ColumnIndex);
             Assert.Equal(dir, completed.Path);
+            Assert.Equal([dir], completed.AffectedDirs);
             Assert.False(File.Exists(filePath1));
             Assert.False(File.Exists(filePath2));
             Assert.Empty(queue);
@@ -177,6 +180,8 @@ public class ShellEffectExecutorTests
             var completed = Assert.IsType<Msg.ShellOpCompleted>(msg);
             Assert.Equal(0, completed.ColumnIndex);
             Assert.Equal(destDir, completed.Path);
+            // A copy leaves the source untouched, so only the destination is affected.
+            Assert.Equal([destDir], completed.AffectedDirs);
             Assert.True(File.Exists(srcFile));
             Assert.True(File.Exists(Path.Combine(destDir, "source.txt")));
         }
@@ -210,6 +215,9 @@ public class ShellEffectExecutorTests
             var completed = Assert.IsType<Msg.ShellOpCompleted>(msg);
             Assert.Equal(0, completed.ColumnIndex);
             Assert.Equal(columnDir, completed.Path);
+            // AffectedDirs is keyed by DestPath (the row that was actually dropped onto), not
+            // ColumnPath - the row-target subdirectory is what changed, not the column background.
+            Assert.Equal([subDir], completed.AffectedDirs);
             Assert.True(File.Exists(srcFile));
             Assert.True(File.Exists(Path.Combine(subDir, "source.txt")));
         }
@@ -237,6 +245,8 @@ public class ShellEffectExecutorTests
             var msg = WaitForMsg(queue, TimeSpan.FromSeconds(15));
             var completed = Assert.IsType<Msg.ShellOpCompleted>(msg);
             Assert.Equal(destDir, completed.Path);
+            // A move also changes the source directory, so its parent is affected too.
+            Assert.Equal([destDir, srcDir], completed.AffectedDirs);
             Assert.False(File.Exists(srcFile));
             Assert.True(File.Exists(Path.Combine(destDir, "source.txt")));
         }

@@ -788,17 +788,22 @@ public class TransitionTests
     }
 
     [Fact]
-    public void ShellOpCompleted_refreshes_every_column_so_move_sources_update_too()
+    public void ShellOpCompleted_refreshes_the_completing_column_and_any_column_showing_an_affected_dir()
     {
-        // A move out of column 1 dropped onto column 0 completes against column 0,
-        // but column 1 (the source directory) changed on disk as well.
+        // A move out of column 1 ("C:\sub", the source's parent) dropped onto column 0 ("C:\",
+        // the destination) completes against column 0. Column 2 shows an unrelated directory and
+        // must be left alone.
         var state = StateWithColumns(
             new Column(@"C:\", [Dir, File1], Cursor: 0, Load: LoadState.Loading),
-            new Column(@"C:\sub", [File2], Cursor: 0, Load: LoadState.Loaded));
+            new Column(@"C:\sub", [File2], Cursor: 0, Load: LoadState.Loaded),
+            new Column(@"D:\unrelated", [], Cursor: 0, Load: LoadState.Loaded));
 
-        var (next, effects) = Transition.Apply(state, new Msg.ShellOpCompleted(0, @"C:\"));
+        var (next, effects) = Transition.Apply(
+            state, new Msg.ShellOpCompleted(0, @"C:\", [@"C:\", @"C:\sub"]));
 
-        Assert.All(next.Columns, c => Assert.Equal(LoadState.Loading, c.Load));
+        Assert.Equal(LoadState.Loading, next.Columns[0].Load);
+        Assert.Equal(LoadState.Loading, next.Columns[1].Load);
+        Assert.Equal(LoadState.Loaded, next.Columns[2].Load);
         Assert.Equal(2, effects.Count);
         var first = Assert.IsType<Effect.ReadDirectory>(effects[0]);
         Assert.Equal(0, first.ColumnIndex);
@@ -809,12 +814,47 @@ public class TransitionTests
     }
 
     [Fact]
+    public void ShellOpCompleted_with_no_affected_dirs_refreshes_only_the_completing_column()
+    {
+        var state = StateWithColumns(
+            new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loading),
+            new Column(@"C:\sub", [File2], Cursor: 0, Load: LoadState.Loaded));
+
+        var (next, effects) = Transition.Apply(state, new Msg.ShellOpCompleted(0, @"C:\", []));
+
+        Assert.Equal(LoadState.Loading, next.Columns[0].Load);
+        Assert.Equal(LoadState.Loaded, next.Columns[1].Load);
+        var effect = Assert.IsType<Effect.ReadDirectory>(Assert.Single(effects));
+        Assert.Equal(0, effect.ColumnIndex);
+        Assert.Equal(@"C:\", effect.Path);
+    }
+
+    [Fact]
+    public void ShellOpCompleted_for_a_delete_refreshes_the_deleted_targets_parent_column()
+    {
+        // Deleting a file from column 1 ("C:\sub") completes against that same column, and its
+        // parent (also "C:\sub", the deleted target's parent) is itself the affected dir.
+        var state = StateWithColumns(
+            new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded),
+            new Column(@"C:\sub", [File2], Cursor: 0, Load: LoadState.Loading));
+
+        var (next, effects) = Transition.Apply(
+            state, new Msg.ShellOpCompleted(1, @"C:\sub", [@"C:\sub"]));
+
+        Assert.Equal(LoadState.Loaded, next.Columns[0].Load);
+        Assert.Equal(LoadState.Loading, next.Columns[1].Load);
+        var effect = Assert.IsType<Effect.ReadDirectory>(Assert.Single(effects));
+        Assert.Equal(1, effect.ColumnIndex);
+        Assert.Equal(@"C:\sub", effect.Path);
+    }
+
+    [Fact]
     public void ShellOpCompleted_with_wrong_path_is_ignored_as_stale()
     {
         var column = new Column(@"C:\", [Dir], Load: LoadState.Loading);
         var state = StateWithColumns(column);
 
-        var (next, effects) = Transition.Apply(state, new Msg.ShellOpCompleted(0, @"C:\stale"));
+        var (next, effects) = Transition.Apply(state, new Msg.ShellOpCompleted(0, @"C:\stale", []));
 
         Assert.Equal(state, next);
         Assert.Empty(effects);
@@ -825,7 +865,7 @@ public class TransitionTests
     {
         var state = StateWithColumns(new Column(@"C:\", [], Load: LoadState.Loading));
 
-        var (next, effects) = Transition.Apply(state, new Msg.ShellOpCompleted(9, @"C:\"));
+        var (next, effects) = Transition.Apply(state, new Msg.ShellOpCompleted(9, @"C:\", []));
 
         Assert.Equal(state, next);
         Assert.Empty(effects);
@@ -1144,7 +1184,8 @@ public class TransitionProperties
             Gen.Select(GenColumnIndex, GenEntryIndex),
             Gen.Select(GenPaths, GenIsMove, GenIsMove))
             .Select(t => (Msg)new Msg.DropFiles(t.Item1.Item1, t.Item1.Item2, t.Item2.Item1, t.Item2.Item2, t.Item2.Item3)),
-        Gen.Select(GenColumnIndex, GenPath).Select(t => (Msg)new Msg.ShellOpCompleted(t.Item1, t.Item2)),
+        Gen.Select(Gen.Select(GenColumnIndex, GenPath), GenPaths)
+            .Select(t => (Msg)new Msg.ShellOpCompleted(t.Item1.Item1, t.Item1.Item2, t.Item2)),
         Gen.Select(GenColumnIndex, GenPath).Select(t => (Msg)new Msg.ShellOpFailed(t.Item1, t.Item2, "error")),
         Gen.Select(GenColumnIndex, GenEntryIndex).Select(t => (Msg)new Msg.ToggleMark(t.Item1, t.Item2)),
         GenColumnIndex.Select(i => (Msg)new Msg.ToggleMarkAtCursor(i)),

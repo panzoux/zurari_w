@@ -34,7 +34,7 @@ public static class Transition
             Msg.DirectoryLoadFailed m => (DirectoryLoadFailed(state, m.ColumnIndex, m.Path, m.Error), NoEffects),
             Msg.DeleteEntry m => DeleteEntry(state, m.ColumnIndex, m.EntryIndex),
             Msg.DropFiles m => DropFiles(state, m.ColumnIndex, m.TargetEntryIndex, m.Paths, m.ShiftHeld, m.CtrlHeld),
-            Msg.ShellOpCompleted m => ShellOpCompleted(state, m.ColumnIndex, m.Path),
+            Msg.ShellOpCompleted m => ShellOpCompleted(state, m.ColumnIndex, m.Path, m.AffectedDirs),
             Msg.ShellOpFailed m => (ShellOpFailed(state, m.ColumnIndex, m.Path, m.Error), NoEffects),
             Msg.ToggleMark m => (ToggleMark(state, m.ColumnIndex, m.EntryIndex), NoEffects),
             Msg.ToggleMarkAtCursor m => (ToggleMarkAtCursor(state, m.ColumnIndex), NoEffects),
@@ -479,7 +479,8 @@ public static class Transition
         }
     }
 
-    private static (AppState, IReadOnlyList<Effect>) ShellOpCompleted(AppState state, int columnIndex, string path)
+    private static (AppState, IReadOnlyList<Effect>) ShellOpCompleted(
+        AppState state, int columnIndex, string path, ImmutableArray<string> affectedDirs)
     {
         if (!InRange(state, columnIndex))
         {
@@ -492,11 +493,51 @@ public static class Transition
             return (state, NoEffects);
         }
 
-        // A move/delete changes the SOURCE directory too, and that directory may be
-        // visible as another column (e.g. dragging a file out of column 3 into column 2).
-        // Re-read every column, not just the one the operation targeted; marks survive
-        // via the name-match carry-over in DirectoryLoaded.
-        return Refresh(state);
+        // A move/delete changes directories beyond the one the operation completed against
+        // (its destination, and - for a move - its sources' parents), and any of those may be
+        // visible as another column (e.g. dragging a file out of column 3 into column 2). Only
+        // re-read columns actually affected, plus the completing column itself (belt and
+        // braces); columns showing an unrelated directory are left alone. Marks survive via the
+        // name-match carry-over in DirectoryLoaded.
+        var columns = state.Columns;
+        var newColumns = columns;
+        var effects = new List<Effect>();
+        for (var i = 0; i < columns.Length; i++)
+        {
+            if (i != columnIndex && !IsAffectedDirectory(columns[i].Path, affectedDirs))
+            {
+                continue;
+            }
+
+            newColumns = newColumns.SetItem(i, columns[i] with { Load = LoadState.Loading });
+            effects.Add(new Effect.ReadDirectory(i, columns[i].Path));
+        }
+
+        return (state with { Columns = newColumns }, effects);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="columnPath"/> matches one of <paramref name="affectedDirs"/>,
+    /// case-insensitively and ignoring a trailing path separator (so e.g. <c>C:\</c> and <c>C:</c>
+    /// style roots still compare equal).
+    /// </summary>
+    private static bool IsAffectedDirectory(string columnPath, ImmutableArray<string> affectedDirs)
+    {
+        if (affectedDirs.IsDefaultOrEmpty)
+        {
+            return false;
+        }
+
+        var normalizedColumn = NormalizePath(columnPath);
+        foreach (var dir in affectedDirs)
+        {
+            if (string.Equals(normalizedColumn, NormalizePath(dir), StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static AppState ShellOpFailed(AppState state, int columnIndex, string path, string error)

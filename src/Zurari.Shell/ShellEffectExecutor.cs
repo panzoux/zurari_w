@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using Zurari.Core;
@@ -168,7 +169,7 @@ public sealed class ShellEffectExecutor : IDisposable
                 return;
             }
 
-            post(new Msg.ShellOpCompleted(effect.ColumnIndex, effect.Path));
+            post(new Msg.ShellOpCompleted(effect.ColumnIndex, effect.Path, DistinctParents(effect.Targets)));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -253,7 +254,7 @@ public sealed class ShellEffectExecutor : IDisposable
                 return;
             }
 
-            post(new Msg.ShellOpCompleted(effect.ColumnIndex, effect.ColumnPath));
+            post(new Msg.ShellOpCompleted(effect.ColumnIndex, effect.ColumnPath, AffectedDirs(effect)));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -276,6 +277,60 @@ public sealed class ShellEffectExecutor : IDisposable
                 Marshal.ReleaseComObject(fileOperation);
             }
         }
+    }
+
+    /// <summary>
+    /// Every directory whose contents changed as a result of <paramref name="effect"/>: its
+    /// destination, plus - only for a move, since a copy leaves its sources untouched - the
+    /// distinct parents of its sources.
+    /// </summary>
+    private static ImmutableArray<string> AffectedDirs(Effect.ShellCopyOrMove effect)
+    {
+        var builder = ImmutableArray.CreateBuilder<string>();
+        builder.Add(effect.DestPath);
+
+        if (effect.IsMove)
+        {
+            foreach (var parent in DistinctParents(effect.Paths))
+            {
+                if (!builder.Contains(parent, StringComparer.OrdinalIgnoreCase))
+                {
+                    builder.Add(parent);
+                }
+            }
+        }
+
+        return builder.ToImmutable();
+    }
+
+    /// <summary>
+    /// The distinct, non-null parent directories of <paramref name="paths"/> (comparison is
+    /// case-insensitive). A path whose parent cannot be determined (invalid characters, etc.) is
+    /// skipped rather than throwing - mirrors the rest of this type's policy of never letting a
+    /// single bad input take the worker down.
+    /// </summary>
+    private static ImmutableArray<string> DistinctParents(ImmutableArray<string> paths)
+    {
+        var builder = ImmutableArray.CreateBuilder<string>();
+        foreach (var path in paths)
+        {
+            string? parent;
+            try
+            {
+                parent = System.IO.Path.GetDirectoryName(path);
+            }
+            catch (ArgumentException)
+            {
+                parent = null;
+            }
+
+            if (parent is not null && !builder.Contains(parent, StringComparer.OrdinalIgnoreCase))
+            {
+                builder.Add(parent);
+            }
+        }
+
+        return builder.ToImmutable();
     }
 
     private static void ThrowIfFailed(int hr, string what)

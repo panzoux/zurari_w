@@ -98,10 +98,16 @@ public abstract record Msg
     /// A shell operation (<see cref="Effect.DeleteToRecycleBin"/> or
     /// <see cref="Effect.ShellCopyOrMove"/>) succeeded. Subject to the same staleness check as
     /// <see cref="DirectoryLoaded"/> (<paramref name="ColumnIndex"/> in range and that column's
-    /// path still equals <paramref name="Path"/>). Re-emits <see cref="Effect.ReadDirectory"/> for
-    /// the column; it stays <see cref="LoadState.Loading"/> until that completes.
+    /// path still equals <paramref name="Path"/>). <paramref name="AffectedDirs"/> lists every
+    /// directory whose contents actually changed (e.g. a move's destination and, for a move only,
+    /// the distinct parents of its sources; a delete's targets' distinct parents) - computed by the
+    /// Shell executor, which has the effect at hand. Re-emits <see cref="Effect.ReadDirectory"/> for
+    /// <paramref name="ColumnIndex"/> and for every other column whose path matches one of
+    /// <paramref name="AffectedDirs"/>; those columns stay <see cref="LoadState.Loading"/> until
+    /// their read completes. Columns showing an unrelated directory are left untouched.
     /// </summary>
-    public sealed record ShellOpCompleted(int ColumnIndex, string Path) : Msg;
+    public sealed record ShellOpCompleted(
+        int ColumnIndex, string Path, ImmutableArray<string> AffectedDirs) : Msg;
 
     /// <summary>
     /// A shell operation (<see cref="Effect.DeleteToRecycleBin"/> or

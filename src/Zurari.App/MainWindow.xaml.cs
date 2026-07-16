@@ -34,7 +34,7 @@ public sealed partial class MainWindow : Window, IDisposable
         Browser.EntryActivated += (_, e) => loop.Dispatch(new Msg.EnterDirectory(e.ColumnIndex, e.EntryIndex));
         Browser.NavigateUpRequested += (_, e) => loop.Dispatch(new Msg.GoToParent(e.ColumnIndex));
         Browser.EntryPointerPressed += OnEntryPointerPressed;
-        Browser.EntryClicked += (_, e) => loop.Dispatch(new Msg.EnterDirectory(e.ColumnIndex, e.EntryIndex));
+        Browser.EntryClicked += OnEntryClicked;
         Browser.EntryDragRequested += OnEntryDragRequested;
         Browser.FileDropRequested += (_, e) => loop.Dispatch(
             new Msg.DropFiles(e.ColumnIndex, e.TargetEntryIndex, [.. e.Paths], e.ShiftHeld, e.CtrlHeld));
@@ -136,6 +136,25 @@ public sealed partial class MainWindow : Window, IDisposable
         {
             loop.Dispatch(new Msg.Refresh());
         }
+    }
+
+    /// <summary>
+    /// A true click (release-without-drag - see <see cref="EntryClickedEventArgs"/>) collapses any
+    /// existing mark set in that column, Explorer/Finder style, before activating the clicked
+    /// entry - but only when Ctrl is not held at release, so Ctrl+click (handled on press as
+    /// <see cref="Msg.ToggleMark"/>) keeps building a multi-selection instead of wiping it out
+    /// immediately after. A press that turns into a drag never reaches here at all (no
+    /// <see cref="EntryClicked"/> is raised for it), which is what lets dragging a marked set keep
+    /// every mark.
+    /// </summary>
+    private void OnEntryClicked(object? sender, EntryClickedEventArgs e)
+    {
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == 0)
+        {
+            loop.Dispatch(new Msg.ClearMarks(e.ColumnIndex));
+        }
+
+        loop.Dispatch(new Msg.EnterDirectory(e.ColumnIndex, e.EntryIndex));
     }
 
     /// <summary>
