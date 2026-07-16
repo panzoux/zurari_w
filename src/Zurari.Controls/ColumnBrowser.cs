@@ -69,6 +69,16 @@ public sealed class ColumnBrowser : Control
     /// <summary>Raised on a mouse-button press over an entry row.</summary>
     public event EventHandler<EntryPointerPressedEventArgs>? EntryPointerPressed;
 
+    /// <summary>
+    /// Raised once per left-button drag gesture that starts on an entry row and crosses the system
+    /// drag threshold. The host is responsible for starting the actual OLE drag
+    /// (<c>DragDrop.DoDragDrop</c>) — this control never touches the clipboard/shell itself.
+    /// </summary>
+    public event EventHandler<EntryDragRequestedEventArgs>? EntryDragRequested;
+
+    /// <summary>Raised when files are dropped from Explorer (or another app) onto a column.</summary>
+    public event EventHandler<FileDropRequestedEventArgs>? FileDropRequested;
+
     /// <inheritdoc />
     public override void OnApplyTemplate()
     {
@@ -104,6 +114,8 @@ public sealed class ColumnBrowser : Control
             view.ResizeCompleted += OnColumnResizeCompleted;
             view.EntryPointerPressed += OnColumnEntryPointerPressed;
             view.EntryActivationRequested += OnColumnEntryActivationRequested;
+            view.EntryDragRequested += OnColumnEntryDragRequested;
+            view.FileDropRequested += OnColumnFileDropRequested;
             children.Add(view);
         }
 
@@ -198,6 +210,38 @@ public sealed class ColumnBrowser : Control
         }
 
         EntryActivated?.Invoke(this, new EntryActivatedEventArgs(index, entryIndex));
+    }
+
+    private void OnColumnEntryDragRequested(object? sender, int entryIndex)
+    {
+        if (sender is not ColumnView view || columnsPanel is null)
+        {
+            return;
+        }
+
+        var index = columnsPanel.Children.IndexOf(view);
+        if (index < 0)
+        {
+            return;
+        }
+
+        EntryDragRequested?.Invoke(this, new EntryDragRequestedEventArgs(index, entryIndex));
+    }
+
+    private void OnColumnFileDropRequested(object? sender, FileDropInfo info)
+    {
+        if (sender is not ColumnView view || columnsPanel is null)
+        {
+            return;
+        }
+
+        var index = columnsPanel.Children.IndexOf(view);
+        if (index < 0)
+        {
+            return;
+        }
+
+        FileDropRequested?.Invoke(this, new FileDropRequestedEventArgs(index, info.Paths, info.IsMove));
     }
 
     /// <inheritdoc />

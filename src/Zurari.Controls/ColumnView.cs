@@ -14,6 +14,12 @@ internal readonly record struct EntryPointerPressInfo(
     int EntryIndex, ModifierKeys Modifiers, MouseButton Button, Point ScreenPosition);
 
 /// <summary>
+/// Raw file-drop data for a drop onto this view, before <see cref="ColumnBrowser"/> adds the
+/// column index (which this view does not know about itself).
+/// </summary>
+internal readonly record struct FileDropInfo(IReadOnlyList<string> Paths, bool IsMove);
+
+/// <summary>
 /// One column of a <see cref="ColumnBrowser"/>: title header, virtualized entry
 /// list and a resize thumb on the right edge. Created and owned by the browser;
 /// as dumb as its owner — it renders a <see cref="ColumnVm"/> and forwards input.
@@ -49,7 +55,20 @@ public sealed class ColumnView : Control
         typeof(ColumnView),
         new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.Inherits));
 
+    /// <summary>
+    /// Identifies the attached <c>IsDropTarget</c> property, set on the <see cref="ColumnView"/>
+    /// itself while an Explorer (or other app) drag is hovering over it with file data, so
+    /// <c>Generic.xaml</c> can render a border highlight. Mirrors <see cref="IsColumnFocusedProperty"/>.
+    /// </summary>
+    public static readonly DependencyProperty IsDropTargetProperty = DependencyProperty.RegisterAttached(
+        "IsDropTarget",
+        typeof(bool),
+        typeof(ColumnView),
+        new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.Inherits));
+
     private bool suppressSelectionChanged;
+
+    private readonly DragGestureTracker dragTracker = new();
 
     static ColumnView()
     {
@@ -59,6 +78,11 @@ public sealed class ColumnView : Control
 
     internal ColumnView()
     {
+        AllowDrop = true;
+        DragEnter += OnDragOver;
+        DragOver += OnDragOver;
+        DragLeave += OnDragLeave;
+        Drop += OnDrop;
     }
 
     /// <summary>Snapshot of the column to display.</summary>
@@ -84,6 +108,17 @@ public sealed class ColumnView : Control
     /// <summary>Raised on a double-click over an entry row, carrying the entry index.</summary>
     internal event EventHandler<int>? EntryActivationRequested;
 
+    /// <summary>
+    /// Raised once per left-button drag gesture that starts on an entry row and crosses the system
+    /// drag threshold (<see cref="SystemParameters.MinimumHorizontalDragDistance"/> /
+    /// <see cref="SystemParameters.MinimumVerticalDragDistance"/>). Carries the entry index; reset
+    /// on button-up so the next press starts a fresh gesture.
+    /// </summary>
+    internal event EventHandler<int>? EntryDragRequested;
+
+    /// <summary>Raised when files are dropped from Explorer (or another app) onto this column.</summary>
+    internal event EventHandler<FileDropInfo>? FileDropRequested;
+
     internal ListBox? List { get; private set; }
 
     /// <summary>Gets the <see cref="IsColumnFocusedProperty"/> attached value.</summary>
@@ -100,6 +135,20 @@ public sealed class ColumnView : Control
         obj.SetValue(IsColumnFocusedProperty, value);
     }
 
+    /// <summary>Gets the <see cref="IsDropTargetProperty"/> attached value.</summary>
+    public static bool GetIsDropTarget(DependencyObject obj)
+    {
+        ArgumentNullException.ThrowIfNull(obj);
+        return (bool)obj.GetValue(IsDropTargetProperty);
+    }
+
+    /// <summary>Sets the <see cref="IsDropTargetProperty"/> attached value.</summary>
+    public static void SetIsDropTarget(DependencyObject obj, bool value)
+    {
+        ArgumentNullException.ThrowIfNull(obj);
+        obj.SetValue(IsDropTargetProperty, value);
+    }
+
     /// <inheritdoc />
     public override void OnApplyTemplate()
     {
@@ -108,6 +157,8 @@ public sealed class ColumnView : Control
         {
             List.SelectionChanged -= OnListSelectionChanged;
             List.PreviewMouseDown -= OnListPreviewMouseDown;
+            List.PreviewMouseMove -= OnListPreviewMouseMove;
+            List.PreviewMouseUp -= OnListPreviewMouseUp;
         }
 
         List = GetTemplateChild(ListPartName) as ListBox;
@@ -115,6 +166,8 @@ public sealed class ColumnView : Control
         {
             List.SelectionChanged += OnListSelectionChanged;
             List.PreviewMouseDown += OnListPreviewMouseDown;
+            List.PreviewMouseMove += OnListPreviewMouseMove;
+            List.PreviewMouseUp += OnListPreviewMouseUp;
         }
 
         if (GetTemplateChild(ThumbPartName) is Thumb thumb)
@@ -206,6 +259,78 @@ public sealed class ColumnView : Control
         {
             EntryActivationRequested?.Invoke(this, entryIndex.Value);
         }
+
+        if (e.ChangedButton == MouseButton.Left)
+        {
+            dragTracker.Press(e.GetPosition(this), entryIndex.Value);
+        }
+    }
+
+    /// <summary>
+    /// Tracks a left-button drag past the system threshold and raises
+    /// <see cref="EntryDragRequested"/> exactly once per gesture (the state machine
+    /// lives in <see cref="DragGestureTracker"/>; the next press-move-release cycle
+    /// starts fresh). The control does not start the OLE drag itself — see
+    /// <see cref="EntryDragRequested"/>.
+    /// </summary>
+    private void OnListPreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (dragTracker.Move(e.GetPosition(this), e.LeftButton == MouseButtonState.Pressed) is { } entryIndex)
+        {
+            EntryDragRequested?.Invoke(this, entryIndex);
+        }
+    }
+
+    private void OnListPreviewMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left)
+        {
+            return;
+        }
+
+        dragTracker.Release();
+    }
+
+    /// <summary>
+    /// Explorer drag hovering over this column with file data: accept it (Copy by default, Move
+    /// with Shift held) and highlight the column via <see cref="IsDropTargetProperty"/>. Anything
+    /// else (no file data) is rejected.
+    /// </summary>
+    private void OnDragOver(object sender, DragEventArgs e)
+    {
+        if (!e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            e.Effects = DragDropEffects.None;
+            e.Handled = true;
+            return;
+        }
+
+        e.Effects = (e.KeyStates & DragDropKeyStates.ShiftKey) != 0
+            ? DragDropEffects.Move
+            : DragDropEffects.Copy;
+        SetIsDropTarget(this, true);
+        e.Handled = true;
+    }
+
+    private void OnDragLeave(object sender, DragEventArgs e) => SetIsDropTarget(this, false);
+
+    /// <summary>
+    /// Extracts the dropped file paths and raises <see cref="FileDropRequested"/>.
+    /// <see cref="FileDropInfo.IsMove"/> is true when Shift was held or the negotiated effect
+    /// (<see cref="DragEventArgs.Effects"/>) is Move-only.
+    /// </summary>
+    private void OnDrop(object sender, DragEventArgs e)
+    {
+        SetIsDropTarget(this, false);
+
+        if (e.Data.GetData(DataFormats.FileDrop) is not string[] paths || paths.Length == 0)
+        {
+            return;
+        }
+
+        var isMove = (e.KeyStates & DragDropKeyStates.ShiftKey) != 0 || e.Effects == DragDropEffects.Move;
+        FileDropRequested?.Invoke(this, new FileDropInfo(paths, isMove));
+        e.Handled = true;
     }
 
     /// <summary>Walks up from a click's <c>OriginalSource</c> to the containing <see cref="ListBoxItem"/>.</summary>

@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace Zurari.Core;
 
 /// <summary>
@@ -22,9 +24,19 @@ public abstract record Effect
 
     /// <summary>
     /// Move <paramref name="TargetFullPath"/> to the recycle bin. Reports the outcome back as
-    /// <see cref="Msg.DeleteCompleted"/> or <see cref="Msg.DeleteFailed"/> for
+    /// <see cref="Msg.ShellOpCompleted"/> or <see cref="Msg.ShellOpFailed"/> for
     /// <paramref name="ColumnIndex"/>/<paramref name="Path"/> (the containing column, so a
     /// successful delete can trigger a re-read of that column).
     /// </summary>
     public sealed record DeleteToRecycleBin(int ColumnIndex, string Path, string TargetFullPath) : Effect;
+
+    /// <summary>
+    /// Copy or move <paramref name="Paths"/> into <paramref name="DestPath"/> (the directory shown
+    /// by <paramref name="ColumnIndex"/>) via the shell's <c>IFileOperation</c>, which owns its own
+    /// progress/overwrite UI. Reports the outcome back as <see cref="Msg.ShellOpCompleted"/> or
+    /// <see cref="Msg.ShellOpFailed"/> for <paramref name="ColumnIndex"/>/<paramref name="DestPath"/>
+    /// (so a successful transfer can trigger a re-read of the destination column).
+    /// </summary>
+    public sealed record ShellCopyOrMove(
+        int ColumnIndex, string DestPath, ImmutableArray<string> Paths, bool IsMove) : Effect;
 }

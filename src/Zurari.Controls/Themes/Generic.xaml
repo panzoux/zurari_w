@@ -32,6 +32,9 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type local:ColumnView}">
+                    <Border x:Name="DropTargetBorder"
+                            BorderThickness="2"
+                            BorderBrush="Transparent">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -155,6 +158,15 @@
                             </Thumb.Template>
                         </Thumb>
                     </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <!-- Highlights the whole column while an Explorer (or other app) drag with
+                             file data is hovering over it. IsDropTarget is an inheritable attached
+                             property set by ColumnView itself on DragOver/DragLeave/Drop. -->
+                        <Trigger Property="local:ColumnView.IsDropTarget" Value="True">
+                            <Setter TargetName="DropTargetBorder" Property="BorderBrush" Value="#FF3A86E0" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>

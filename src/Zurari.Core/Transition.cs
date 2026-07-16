@@ -32,8 +32,9 @@ public static class Transition
             Msg.DirectoryLoaded m => (DirectoryLoaded(state, m.ColumnIndex, m.Path, m.Entries), NoEffects),
             Msg.DirectoryLoadFailed m => (DirectoryLoadFailed(state, m.ColumnIndex, m.Path, m.Error), NoEffects),
             Msg.DeleteEntry m => DeleteEntry(state, m.ColumnIndex, m.EntryIndex),
-            Msg.DeleteCompleted m => DeleteCompleted(state, m.ColumnIndex, m.Path),
-            Msg.DeleteFailed m => (DeleteFailed(state, m.ColumnIndex, m.Path, m.Error), NoEffects),
+            Msg.DropFiles m => DropFiles(state, m.ColumnIndex, m.Paths, m.IsMove),
+            Msg.ShellOpCompleted m => ShellOpCompleted(state, m.ColumnIndex, m.Path),
+            Msg.ShellOpFailed m => (ShellOpFailed(state, m.ColumnIndex, m.Path, m.Error), NoEffects),
             _ => (state, NoEffects),
         };
     }
@@ -210,7 +211,25 @@ public static class Transition
         return (newState, [new Effect.DeleteToRecycleBin(columnIndex, column.Path, targetFullPath)]);
     }
 
-    private static (AppState, IReadOnlyList<Effect>) DeleteCompleted(AppState state, int columnIndex, string path)
+    private static (AppState, IReadOnlyList<Effect>) DropFiles(
+        AppState state, int columnIndex, ImmutableArray<string> paths, bool isMove)
+    {
+        if (!InRange(state, columnIndex))
+        {
+            return (state, NoEffects);
+        }
+
+        var column = state.Columns[columnIndex];
+        if (column.Path.Length == 0 || paths.IsDefaultOrEmpty)
+        {
+            return (state, NoEffects);
+        }
+
+        var newState = WithColumn(state, columnIndex, column with { Load = LoadState.Loading });
+        return (newState, [new Effect.ShellCopyOrMove(columnIndex, column.Path, paths, isMove)]);
+    }
+
+    private static (AppState, IReadOnlyList<Effect>) ShellOpCompleted(AppState state, int columnIndex, string path)
     {
         if (!InRange(state, columnIndex))
         {
@@ -226,7 +245,7 @@ public static class Transition
         return (state, [new Effect.ReadDirectory(columnIndex, path)]);
     }
 
-    private static AppState DeleteFailed(AppState state, int columnIndex, string path, string error)
+    private static AppState ShellOpFailed(AppState state, int columnIndex, string path, string error)
     {
         if (!InRange(state, columnIndex))
         {

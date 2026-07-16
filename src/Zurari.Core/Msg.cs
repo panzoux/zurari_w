@@ -77,16 +77,27 @@ public abstract record Msg
     public sealed record DeleteEntry(int ColumnIndex, int EntryIndex) : Msg;
 
     /// <summary>
-    /// A <c>DeleteToRecycleBin</c> effect succeeded. Subject to the same staleness check as
+    /// Drop <paramref name="Paths"/> onto <paramref name="ColumnIndex"/> to be copied or moved
+    /// there. Ignored if the column is out of range, its <c>Path</c> is the virtual root (dropping
+    /// onto the drive list makes no sense), or <paramref name="Paths"/> is empty. Marks the column
+    /// <see cref="LoadState.Loading"/> (keeping its entries visible) and emits
+    /// <see cref="Effect.ShellCopyOrMove"/>.
+    /// </summary>
+    public sealed record DropFiles(int ColumnIndex, ImmutableArray<string> Paths, bool IsMove) : Msg;
+
+    /// <summary>
+    /// A shell operation (<see cref="Effect.DeleteToRecycleBin"/> or
+    /// <see cref="Effect.ShellCopyOrMove"/>) succeeded. Subject to the same staleness check as
     /// <see cref="DirectoryLoaded"/> (<paramref name="ColumnIndex"/> in range and that column's
     /// path still equals <paramref name="Path"/>). Re-emits <see cref="Effect.ReadDirectory"/> for
     /// the column; it stays <see cref="LoadState.Loading"/> until that completes.
     /// </summary>
-    public sealed record DeleteCompleted(int ColumnIndex, string Path) : Msg;
+    public sealed record ShellOpCompleted(int ColumnIndex, string Path) : Msg;
 
     /// <summary>
-    /// A <c>DeleteToRecycleBin</c> effect failed. Subject to the same staleness check as
-    /// <see cref="DeleteCompleted"/>.
+    /// A shell operation (<see cref="Effect.DeleteToRecycleBin"/> or
+    /// <see cref="Effect.ShellCopyOrMove"/>) failed. Subject to the same staleness check as
+    /// <see cref="ShellOpCompleted"/>.
     /// </summary>
-    public sealed record DeleteFailed(int ColumnIndex, string Path, string Error) : Msg;
+    public sealed record ShellOpFailed(int ColumnIndex, string Path, string Error) : Msg;
 }

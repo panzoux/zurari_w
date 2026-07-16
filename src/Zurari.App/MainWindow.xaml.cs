@@ -34,6 +34,9 @@ public sealed partial class MainWindow : Window, IDisposable
         Browser.EntryActivated += (_, e) => loop.Dispatch(new Msg.EnterDirectory(e.ColumnIndex, e.EntryIndex));
         Browser.NavigateUpRequested += (_, e) => loop.Dispatch(new Msg.GoToParent(e.ColumnIndex));
         Browser.EntryPointerPressed += OnEntryPointerPressed;
+        Browser.EntryDragRequested += OnEntryDragRequested;
+        Browser.FileDropRequested += (_, e) =>
+            loop.Dispatch(new Msg.DropFiles(e.ColumnIndex, [.. e.Paths], e.IsMove));
 
         Closed += (_, _) => Dispose();
         Loaded += (_, _) => Browser.Focus();
@@ -62,6 +65,7 @@ public sealed partial class MainWindow : Window, IDisposable
                 runtime.Submit(effect);
                 break;
             case Effect.DeleteToRecycleBin _:
+            case Effect.ShellCopyOrMove _:
                 shellExecutor.Submit(effect);
                 break;
         }
@@ -111,6 +115,40 @@ public sealed partial class MainWindow : Window, IDisposable
 
         var ownerHwnd = new WindowInteropHelper(this).Handle;
         if (ShellContextMenu.Show(ownerHwnd, [fullPath], (int)e.ScreenPosition.X, (int)e.ScreenPosition.Y))
+        {
+            loop.Dispatch(new Msg.Refresh());
+        }
+    }
+
+    /// <summary>
+    /// Drag-out gesture reported by <see cref="ColumnBrowser"/>: resolves the entry's full path
+    /// (drive entries at the virtual root are skipped - dragging a drive letter out means nothing)
+    /// and starts the actual OLE drag via <see cref="DragDrop.DoDragDrop"/>, which the control
+    /// itself never touches. If the drag ends as a move, the source location may no longer contain
+    /// the entry, so a <see cref="Msg.Refresh"/> is dispatched afterward.
+    /// </summary>
+    private void OnEntryDragRequested(object? sender, EntryDragRequestedEventArgs e)
+    {
+        var state = loop.State;
+        if (e.ColumnIndex < 0 || e.ColumnIndex >= state.Columns.Length)
+        {
+            return;
+        }
+
+        if (state.Columns[e.ColumnIndex].Path.Length == 0)
+        {
+            return;
+        }
+
+        var fullPath = ResolveFullPath(e.ColumnIndex, e.EntryIndex);
+        if (fullPath is null)
+        {
+            return;
+        }
+
+        var data = new DataObject(DataFormats.FileDrop, new[] { fullPath });
+        var result = DragDrop.DoDragDrop(Browser, data, DragDropEffects.Copy | DragDropEffects.Move);
+        if (result == DragDropEffects.Move)
         {
             loop.Dispatch(new Msg.Refresh());
         }

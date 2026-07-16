@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Collections.Immutable;
 using System.IO;
 using Zurari.Core;
 
@@ -43,7 +44,7 @@ public class ShellEffectExecutorTests
             executor.Submit(new Effect.DeleteToRecycleBin(0, dir, filePath));
 
             var msg = WaitForMsg(queue, TimeSpan.FromSeconds(15));
-            var completed = Assert.IsType<Msg.DeleteCompleted>(msg);
+            var completed = Assert.IsType<Msg.ShellOpCompleted>(msg);
             Assert.Equal(0, completed.ColumnIndex);
             Assert.Equal(dir, completed.Path);
             Assert.False(File.Exists(filePath));
@@ -69,7 +70,7 @@ public class ShellEffectExecutorTests
             executor.Submit(new Effect.DeleteToRecycleBin(0, dir, subDir));
 
             var msg = WaitForMsg(queue, TimeSpan.FromSeconds(15));
-            var completed = Assert.IsType<Msg.DeleteCompleted>(msg);
+            var completed = Assert.IsType<Msg.ShellOpCompleted>(msg);
             Assert.Equal(0, completed.ColumnIndex);
             Assert.Equal(dir, completed.Path);
             Assert.False(Directory.Exists(subDir));
@@ -93,7 +94,7 @@ public class ShellEffectExecutorTests
             executor.Submit(new Effect.DeleteToRecycleBin(2, dir, missing));
 
             var msg = WaitForMsg(queue, TimeSpan.FromSeconds(15));
-            var failed = Assert.IsType<Msg.DeleteFailed>(msg);
+            var failed = Assert.IsType<Msg.ShellOpFailed>(msg);
             Assert.Equal(2, failed.ColumnIndex);
             Assert.Equal(dir, failed.Path);
             Assert.False(string.IsNullOrEmpty(failed.Error));
@@ -126,6 +127,85 @@ public class ShellEffectExecutorTests
         finally
         {
             Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [StaFact]
+    public void ShellCopyOrMove_copy_of_temp_file_reports_completed_and_leaves_source_intact()
+    {
+        var srcDir = CreateTempDir();
+        var destDir = CreateTempDir();
+        try
+        {
+            var srcFile = Path.Combine(srcDir, "source.txt");
+            File.WriteAllText(srcFile, "hello");
+
+            var queue = new ConcurrentQueue<Msg>();
+            using var executor = new ShellEffectExecutor(queue.Enqueue, suppressUi: true);
+            executor.Submit(new Effect.ShellCopyOrMove(0, destDir, [srcFile], IsMove: false));
+
+            var msg = WaitForMsg(queue, TimeSpan.FromSeconds(15));
+            var completed = Assert.IsType<Msg.ShellOpCompleted>(msg);
+            Assert.Equal(0, completed.ColumnIndex);
+            Assert.Equal(destDir, completed.Path);
+            Assert.True(File.Exists(srcFile));
+            Assert.True(File.Exists(Path.Combine(destDir, "source.txt")));
+        }
+        finally
+        {
+            Directory.Delete(srcDir, recursive: true);
+            Directory.Delete(destDir, recursive: true);
+        }
+    }
+
+    [StaFact]
+    public void ShellCopyOrMove_move_of_temp_file_reports_completed_and_removes_source()
+    {
+        var srcDir = CreateTempDir();
+        var destDir = CreateTempDir();
+        try
+        {
+            var srcFile = Path.Combine(srcDir, "source.txt");
+            File.WriteAllText(srcFile, "hello");
+
+            var queue = new ConcurrentQueue<Msg>();
+            using var executor = new ShellEffectExecutor(queue.Enqueue, suppressUi: true);
+            executor.Submit(new Effect.ShellCopyOrMove(0, destDir, [srcFile], IsMove: true));
+
+            var msg = WaitForMsg(queue, TimeSpan.FromSeconds(15));
+            var completed = Assert.IsType<Msg.ShellOpCompleted>(msg);
+            Assert.Equal(destDir, completed.Path);
+            Assert.False(File.Exists(srcFile));
+            Assert.True(File.Exists(Path.Combine(destDir, "source.txt")));
+        }
+        finally
+        {
+            Directory.Delete(srcDir, recursive: true);
+            Directory.Delete(destDir, recursive: true);
+        }
+    }
+
+    [StaFact]
+    public void ShellCopyOrMove_of_nonexistent_source_reports_failure()
+    {
+        var destDir = CreateTempDir();
+        try
+        {
+            var missing = Path.Combine(destDir, "does-not-exist-" + Guid.NewGuid() + ".txt");
+
+            var queue = new ConcurrentQueue<Msg>();
+            using var executor = new ShellEffectExecutor(queue.Enqueue, suppressUi: true);
+            executor.Submit(new Effect.ShellCopyOrMove(3, destDir, [missing], IsMove: false));
+
+            var msg = WaitForMsg(queue, TimeSpan.FromSeconds(15));
+            var failed = Assert.IsType<Msg.ShellOpFailed>(msg);
+            Assert.Equal(3, failed.ColumnIndex);
+            Assert.Equal(destDir, failed.Path);
+            Assert.False(string.IsNullOrEmpty(failed.Error));
+        }
+        finally
+        {
+            Directory.Delete(destDir, recursive: true);
         }
     }
 }

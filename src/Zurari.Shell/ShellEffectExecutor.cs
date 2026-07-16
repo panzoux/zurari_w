@@ -24,6 +24,7 @@ public sealed class ShellEffectExecutor : IDisposable
     private readonly Action<Msg> post;
     private readonly CancellationTokenSource cts;
     private readonly Thread worker;
+    private readonly bool suppressUi;
 
     /// <summary>
     /// Starts one STA background worker that pulls queued effects and executes them.
@@ -32,10 +33,23 @@ public sealed class ShellEffectExecutor : IDisposable
     /// real app).
     /// </summary>
     public ShellEffectExecutor(Action<Msg> post)
+        : this(post, suppressUi: false)
+    {
+    }
+
+    /// <summary>
+    /// As <see cref="ShellEffectExecutor(Action{Msg})"/>, but with <paramref name="suppressUi"/>
+    /// additionally suppressing <c>IFileOperation</c>'s progress/overwrite/error UI for
+    /// <see cref="Effect.ShellCopyOrMove"/>. Only meant for tests: a real transfer's whole point is
+    /// the shell's own progress dialog (see the Phase 4 design notes), so the public constructor
+    /// never suppresses it.
+    /// </summary>
+    internal ShellEffectExecutor(Action<Msg> post, bool suppressUi)
     {
         ArgumentNullException.ThrowIfNull(post);
 
         this.post = post;
+        this.suppressUi = suppressUi;
         channel = Channel.CreateUnbounded<Effect>();
         cts = new CancellationTokenSource();
 
@@ -95,6 +109,9 @@ public sealed class ShellEffectExecutor : IDisposable
             case Effect.DeleteToRecycleBin deleteToRecycleBin:
                 ExecuteDeleteToRecycleBin(deleteToRecycleBin);
                 break;
+            case Effect.ShellCopyOrMove shellCopyOrMove:
+                ExecuteShellCopyOrMove(shellCopyOrMove);
+                break;
             default:
                 // Filesystem effects (ReadDirectory, ...) are routed to WorkerRuntime by the App
                 // composition root and never reach this executor; ignore anything unrecognized.
@@ -136,24 +153,108 @@ public sealed class ShellEffectExecutor : IDisposable
 
             if (aborted)
             {
-                post(new Msg.DeleteFailed(effect.ColumnIndex, effect.Path, "Delete operation was aborted."));
+                post(new Msg.ShellOpFailed(effect.ColumnIndex, effect.Path, "Delete operation was aborted."));
                 return;
             }
 
-            post(new Msg.DeleteCompleted(effect.ColumnIndex, effect.Path));
+            post(new Msg.ShellOpCompleted(effect.ColumnIndex, effect.Path));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // Mirrors Zurari.Runtime.WorkerRuntime.ExecuteReadDirectory: a single effect's
             // interop failure (invalid path, COM error, cast failure...) must never take the
             // worker thread down, so it is reported as a Msg instead of propagating.
-            post(new Msg.DeleteFailed(effect.ColumnIndex, effect.Path, ex.Message));
+            post(new Msg.ShellOpFailed(effect.ColumnIndex, effect.Path, ex.Message));
         }
         finally
         {
             if (item is not null)
             {
                 Marshal.ReleaseComObject(item);
+            }
+
+            if (fileOperation is not null)
+            {
+                Marshal.ReleaseComObject(fileOperation);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Copies or moves <see cref="Effect.ShellCopyOrMove.Paths"/> into
+    /// <see cref="Effect.ShellCopyOrMove.DestPath"/> via <c>IFileOperation</c>. Unlike the recycle-bin
+    /// delete above, this deliberately omits <c>FOF_SILENT</c>/<c>FOF_NOERRORUI</c>/
+    /// <c>FOF_NOCONFIRMATION</c> in normal operation — the whole point of delegating to
+    /// <c>IFileOperation</c> instead of writing a copy loop (see the Phase 4 design notes) is to
+    /// get the shell's own progress dialog and overwrite prompts for large transfers. Tests pass
+    /// <see cref="suppressUi"/> to opt out of any UI so they run headless.
+    /// </summary>
+    private void ExecuteShellCopyOrMove(Effect.ShellCopyOrMove effect)
+    {
+        object? fileOperation = null;
+        FileOperationInterop.IShellItem? destItem = null;
+        var sourceItems = new List<FileOperationInterop.IShellItem>();
+        try
+        {
+            fileOperation = new FileOperationInterop.FileOperation();
+            var op = (FileOperationInterop.IFileOperation)fileOperation;
+
+            var flags = FileOperationInterop.FOF_ALLOWUNDO | FileOperationInterop.FOF_NOCONFIRMMKDIR;
+            if (suppressUi)
+            {
+                flags |= FileOperationInterop.FOF_NOCONFIRMATION
+                    | FileOperationInterop.FOF_SILENT
+                    | FileOperationInterop.FOF_NOERRORUI;
+            }
+
+            var hr = op.SetOperationFlags(flags);
+            ThrowIfFailed(hr, "SetOperationFlags");
+
+            hr = FileOperationInterop.SHCreateItemFromParsingName(
+                effect.DestPath, IntPtr.Zero, FileOperationInterop.IidIShellItem, out destItem);
+            ThrowIfFailed(hr, "SHCreateItemFromParsingName(dest)");
+
+            foreach (var sourcePath in effect.Paths)
+            {
+                hr = FileOperationInterop.SHCreateItemFromParsingName(
+                    sourcePath, IntPtr.Zero, FileOperationInterop.IidIShellItem, out var sourceItem);
+                ThrowIfFailed(hr, "SHCreateItemFromParsingName(source)");
+                sourceItems.Add(sourceItem);
+
+                hr = effect.IsMove
+                    ? op.MoveItem(sourceItem, destItem, null, IntPtr.Zero)
+                    : op.CopyItem(sourceItem, destItem, null, IntPtr.Zero);
+                ThrowIfFailed(hr, effect.IsMove ? "MoveItem" : "CopyItem");
+            }
+
+            hr = op.PerformOperations();
+            ThrowIfFailed(hr, "PerformOperations");
+
+            hr = op.GetAnyOperationsAborted(out var aborted);
+            ThrowIfFailed(hr, "GetAnyOperationsAborted");
+
+            if (aborted)
+            {
+                post(new Msg.ShellOpFailed(effect.ColumnIndex, effect.DestPath, "Operation was aborted."));
+                return;
+            }
+
+            post(new Msg.ShellOpCompleted(effect.ColumnIndex, effect.DestPath));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            post(new Msg.ShellOpFailed(effect.ColumnIndex, effect.DestPath, ex.Message));
+        }
+        finally
+        {
+            foreach (var sourceItem in sourceItems)
+            {
+                Marshal.ReleaseComObject(sourceItem);
+            }
+
+            if (destItem is not null)
+            {
+                Marshal.ReleaseComObject(destItem);
             }
 
             if (fileOperation is not null)

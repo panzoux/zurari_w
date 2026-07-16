@@ -72,3 +72,29 @@ public sealed class ColumnWidthsChangedEventArgs(IReadOnlyList<double> widths) :
 {
     public IReadOnlyList<double> Widths { get; } = widths;
 }
+
+/// <summary>
+/// Raised once per left-button drag gesture that starts on an entry row and crosses the system
+/// drag threshold. The control only reports that a drag-out gesture happened; it never starts the
+/// OLE drag itself (the host owns <c>DragDrop.DoDragDrop</c> since it alone knows the full path).
+/// </summary>
+public sealed class EntryDragRequestedEventArgs(int columnIndex, int entryIndex) : EventArgs
+{
+    public int ColumnIndex { get; } = columnIndex;
+
+    public int EntryIndex { get; } = entryIndex;
+}
+
+/// <summary>
+/// Raised when files are dropped from Explorer (or another app) onto a column. The control only
+/// reports the drop; the host decides how to copy/move.
+/// </summary>
+public sealed class FileDropRequestedEventArgs(int columnIndex, IReadOnlyList<string> paths, bool isMove) : EventArgs
+{
+    public int ColumnIndex { get; } = columnIndex;
+
+    public IReadOnlyList<string> Paths { get; } = paths;
+
+    /// <summary>True when the drop should move rather than copy (Shift held, or a Move-only effect).</summary>
+    public bool IsMove { get; } = isMove;
+}

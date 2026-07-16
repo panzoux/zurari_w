@@ -18,6 +18,7 @@ internal static class FileOperationInterop
     public const uint FOF_ALLOWUNDO = 0x0040;
     public const uint FOF_NOCONFIRMATION = 0x0010;
     public const uint FOF_SILENT = 0x0004;
+    public const uint FOF_NOCONFIRMMKDIR = 0x0200;
     public const uint FOF_NOERRORUI = 0x0400;
 
     [ComImport]
