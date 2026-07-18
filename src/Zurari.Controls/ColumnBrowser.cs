@@ -27,6 +27,18 @@ public sealed class ColumnBrowser : Control
     private const double DefaultColumnWidth = 240;
     private const double MinColumnWidth = 120;
 
+    /// <summary>
+    /// Opt-in switch for the <c>[input]</c>-prefixed <see cref="System.Diagnostics.Trace"/> lines
+    /// <see cref="ColumnView"/> emits from its mouse-input handlers, added to diagnose a bug where
+    /// a touchpad's physical left button sometimes moves the cursor but never enters the directory.
+    /// Default <c>false</c> so tracing costs nothing in normal use; set to <c>true</c> only when
+    /// the host was started with <c>--debug-input</c> (see <c>Zurari.App</c>'s startup code), which
+    /// also attaches a <see cref="System.Diagnostics.TraceListener"/> that forwards these lines to
+    /// a log file via <c>Zurari.Runtime.DebugLog</c> (Controls itself must never touch the
+    /// filesystem - see <c>BannedSymbols.txt</c>).
+    /// </summary>
+    public static bool InputTraceEnabled { get; set; }
+
     /// <summary>Identifies the <see cref="Columns"/> dependency property.</summary>
     public static readonly DependencyProperty ColumnsProperty = DependencyProperty.Register(
         nameof(Columns),

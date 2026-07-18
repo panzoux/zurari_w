@@ -156,6 +156,20 @@ public sealed class ColumnView : Control
     /// </summary>
     private double rubberBandMaxDisplacement;
 
+    /// <summary>
+    /// List-relative press point recorded by <see cref="OnListPreviewMouseDown"/> (either branch),
+    /// used only by the <see cref="ColumnBrowser.InputTraceEnabled"/> diagnostic tracing to compute
+    /// the delta logged by the first <see cref="OnListPreviewMouseMove"/> of each gesture.
+    /// </summary>
+    private Point inputTracePressPositionInList;
+
+    /// <summary>
+    /// True once the first <see cref="OnListPreviewMouseMove"/> of the current gesture has logged
+    /// its position delta (see <see cref="inputTracePressPositionInList"/>); reset by
+    /// <see cref="OnListPreviewMouseDown"/>. Diagnostic tracing only.
+    /// </summary>
+    private bool inputTraceFirstMoveLogged;
+
     static ColumnView()
     {
         DefaultStyleKeyProperty.OverrideMetadata(
@@ -376,6 +390,13 @@ public sealed class ColumnView : Control
             return;
         }
 
+        if (ColumnBrowser.InputTraceEnabled)
+        {
+            Trace.WriteLine(
+                $"[input] col={Column?.Title} selectionReverted from={List.SelectedIndex} "
+                + $"to={Column?.CursorIndex ?? -1}");
+        }
+
         suppressSelectionChanged = true;
         try
         {
@@ -400,8 +421,18 @@ public sealed class ColumnView : Control
     private void OnListPreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
         var entryIndex = FindEntryIndex(e.OriginalSource as DependencyObject);
+        inputTraceFirstMoveLogged = false;
+        inputTracePressPositionInList = List is not null ? e.GetPosition(List) : default;
+
         if (entryIndex is null)
         {
+            if (ColumnBrowser.InputTraceEnabled)
+            {
+                Trace.WriteLine(
+                    $"[input] col={Column?.Title} down entry=null button={e.ChangedButton} clicks={e.ClickCount} "
+                    + $"pos={inputTracePressPositionInList} branch=empty-space");
+            }
+
             // Empty space (below the rows, or the column background): start a rubber-band
             // instead of the entry-row drag/click handling below. No EntryPointerPressed,
             // no EntryClicked - this is not a row interaction. Always eligible, timing irrelevant -
@@ -414,6 +445,13 @@ public sealed class ColumnView : Control
             }
 
             return;
+        }
+
+        if (ColumnBrowser.InputTraceEnabled)
+        {
+            Trace.WriteLine(
+                $"[input] col={Column?.Title} down entry={entryIndex.Value} button={e.ChangedButton} "
+                + $"clicks={e.ClickCount} pos={inputTracePressPositionInList} branch=row");
         }
 
         // Reset any stale rubber-band gesture (e.g. one whose Release never fired because
@@ -464,12 +502,27 @@ public sealed class ColumnView : Control
     /// </summary>
     private void OnListPreviewMouseMove(object sender, MouseEventArgs e)
     {
+        if (ColumnBrowser.InputTraceEnabled && !inputTraceFirstMoveLogged && List is not null)
+        {
+            inputTraceFirstMoveLogged = true;
+            var delta = e.GetPosition(List) - inputTracePressPositionInList;
+            Trace.WriteLine($"[input] col={Column?.Title} firstmove delta={delta}");
+        }
+
         if (dragTracker.Move(e.GetPosition(this), e.LeftButton == MouseButtonState.Pressed) is { } entryIndex)
         {
             var ctrlHeld = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
+            var startsRubberBand = ctrlHeld || RubberBandTracker.ShouldStartRubberBand(
+                onEmptySpace: false, rowPressStopwatch.ElapsedMilliseconds);
 
-            if (ctrlHeld || RubberBandTracker.ShouldStartRubberBand(
-                    onEmptySpace: false, rowPressStopwatch.ElapsedMilliseconds))
+            if (ColumnBrowser.InputTraceEnabled)
+            {
+                Trace.WriteLine(
+                    $"[input] col={Column?.Title} movefire elapsedMs={rowPressStopwatch.ElapsedMilliseconds} "
+                    + $"ctrl={ctrlHeld} branch={(startsRubberBand ? "rubberband" : "drag")}");
+            }
+
+            if (startsRubberBand)
             {
                 PressRubberBand(rowPressPositionInList, entryIndex, startedOnRow: true);
                 List?.CaptureMouse();
@@ -788,6 +841,7 @@ public sealed class ColumnView : Control
         var startedOnRow = rubberBandStartedOnRow;
         var escapedAnchor = rubberBandTracker.HasEscapedAnchor;
         var maxDisplacement = rubberBandMaxDisplacement;
+        var capturedAtUp = List?.IsMouseCaptured ?? false;
 
         // LiveRange must be read before Release() - Release() resets the anchor/current
         // indices along with the rest of the gesture state.
@@ -804,21 +858,44 @@ public sealed class ColumnView : Control
 
         UpdateRubberBandVisual(null, default);
 
+        var bandProducedRange = rubberBandRect is not null && finalRange is not null;
         var action = RubberBandTracker.DecideRelease(
             dragFired,
             rowWasPressed: pressedEntryIndex is not null,
-            bandProducedRange: rubberBandRect is not null && finalRange is not null,
+            bandProducedRange,
             startedOnRow,
             escapedAnchor,
             maxDisplacement);
 
+        if (ColumnBrowser.InputTraceEnabled)
+        {
+            Trace.WriteLine(
+                $"[input] col={Column?.Title} up dragFired={dragFired} "
+                + $"rowWasPressed={pressedEntryIndex is not null} "
+                + $"pressedEntryIndex={(pressedEntryIndex?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "null")} "
+                + $"bandProducedRange={bandProducedRange} startedOnRow={startedOnRow} "
+                + $"escapedAnchor={escapedAnchor} maxDisplacement={maxDisplacement:F1} "
+                + $"capturedAtUp={capturedAtUp} action={action}");
+        }
+
         switch (action)
         {
             case RubberBandTracker.GestureReleaseAction.Click when pressedEntryIndex is { } clickedIndex:
+                if (ColumnBrowser.InputTraceEnabled)
+                {
+                    Trace.WriteLine($"[input] col={Column?.Title} raised EntryClicked idx={clickedIndex}");
+                }
+
                 EntryClicked?.Invoke(this, clickedIndex);
                 break;
 
             case RubberBandTracker.GestureReleaseAction.MarkRange when finalRange is { } range:
+                if (ColumnBrowser.InputTraceEnabled)
+                {
+                    Trace.WriteLine(
+                        $"[input] col={Column?.Title} raised MarkRangeRequested from={range.From} to={range.To}");
+                }
+
                 MarkRangeRequested?.Invoke(
                     this,
                     new MarkRangeRequestInfo(

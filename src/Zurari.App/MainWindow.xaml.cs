@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
@@ -29,16 +30,16 @@ public sealed partial class MainWindow : Window, IDisposable
         shellExecutor = new ShellEffectExecutor(post: PostToLoop);
         loop = new MessageLoop(AppState.Initial, RunEffect, Render);
 
-        Browser.CursorMoveRequested += (_, e) => loop.Dispatch(ToCursorMsg(e));
-        Browser.ColumnFocusRequested += (_, e) => loop.Dispatch(new Msg.FocusColumn(e.ColumnIndex));
-        Browser.EntryActivated += (_, e) => loop.Dispatch(new Msg.EnterDirectory(e.ColumnIndex, e.EntryIndex));
-        Browser.NavigateUpRequested += (_, e) => loop.Dispatch(new Msg.GoToParent(e.ColumnIndex));
+        Browser.CursorMoveRequested += (_, e) => Dispatch(ToCursorMsg(e));
+        Browser.ColumnFocusRequested += (_, e) => Dispatch(new Msg.FocusColumn(e.ColumnIndex));
+        Browser.EntryActivated += (_, e) => Dispatch(new Msg.EnterDirectory(e.ColumnIndex, e.EntryIndex));
+        Browser.NavigateUpRequested += (_, e) => Dispatch(new Msg.GoToParent(e.ColumnIndex));
         Browser.EntryPointerPressed += OnEntryPointerPressed;
         Browser.EntryClicked += OnEntryClicked;
         Browser.EntryDragRequested += OnEntryDragRequested;
-        Browser.FileDropRequested += (_, e) => loop.Dispatch(
+        Browser.FileDropRequested += (_, e) => Dispatch(
             new Msg.DropFiles(e.ColumnIndex, e.TargetEntryIndex, [.. e.Paths], e.ShiftHeld, e.CtrlHeld));
-        Browser.MarkRangeRequested += (_, e) => loop.Dispatch(
+        Browser.MarkRangeRequested += (_, e) => Dispatch(
             new Msg.MarkRange(e.ColumnIndex, e.FromIndex, e.ToIndex, e.Additive));
         Browser.RubberBandStarted += OnRubberBandStarted;
 
@@ -46,7 +47,7 @@ public sealed partial class MainWindow : Window, IDisposable
         Loaded += (_, _) => Browser.Focus();
         KeyDown += OnWindowKeyDown;
 
-        loop.Dispatch(new Msg.Refresh());
+        Dispatch(new Msg.Refresh());
     }
 
     /// <summary>Disposes the <see cref="WorkerRuntime"/> and <see cref="ShellEffectExecutor"/> owned by this window.</summary>
@@ -75,7 +76,24 @@ public sealed partial class MainWindow : Window, IDisposable
         }
     }
 
-    private void PostToLoop(Msg msg) => Dispatcher.BeginInvoke(() => loop.Dispatch(msg));
+    private void PostToLoop(Msg msg) => Dispatcher.BeginInvoke(() => Dispatch(msg));
+
+    /// <summary>
+    /// The single choke point every <see cref="Msg"/> passes through on its way to
+    /// <see cref="loop"/> - every wiring lambda and handler in this class calls this instead of
+    /// <c>loop.Dispatch</c> directly, purely so the input-pipeline diagnostic tracing (see
+    /// <see cref="ColumnBrowser.InputTraceEnabled"/> / <c>--debug-input</c>) can log the type of
+    /// every Msg dispatched without needing a log line at each of the twenty-odd call sites.
+    /// </summary>
+    private void Dispatch(Msg msg)
+    {
+        if (ColumnBrowser.InputTraceEnabled)
+        {
+            Trace.WriteLine($"[app] dispatch {msg.GetType().Name}");
+        }
+
+        loop.Dispatch(msg);
+    }
 
     private static Msg ToCursorMsg(CursorMoveRequestedEventArgs e)
     {
@@ -108,9 +126,16 @@ public sealed partial class MainWindow : Window, IDisposable
     /// </summary>
     private void OnEntryPointerPressed(object? sender, EntryPointerPressedEventArgs e)
     {
+        if (ColumnBrowser.InputTraceEnabled)
+        {
+            Trace.WriteLine(
+                $"[app] OnEntryPointerPressed col={e.ColumnIndex} idx={e.EntryIndex} "
+                + $"button={e.Button} modifiers={e.Modifiers}");
+        }
+
         if (!(e.Button == MouseButton.Left && e.Modifiers == ModifierKeys.Control))
         {
-            loop.Dispatch(new Msg.CursorTo(e.ColumnIndex, e.EntryIndex));
+            Dispatch(new Msg.CursorTo(e.ColumnIndex, e.EntryIndex));
         }
 
         if (e.Button != MouseButton.Right)
@@ -133,7 +158,7 @@ public sealed partial class MainWindow : Window, IDisposable
         var ownerHwnd = new WindowInteropHelper(this).Handle;
         if (ShellContextMenu.Show(ownerHwnd, paths, (int)e.ScreenPosition.X, (int)e.ScreenPosition.Y))
         {
-            loop.Dispatch(new Msg.Refresh());
+            Dispatch(new Msg.Refresh());
         }
     }
 
@@ -162,14 +187,20 @@ public sealed partial class MainWindow : Window, IDisposable
     /// </summary>
     private void OnEntryClicked(object? sender, EntryClickedEventArgs e)
     {
+        if (ColumnBrowser.InputTraceEnabled)
+        {
+            Trace.WriteLine(
+                $"[app] OnEntryClicked col={e.ColumnIndex} idx={e.EntryIndex} modifiers={Keyboard.Modifiers}");
+        }
+
         if ((Keyboard.Modifiers & ModifierKeys.Control) != 0)
         {
-            loop.Dispatch(new Msg.ToggleMark(e.ColumnIndex, e.EntryIndex));
+            Dispatch(new Msg.ToggleMark(e.ColumnIndex, e.EntryIndex));
             return;
         }
 
-        loop.Dispatch(new Msg.ClearMarks(e.ColumnIndex));
-        loop.Dispatch(new Msg.EnterDirectory(e.ColumnIndex, e.EntryIndex, FocusChild: false));
+        Dispatch(new Msg.ClearMarks(e.ColumnIndex));
+        Dispatch(new Msg.EnterDirectory(e.ColumnIndex, e.EntryIndex, FocusChild: false));
     }
 
     /// <summary>
@@ -186,7 +217,7 @@ public sealed partial class MainWindow : Window, IDisposable
     {
         if (!e.Additive)
         {
-            loop.Dispatch(new Msg.ClearMarks(e.ColumnIndex));
+            Dispatch(new Msg.ClearMarks(e.ColumnIndex));
         }
     }
 
@@ -228,7 +259,7 @@ public sealed partial class MainWindow : Window, IDisposable
         var result = DragDrop.DoDragDrop(Browser, data, DragDropEffects.Copy | DragDropEffects.Move);
         if (result == DragDropEffects.Move)
         {
-            loop.Dispatch(new Msg.Refresh());
+            Dispatch(new Msg.Refresh());
         }
     }
 
@@ -295,7 +326,7 @@ public sealed partial class MainWindow : Window, IDisposable
     {
         if (e.Key == Key.F5)
         {
-            loop.Dispatch(new Msg.Refresh());
+            Dispatch(new Msg.Refresh());
             e.Handled = true;
         }
         else if (e.Key == Key.Delete)
@@ -305,12 +336,12 @@ public sealed partial class MainWindow : Window, IDisposable
         }
         else if (e.Key == Key.Space && Keyboard.Modifiers == ModifierKeys.None)
         {
-            loop.Dispatch(new Msg.ToggleMarkAtCursor(loop.State.FocusedColumn));
+            Dispatch(new Msg.ToggleMarkAtCursor(loop.State.FocusedColumn));
             e.Handled = true;
         }
         else if (e.Key == Key.Escape)
         {
-            loop.Dispatch(new Msg.ClearMarks(loop.State.FocusedColumn));
+            Dispatch(new Msg.ClearMarks(loop.State.FocusedColumn));
             e.Handled = true;
         }
     }
@@ -345,7 +376,7 @@ public sealed partial class MainWindow : Window, IDisposable
                 MessageBoxImage.Question);
             if (markedResult == MessageBoxResult.Yes)
             {
-                loop.Dispatch(new Msg.DeleteMarked(columnIndex));
+                Dispatch(new Msg.DeleteMarked(columnIndex));
             }
 
             return;
@@ -378,7 +409,7 @@ public sealed partial class MainWindow : Window, IDisposable
             MessageBoxImage.Question);
         if (result == MessageBoxResult.Yes)
         {
-            loop.Dispatch(new Msg.DeleteEntry(columnIndex, column.Cursor));
+            Dispatch(new Msg.DeleteEntry(columnIndex, column.Cursor));
         }
     }
 
