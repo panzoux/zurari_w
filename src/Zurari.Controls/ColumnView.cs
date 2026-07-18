@@ -540,6 +540,23 @@ public sealed class ColumnView : Control
             Trace.WriteLine($"[input] col={Column?.Title} firstmove delta={delta}");
         }
 
+        // A move reporting the button as up while a left gesture is still open means the OS
+        // never delivered the release event (some touchpad drivers drop the WM_LBUTTONUP of a
+        // physical-button click): this move IS our first sight of the release. Complete the
+        // gesture now, exactly as the up handler would - previously DragGestureTracker.Move's
+        // stale-gesture cancellation silently discarded the press here, swallowing the click.
+        // (The release watchdog stays as the fallback for when not even a move arrives.)
+        if (releaseWatchdogTimer.IsEnabled && e.LeftButton == MouseButtonState.Released)
+        {
+            if (ColumnBrowser.InputTraceEnabled)
+            {
+                Trace.WriteLine($"[input] col={Column?.Title} move observed button released - synthesizing release");
+            }
+
+            CompleteLeftRelease();
+            return;
+        }
+
         if (dragTracker.Move(e.GetPosition(this), e.LeftButton == MouseButtonState.Pressed) is { } entryIndex)
         {
             var ctrlHeld = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
