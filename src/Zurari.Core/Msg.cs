@@ -158,4 +158,64 @@ public abstract record Msg
     /// multi-select. Out-of-range column or an empty column is a no-op.
     /// </summary>
     public sealed record MarkRange(int ColumnIndex, int FromIndex, int ToIndex, bool Additive) : Msg;
+
+    /// <summary>
+    /// Paste <paramref name="Sources"/> into <paramref name="ColumnIndex"/>'s directory, copying
+    /// when <paramref name="IsMove"/> is <c>false</c> or moving when it is <c>true</c>. Ignored if
+    /// the column is out of range, its Path is empty (the virtual root has nothing to paste into),
+    /// or <paramref name="Sources"/> is empty. Subject to the same no-op filtering as
+    /// <see cref="DropFiles"/> (already-there / dest-itself / dest-inside-source sources are
+    /// dropped first; if nothing remains, this is a complete no-op). Otherwise appends a new
+    /// <see cref="Job"/> (id <see cref="AppState.NextJobId"/>, status Queued) to
+    /// <see cref="AppState.Jobs"/>, increments <see cref="AppState.NextJobId"/>, and emits
+    /// <see cref="Effect.RunFileJob"/>.
+    /// </summary>
+    public sealed record PasteRequested(int ColumnIndex, ImmutableArray<string> Sources, bool IsMove) : Msg;
+
+    /// <summary>
+    /// Progress report for the job engine's <paramref name="JobId"/>: marks it Running and updates
+    /// its counters/current file. Ignored (no-op) if no job with that id is tracked in
+    /// <see cref="AppState.Jobs"/> - it either finished already or belongs to a state this Msg is
+    /// stale against.
+    /// </summary>
+    public sealed record JobProgress(
+        int JobId, int DoneFiles, int TotalFiles, long DoneBytes, long TotalBytes, string? CurrentFile) : Msg;
+
+    /// <summary>
+    /// <paramref name="JobId"/> finished successfully. Marks it Completed (DoneFiles = TotalFiles,
+    /// CurrentFile cleared, <see cref="Job.SkippedFiles"/> set to <paramref name="SkippedFiles"/>)
+    /// and re-requests every column whose Path matches one of <paramref name="AffectedDirs"/> -
+    /// same mechanism as <see cref="ShellOpCompleted"/> (marks the column Loading and emits
+    /// <see cref="Effect.ReadDirectory"/>). Ignored if no job with that id is tracked.
+    /// </summary>
+    public sealed record JobCompleted(int JobId, int SkippedFiles, ImmutableArray<string> AffectedDirs) : Msg;
+
+    /// <summary>
+    /// <paramref name="JobId"/> failed unexpectedly. Marks it Failed with <paramref name="Error"/>.
+    /// Ignored if no job with that id is tracked.
+    /// </summary>
+    public sealed record JobFailed(int JobId, string Error) : Msg;
+
+    /// <summary>
+    /// <paramref name="JobId"/> was cancelled (in response to <see cref="JobCancelRequested"/>).
+    /// Marks it Cancelled and, since partial work may have happened, refreshes columns exactly like
+    /// <see cref="JobCompleted"/> does via <paramref name="AffectedDirs"/>. Ignored if no job with
+    /// that id is tracked.
+    /// </summary>
+    public sealed record JobCancelled(int JobId, ImmutableArray<string> AffectedDirs) : Msg;
+
+    /// <summary>
+    /// Requests cancellation of <paramref name="JobId"/>. Emits <see cref="Effect.CancelJob"/> when
+    /// a job with that id is tracked and still Queued or Running; state is otherwise unchanged
+    /// (the engine confirms completion of the cancellation via <see cref="JobCancelled"/>). No-op
+    /// if the job is unknown or already finished (Completed/Failed/Cancelled).
+    /// </summary>
+    public sealed record JobCancelRequested(int JobId) : Msg;
+
+    /// <summary>
+    /// Removes <paramref name="JobId"/> from <see cref="AppState.Jobs"/>, but only when it has
+    /// finished (Completed, Failed, or Cancelled) - used to dismiss a job's row from the UI. No-op
+    /// if the job is unknown or still Queued/Running.
+    /// </summary>
+    public sealed record JobDismissed(int JobId) : Msg;
 }

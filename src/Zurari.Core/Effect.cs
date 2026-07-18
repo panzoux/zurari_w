@@ -42,4 +42,20 @@ public abstract record Effect
     /// </summary>
     public sealed record ShellCopyOrMove(
         int ColumnIndex, string ColumnPath, string DestPath, ImmutableArray<string> Paths, bool IsMove) : Effect;
+
+    /// <summary>
+    /// Runs the internal job engine's copy or move of <paramref name="Sources"/> into
+    /// <paramref name="DestDir"/> for <paramref name="JobId"/>. Reports progress via
+    /// <see cref="Msg.JobProgress"/> and finishes with <see cref="Msg.JobCompleted"/>,
+    /// <see cref="Msg.JobFailed"/>, or <see cref="Msg.JobCancelled"/>.
+    /// </summary>
+    public sealed record RunFileJob(
+        int JobId, JobKind Kind, ImmutableArray<string> Sources, string DestDir) : Effect;
+
+    /// <summary>
+    /// Requests cooperative cancellation of the job engine's <paramref name="JobId"/>, whether it
+    /// is still queued or already running. The engine confirms via <see cref="Msg.JobCancelled"/>;
+    /// this effect itself never produces a Msg.
+    /// </summary>
+    public sealed record CancelJob(int JobId) : Effect;
 }

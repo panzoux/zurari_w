@@ -77,6 +77,12 @@ public sealed record AppState
     /// <summary>Index into <see cref="Columns"/> of the column that has keyboard focus.</summary>
     public required int FocusedColumn { get; init; }
 
+    /// <summary>Background copy/move jobs, in submission order.</summary>
+    public ImmutableArray<Job> Jobs { get; init; } = [];
+
+    /// <summary>The <see cref="Job.JobId"/> to assign to the next job created by <c>PasteRequested</c>.</summary>
+    public int NextJobId { get; init; } = 1;
+
     /// <summary>Starting state: a single, still-loading virtual root column (the drive list).</summary>
     public static AppState Initial { get; } = new()
     {
@@ -141,6 +147,18 @@ public sealed record AppState
                 {
                     violations.Add(
                         $"Columns[{i}].Path \"{column.Path}\" is not under Columns[{i - 1}].Path \"{parentPath}\".");
+                }
+            }
+        }
+
+        if (!Jobs.IsDefaultOrEmpty)
+        {
+            var seenJobIds = new HashSet<int>();
+            foreach (var job in Jobs)
+            {
+                if (!seenJobIds.Add(job.JobId))
+                {
+                    violations.Add($"Jobs contains duplicate JobId {job.JobId}.");
                 }
             }
         }

@@ -1165,6 +1165,332 @@ public class TransitionTests
         var effect = Assert.IsType<Effect.ShellCopyOrMove>(Assert.Single(effects));
         Assert.False(effect.IsMove);
     }
+
+    [Fact]
+    public void PasteRequested_appends_queued_job_and_emits_RunFileJob()
+    {
+        var column = new Column(@"C:\dest", [], Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+        ImmutableArray<string> sources = [@"C:\src\a.txt", @"C:\src\b.txt"];
+
+        var (next, effects) = Transition.Apply(state, new Msg.PasteRequested(0, sources, IsMove: false));
+
+        var job = Assert.Single(next.Jobs);
+        Assert.Equal(1, job.JobId);
+        Assert.Equal(JobKind.Copy, job.Kind);
+        Assert.Equal(sources, job.Sources);
+        Assert.Equal(@"C:\dest", job.DestDir);
+        Assert.Equal(JobStatus.Queued, job.Status);
+        Assert.Equal(2, next.NextJobId);
+
+        var effect = Assert.IsType<Effect.RunFileJob>(Assert.Single(effects));
+        Assert.Equal(1, effect.JobId);
+        Assert.Equal(JobKind.Copy, effect.Kind);
+        Assert.Equal(sources, effect.Sources);
+        Assert.Equal(@"C:\dest", effect.DestDir);
+    }
+
+    [Fact]
+    public void PasteRequested_with_IsMove_true_creates_a_Move_job()
+    {
+        var column = new Column(@"C:\dest", [], Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+        ImmutableArray<string> sources = [@"C:\src\a.txt"];
+
+        var (next, effects) = Transition.Apply(state, new Msg.PasteRequested(0, sources, IsMove: true));
+
+        Assert.Equal(JobKind.Move, next.Jobs[0].Kind);
+        var effect = Assert.IsType<Effect.RunFileJob>(Assert.Single(effects));
+        Assert.Equal(JobKind.Move, effect.Kind);
+    }
+
+    [Fact]
+    public void PasteRequested_increments_NextJobId_across_multiple_pastes()
+    {
+        var column = new Column(@"C:\dest", [], Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        var (once, _) = Transition.Apply(state, new Msg.PasteRequested(0, [@"C:\src\a.txt"], IsMove: false));
+        var (twice, _) = Transition.Apply(once, new Msg.PasteRequested(0, [@"C:\src\b.txt"], IsMove: false));
+
+        Assert.Equal(2, twice.Jobs.Length);
+        Assert.Equal(1, twice.Jobs[0].JobId);
+        Assert.Equal(2, twice.Jobs[1].JobId);
+        Assert.Equal(3, twice.NextJobId);
+    }
+
+    [Fact]
+    public void PasteRequested_onto_root_column_is_ignored()
+    {
+        var state = StateWithColumns(new Column("", [Drive], Cursor: 0, Load: LoadState.Loaded));
+
+        var (next, effects) = Transition.Apply(
+            state, new Msg.PasteRequested(0, [@"C:\src\a.txt"], IsMove: false));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+        Assert.Empty(next.Jobs);
+    }
+
+    [Fact]
+    public void PasteRequested_with_empty_sources_is_ignored()
+    {
+        var state = StateWithColumns(new Column(@"C:\dest", [], Load: LoadState.Loaded));
+
+        var (next, effects) = Transition.Apply(state, new Msg.PasteRequested(0, [], IsMove: false));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void PasteRequested_with_out_of_range_column_is_ignored()
+    {
+        var state = StateWithColumns(new Column(@"C:\dest", [], Load: LoadState.Loaded));
+
+        var (next, effects) = Transition.Apply(
+            state, new Msg.PasteRequested(9, [@"C:\src\a.txt"], IsMove: false));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void PasteRequested_filters_no_op_sources_like_DropFiles_and_is_a_complete_no_op_if_all_filtered()
+    {
+        var state = StateWithColumns(new Column(@"C:\dest", [], Load: LoadState.Loaded));
+
+        var (next, effects) = Transition.Apply(
+            state, new Msg.PasteRequested(0, [@"C:\dest\already-here.txt"], IsMove: false));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void PasteRequested_filters_only_the_no_op_sources_keeping_the_rest()
+    {
+        var state = StateWithColumns(new Column(@"C:\dest", [], Load: LoadState.Loaded));
+        ImmutableArray<string> sources = [@"C:\dest\already-here.txt", @"C:\src\a.txt"];
+
+        var (next, effects) = Transition.Apply(state, new Msg.PasteRequested(0, sources, IsMove: false));
+
+        var effect = Assert.IsType<Effect.RunFileJob>(Assert.Single(effects));
+        Assert.Equal([@"C:\src\a.txt"], effect.Sources);
+        Assert.Equal([@"C:\src\a.txt"], next.Jobs[0].Sources);
+    }
+
+    [Fact]
+    public void JobProgress_updates_matching_job_and_sets_status_running()
+    {
+        var job = new Job(1, JobKind.Copy, [@"C:\src\a.txt"], @"C:\dest");
+        var state = AppState.Initial with { Jobs = [job] };
+
+        var (next, effects) = Transition.Apply(
+            state, new Msg.JobProgress(1, DoneFiles: 2, TotalFiles: 5, DoneBytes: 200, TotalBytes: 500, CurrentFile: "a.txt"));
+
+        var updated = Assert.Single(next.Jobs);
+        Assert.Equal(JobStatus.Running, updated.Status);
+        Assert.Equal(2, updated.DoneFiles);
+        Assert.Equal(5, updated.TotalFiles);
+        Assert.Equal(200, updated.DoneBytes);
+        Assert.Equal(500, updated.TotalBytes);
+        Assert.Equal("a.txt", updated.CurrentFile);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void JobProgress_with_unknown_JobId_is_ignored()
+    {
+        var job = new Job(1, JobKind.Copy, [@"C:\src\a.txt"], @"C:\dest");
+        var state = AppState.Initial with { Jobs = [job] };
+
+        var (next, effects) = Transition.Apply(
+            state, new Msg.JobProgress(99, 0, 0, 0, 0, null));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void JobCompleted_marks_job_completed_and_fills_done_from_total()
+    {
+        var job = new Job(1, JobKind.Copy, [@"C:\src\a.txt"], @"C:\dest", Status: JobStatus.Running, TotalFiles: 3, CurrentFile: "a.txt");
+        var state = AppState.Initial with { Jobs = [job] };
+
+        var (next, effects) = Transition.Apply(state, new Msg.JobCompleted(1, SkippedFiles: 1, AffectedDirs: []));
+
+        var updated = Assert.Single(next.Jobs);
+        Assert.Equal(JobStatus.Completed, updated.Status);
+        Assert.Equal(3, updated.DoneFiles);
+        Assert.Null(updated.CurrentFile);
+        Assert.Equal(1, updated.SkippedFiles);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void JobCompleted_refreshes_columns_matching_AffectedDirs()
+    {
+        var job = new Job(1, JobKind.Move, [@"C:\sub\a.txt"], @"C:\dest");
+        var state = StateWithColumns(
+            new Column(@"C:\dest", [Dir], Cursor: 0, Load: LoadState.Loaded),
+            new Column(@"C:\sub", [File1], Cursor: 0, Load: LoadState.Loaded),
+            new Column(@"D:\unrelated", [], Cursor: 0, Load: LoadState.Loaded)) with
+        { Jobs = [job] };
+
+        var (next, effects) = Transition.Apply(
+            state, new Msg.JobCompleted(1, SkippedFiles: 0, AffectedDirs: [@"C:\dest", @"C:\sub"]));
+
+        Assert.Equal(LoadState.Loading, next.Columns[0].Load);
+        Assert.Equal(LoadState.Loading, next.Columns[1].Load);
+        Assert.Equal(LoadState.Loaded, next.Columns[2].Load);
+        Assert.Equal(2, effects.Count);
+    }
+
+    [Fact]
+    public void JobCompleted_with_unknown_JobId_is_ignored()
+    {
+        var state = AppState.Initial;
+
+        var (next, effects) = Transition.Apply(state, new Msg.JobCompleted(1, 0, []));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void JobFailed_marks_job_failed_with_error()
+    {
+        var job = new Job(1, JobKind.Copy, [@"C:\src\a.txt"], @"C:\dest", Status: JobStatus.Running, CurrentFile: "a.txt");
+        var state = AppState.Initial with { Jobs = [job] };
+
+        var (next, effects) = Transition.Apply(state, new Msg.JobFailed(1, "disk full"));
+
+        var updated = Assert.Single(next.Jobs);
+        Assert.Equal(JobStatus.Failed, updated.Status);
+        Assert.Equal("disk full", updated.Error);
+        Assert.Null(updated.CurrentFile);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void JobFailed_with_unknown_JobId_is_ignored()
+    {
+        var state = AppState.Initial;
+
+        var (next, effects) = Transition.Apply(state, new Msg.JobFailed(1, "oops"));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void JobCancelled_marks_job_cancelled_and_refreshes_affected_dirs()
+    {
+        var job = new Job(1, JobKind.Copy, [@"C:\src\a.txt"], @"C:\dest", Status: JobStatus.Running, DoneFiles: 1, CurrentFile: "a.txt");
+        var state = StateWithColumns(new Column(@"C:\dest", [Dir], Cursor: 0, Load: LoadState.Loaded)) with { Jobs = [job] };
+
+        var (next, effects) = Transition.Apply(state, new Msg.JobCancelled(1, [@"C:\dest"]));
+
+        var updated = Assert.Single(next.Jobs);
+        Assert.Equal(JobStatus.Cancelled, updated.Status);
+        Assert.Equal(1, updated.DoneFiles); // partial progress preserved, not forced to TotalFiles
+        Assert.Null(updated.CurrentFile);
+        Assert.Equal(LoadState.Loading, next.Columns[0].Load);
+        Assert.Single(effects);
+    }
+
+    [Fact]
+    public void JobCancelled_with_unknown_JobId_is_ignored()
+    {
+        var state = AppState.Initial;
+
+        var (next, effects) = Transition.Apply(state, new Msg.JobCancelled(1, []));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Theory]
+    [InlineData(JobStatus.Queued)]
+    [InlineData(JobStatus.Running)]
+    public void JobCancelRequested_emits_CancelJob_when_queued_or_running(JobStatus status)
+    {
+        var job = new Job(1, JobKind.Copy, [@"C:\src\a.txt"], @"C:\dest", Status: status);
+        var state = AppState.Initial with { Jobs = [job] };
+
+        var (next, effects) = Transition.Apply(state, new Msg.JobCancelRequested(1));
+
+        Assert.Equal(state, next);
+        var effect = Assert.IsType<Effect.CancelJob>(Assert.Single(effects));
+        Assert.Equal(1, effect.JobId);
+    }
+
+    [Theory]
+    [InlineData(JobStatus.Completed)]
+    [InlineData(JobStatus.Failed)]
+    [InlineData(JobStatus.Cancelled)]
+    public void JobCancelRequested_is_a_no_op_for_finished_jobs(JobStatus status)
+    {
+        var job = new Job(1, JobKind.Copy, [@"C:\src\a.txt"], @"C:\dest", Status: status);
+        var state = AppState.Initial with { Jobs = [job] };
+
+        var (next, effects) = Transition.Apply(state, new Msg.JobCancelRequested(1));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void JobCancelRequested_with_unknown_JobId_is_ignored()
+    {
+        var state = AppState.Initial;
+
+        var (next, effects) = Transition.Apply(state, new Msg.JobCancelRequested(1));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Theory]
+    [InlineData(JobStatus.Completed)]
+    [InlineData(JobStatus.Failed)]
+    [InlineData(JobStatus.Cancelled)]
+    public void JobDismissed_removes_finished_job(JobStatus status)
+    {
+        var job = new Job(1, JobKind.Copy, [@"C:\src\a.txt"], @"C:\dest", Status: status);
+        var state = AppState.Initial with { Jobs = [job] };
+
+        var (next, effects) = Transition.Apply(state, new Msg.JobDismissed(1));
+
+        Assert.Empty(next.Jobs);
+        Assert.Empty(effects);
+    }
+
+    [Theory]
+    [InlineData(JobStatus.Queued)]
+    [InlineData(JobStatus.Running)]
+    public void JobDismissed_is_a_no_op_for_unfinished_jobs(JobStatus status)
+    {
+        var job = new Job(1, JobKind.Copy, [@"C:\src\a.txt"], @"C:\dest", Status: status);
+        var state = AppState.Initial with { Jobs = [job] };
+
+        var (next, effects) = Transition.Apply(state, new Msg.JobDismissed(1));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void JobDismissed_with_unknown_JobId_is_ignored()
+    {
+        var state = AppState.Initial;
+
+        var (next, effects) = Transition.Apply(state, new Msg.JobDismissed(1));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
 }
 
 /// <summary>
@@ -1191,6 +1517,8 @@ public class TransitionProperties
         GenPath.List[0, 3].Select(list => list.ToImmutableArray());
 
     private static Gen<bool> GenIsMove => Gen.OneOfConst(true, false);
+
+    private static Gen<int> GenJobId => Gen.Int[-2, 4];
 
     private static Gen<EntryKind> GenEntryKind => Gen.OneOfConst(
         EntryKind.Drive,
@@ -1235,7 +1563,16 @@ public class TransitionProperties
         Gen.Select(
             Gen.Select(GenColumnIndex, GenEntryIndex),
             Gen.Select(GenEntryIndex, GenIsMove))
-            .Select(t => (Msg)new Msg.MarkRange(t.Item1.Item1, t.Item1.Item2, t.Item2.Item1, t.Item2.Item2)));
+            .Select(t => (Msg)new Msg.MarkRange(t.Item1.Item1, t.Item1.Item2, t.Item2.Item1, t.Item2.Item2)),
+        Gen.Select(GenColumnIndex, GenPaths, GenIsMove)
+            .Select(t => (Msg)new Msg.PasteRequested(t.Item1, t.Item2, t.Item3)),
+        Gen.Select(GenJobId, Gen.Select(GenColumnIndex, GenColumnIndex))
+            .Select(t => (Msg)new Msg.JobProgress(t.Item1, t.Item2.Item1, t.Item2.Item2, t.Item2.Item1, t.Item2.Item2, null)),
+        Gen.Select(GenJobId, GenPaths).Select(t => (Msg)new Msg.JobCompleted(t.Item1, 0, t.Item2)),
+        GenJobId.Select(i => (Msg)new Msg.JobFailed(i, "error")),
+        Gen.Select(GenJobId, GenPaths).Select(t => (Msg)new Msg.JobCancelled(t.Item1, t.Item2)),
+        GenJobId.Select(i => (Msg)new Msg.JobCancelRequested(i)),
+        GenJobId.Select(i => (Msg)new Msg.JobDismissed(i)));
 
     [Fact]
     public void Any_msg_sequence_yields_valid_state_and_effects()
@@ -1275,6 +1612,8 @@ public class TransitionProperties
     private static void AssertStatesEqual(AppState expected, AppState actual)
     {
         Assert.Equal(expected.FocusedColumn, actual.FocusedColumn);
+        Assert.Equal(expected.NextJobId, actual.NextJobId);
+        Assert.Equal(expected.Jobs, actual.Jobs);
         Assert.Equal(expected.Columns.Length, actual.Columns.Length);
         for (var i = 0; i < expected.Columns.Length; i++)
         {

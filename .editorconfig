@@ -48,3 +48,10 @@ dotnet_diagnostic.CA1031.severity = none
 # so a single broad catch around the whole operation is intentional. Scoped to this file only.
 [src/Zurari.Shell/ShellContextMenu.cs]
 dotnet_diagnostic.CA1031.severity = none
+
+# JobEngine: a worker must never die from one job's exception (same contract as WorkerRuntime),
+# and any unexpected failure mid-copy/move must degrade to a JobFailed Msg rather than crash the
+# process - so a broad catch around the worker loop and around a single job's execution is
+# intentional. Scoped to this file only.
+[src/Zurari.Runtime/JobEngine.cs]
+dotnet_diagnostic.CA1031.severity = none

@@ -41,6 +41,16 @@ public static class Transition
             Msg.ClearMarks m => (ClearMarks(state, m.ColumnIndex), NoEffects),
             Msg.DeleteMarked m => DeleteMarked(state, m.ColumnIndex),
             Msg.MarkRange m => (MarkRange(state, m.ColumnIndex, m.FromIndex, m.ToIndex, m.Additive), NoEffects),
+            Msg.PasteRequested m => PasteRequested(state, m.ColumnIndex, m.Sources, m.IsMove),
+            Msg.JobProgress m =>
+                (JobProgress(state, m.JobId, m.DoneFiles, m.TotalFiles, m.DoneBytes, m.TotalBytes, m.CurrentFile), NoEffects),
+            Msg.JobCompleted m => JobFinished(
+                state, m.JobId, JobStatus.Completed, error: null, m.SkippedFiles, m.AffectedDirs),
+            Msg.JobFailed m => (JobFailed(state, m.JobId, m.Error), NoEffects),
+            Msg.JobCancelled m => JobFinished(
+                state, m.JobId, JobStatus.Cancelled, error: null, skippedFiles: null, m.AffectedDirs),
+            Msg.JobCancelRequested m => JobCancelRequested(state, m.JobId),
+            Msg.JobDismissed m => (JobDismissed(state, m.JobId), NoEffects),
             _ => (state, NoEffects),
         };
     }
@@ -556,5 +566,153 @@ public static class Transition
 
         var updated = column with { Load = LoadState.Error, ErrorMessage = error };
         return WithColumn(state, columnIndex, updated);
+    }
+
+    private static (AppState, IReadOnlyList<Effect>) PasteRequested(
+        AppState state, int columnIndex, ImmutableArray<string> sources, bool isMove)
+    {
+        if (!InRange(state, columnIndex))
+        {
+            return (state, NoEffects);
+        }
+
+        var column = state.Columns[columnIndex];
+        if (column.Path.Length == 0 || sources.IsDefaultOrEmpty)
+        {
+            return (state, NoEffects);
+        }
+
+        var filtered = FilterDropSources(column.Path, sources);
+        if (filtered.Length == 0)
+        {
+            return (state, NoEffects);
+        }
+
+        var jobId = state.NextJobId;
+        var job = new Job(jobId, isMove ? JobKind.Move : JobKind.Copy, filtered, column.Path);
+        var newState = state with { Jobs = state.Jobs.Add(job), NextJobId = jobId + 1 };
+        return (newState, [new Effect.RunFileJob(jobId, job.Kind, filtered, column.Path)]);
+    }
+
+    private static int FindJobIndex(ImmutableArray<Job> jobs, int jobId)
+    {
+        for (var i = 0; i < jobs.Length; i++)
+        {
+            if (jobs[i].JobId == jobId)
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    private static AppState JobProgress(
+        AppState state, int jobId, int doneFiles, int totalFiles, long doneBytes, long totalBytes, string? currentFile)
+    {
+        var index = FindJobIndex(state.Jobs, jobId);
+        if (index < 0)
+        {
+            return state;
+        }
+
+        var updated = state.Jobs[index] with
+        {
+            Status = JobStatus.Running,
+            DoneFiles = doneFiles,
+            TotalFiles = totalFiles,
+            DoneBytes = doneBytes,
+            TotalBytes = totalBytes,
+            CurrentFile = currentFile,
+        };
+        return state with { Jobs = state.Jobs.SetItem(index, updated) };
+    }
+
+    private static AppState JobFailed(AppState state, int jobId, string error)
+    {
+        var index = FindJobIndex(state.Jobs, jobId);
+        if (index < 0)
+        {
+            return state;
+        }
+
+        var updated = state.Jobs[index] with { Status = JobStatus.Failed, Error = error, CurrentFile = null };
+        return state with { Jobs = state.Jobs.SetItem(index, updated) };
+    }
+
+    /// <summary>
+    /// Shared handling for <see cref="Msg.JobCompleted"/> and <see cref="Msg.JobCancelled"/>: both
+    /// finish a job and refresh every column matching <paramref name="affectedDirs"/>, following
+    /// the same re-read mechanism as <see cref="ShellOpCompleted"/>.
+    /// </summary>
+    private static (AppState, IReadOnlyList<Effect>) JobFinished(
+        AppState state, int jobId, JobStatus status, string? error, int? skippedFiles, ImmutableArray<string> affectedDirs)
+    {
+        var index = FindJobIndex(state.Jobs, jobId);
+        if (index < 0)
+        {
+            return (state, NoEffects);
+        }
+
+        var job = state.Jobs[index];
+        var updated = job with
+        {
+            Status = status,
+            CurrentFile = null,
+            DoneFiles = status == JobStatus.Completed ? job.TotalFiles : job.DoneFiles,
+            SkippedFiles = skippedFiles ?? job.SkippedFiles,
+            Error = error,
+        };
+        var stateWithJob = state with { Jobs = state.Jobs.SetItem(index, updated) };
+
+        var columns = stateWithJob.Columns;
+        var newColumns = columns;
+        var effects = new List<Effect>();
+        for (var i = 0; i < columns.Length; i++)
+        {
+            if (!IsAffectedDirectory(columns[i].Path, affectedDirs))
+            {
+                continue;
+            }
+
+            newColumns = newColumns.SetItem(i, columns[i] with { Load = LoadState.Loading });
+            effects.Add(new Effect.ReadDirectory(i, columns[i].Path));
+        }
+
+        return (stateWithJob with { Columns = newColumns }, effects);
+    }
+
+    private static (AppState, IReadOnlyList<Effect>) JobCancelRequested(AppState state, int jobId)
+    {
+        var index = FindJobIndex(state.Jobs, jobId);
+        if (index < 0)
+        {
+            return (state, NoEffects);
+        }
+
+        var job = state.Jobs[index];
+        if (job.Status is not (JobStatus.Queued or JobStatus.Running))
+        {
+            return (state, NoEffects);
+        }
+
+        return (state, [new Effect.CancelJob(jobId)]);
+    }
+
+    private static AppState JobDismissed(AppState state, int jobId)
+    {
+        var index = FindJobIndex(state.Jobs, jobId);
+        if (index < 0)
+        {
+            return state;
+        }
+
+        var job = state.Jobs[index];
+        if (job.Status is not (JobStatus.Completed or JobStatus.Failed or JobStatus.Cancelled))
+        {
+            return state;
+        }
+
+        return state with { Jobs = state.Jobs.RemoveAt(index) };
     }
 }
