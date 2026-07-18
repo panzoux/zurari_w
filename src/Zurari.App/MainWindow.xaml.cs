@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
@@ -19,6 +20,7 @@ public sealed partial class MainWindow : Window, IDisposable
 {
     private readonly WorkerRuntime runtime;
     private readonly ShellEffectExecutor shellExecutor;
+    private readonly JobEngine jobEngine;
     private readonly MessageLoop loop;
     private readonly ShellIconCache iconCache = new();
 
@@ -28,6 +30,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
         runtime = new WorkerRuntime(post: PostToLoop);
         shellExecutor = new ShellEffectExecutor(post: PostToLoop);
+        jobEngine = new JobEngine(post: PostToLoop);
         loop = new MessageLoop(AppState.Initial, RunEffect, Render);
 
         Browser.CursorMoveRequested += (_, e) => Dispatch(ToCursorMsg(e));
@@ -70,11 +73,15 @@ public sealed partial class MainWindow : Window, IDisposable
             $"captured={Mouse.Captured?.GetType().Name ?? "none"}");
     }
 
-    /// <summary>Disposes the <see cref="WorkerRuntime"/> and <see cref="ShellEffectExecutor"/> owned by this window.</summary>
+    /// <summary>
+    /// Disposes the <see cref="WorkerRuntime"/>, <see cref="ShellEffectExecutor"/>, and
+    /// <see cref="JobEngine"/> owned by this window.
+    /// </summary>
     public void Dispose()
     {
         runtime.Dispose();
         shellExecutor.Dispose();
+        jobEngine.Dispose();
     }
 
     /// <summary>
@@ -92,6 +99,10 @@ public sealed partial class MainWindow : Window, IDisposable
             case Effect.DeleteToRecycleBin _:
             case Effect.ShellCopyOrMove _:
                 shellExecutor.Submit(effect);
+                break;
+            case Effect.RunFileJob _:
+            case Effect.CancelJob _:
+                jobEngine.Submit(effect);
                 break;
         }
     }
@@ -363,6 +374,96 @@ public sealed partial class MainWindow : Window, IDisposable
         {
             Dispatch(new Msg.ClearMarks(loop.State.FocusedColumn));
             e.Handled = true;
+        }
+        else if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            TryCopyToClipboard(isMove: false);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.X && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            TryCopyToClipboard(isMove: true);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.V && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            TryPasteFromClipboard();
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>
+    /// Ctrl+C/Ctrl+X: places the focused column's marked full paths (or, absent any marks, just
+    /// the cursor entry) on the OS clipboard as a <see cref="DataFormats.FileDrop"/> payload plus
+    /// the "Preferred DropEffect" marker Explorer reads/writes, so the two interoperate in both
+    /// directions. No-op when the focused column has nothing to offer (empty/no cursor) or is the
+    /// virtual root (empty <see cref="Column.Path"/> - drives cannot be copied). Clipboard access
+    /// can transiently fail with CLIPBRD_E_CANT_OPEN when another process holds the clipboard open;
+    /// that failure is swallowed - the user simply sees nothing happen and can retry.
+    /// </summary>
+    private void TryCopyToClipboard(bool isMove)
+    {
+        var state = loop.State;
+        var columnIndex = state.FocusedColumn;
+        if (columnIndex < 0 || columnIndex >= state.Columns.Length)
+        {
+            return;
+        }
+
+        var column = state.Columns[columnIndex];
+        if (column.Path.Length == 0)
+        {
+            return;
+        }
+
+        var paths = ResolveMarkedFullPaths(columnIndex);
+        if (paths.Count == 0)
+        {
+            var cursorPath = ResolveFullPath(columnIndex, column.Cursor);
+            if (cursorPath is null)
+            {
+                return;
+            }
+
+            paths = [cursorPath];
+        }
+
+        try
+        {
+            var data = new DataObject();
+            data.SetData(DataFormats.FileDrop, paths.ToArray());
+            var effect = isMove ? DragDropEffects.Move : DragDropEffects.Copy;
+            data.SetData("Preferred DropEffect", new MemoryStream(BitConverter.GetBytes((int)effect)));
+            Clipboard.SetDataObject(data, copy: true);
+        }
+        catch (System.Runtime.InteropServices.ExternalException)
+        {
+            // CLIPBRD_E_CANT_OPEN or similar transient clipboard-ownership failure - nothing to do.
+        }
+    }
+
+    /// <summary>
+    /// Ctrl+V: reads a <see cref="DataFormats.FileDrop"/> payload back off the clipboard (via
+    /// <see cref="ClipboardFileDropParser.TryParse"/>, shared with tests) and dispatches
+    /// <see cref="Msg.PasteRequested"/> for the focused column 1:1. No-op if the clipboard holds
+    /// nothing usable. Swallows the same transient clipboard-access failures as
+    /// <see cref="TryCopyToClipboard"/>.
+    /// </summary>
+    private void TryPasteFromClipboard()
+    {
+        try
+        {
+            var data = Clipboard.GetDataObject();
+            if (data is null || !ClipboardFileDropParser.TryParse(data, out var paths, out var isMove))
+            {
+                return;
+            }
+
+            Dispatch(new Msg.PasteRequested(loop.State.FocusedColumn, [.. paths], isMove));
+        }
+        catch (System.Runtime.InteropServices.ExternalException)
+        {
+            // CLIPBRD_E_CANT_OPEN or similar transient clipboard-ownership failure - nothing to do.
         }
     }
 
