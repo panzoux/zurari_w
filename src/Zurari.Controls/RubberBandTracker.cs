@@ -11,6 +11,13 @@ namespace Zurari.Controls;
 /// </summary>
 internal sealed class RubberBandTracker
 {
+    /// <summary>
+    /// Elapsed time since press, in milliseconds, below which a press-then-move starting on an
+    /// unmarked row starts a rubber-band instead of a file drag (Finder-style timing) — see
+    /// <see cref="ShouldStartRubberBand"/>.
+    /// </summary>
+    internal const int RubberBandVsDragThresholdMs = 300;
+
     private Point? origin;
     private bool active;
     private Rect? currentRect;
@@ -115,5 +122,29 @@ internal sealed class RubberBandTracker
         anchorIndex = -1;
         currentIndex = -1;
         return result;
+    }
+
+    /// <summary>
+    /// Finder-style decision for which gesture a press-then-move starts, made once movement first
+    /// crosses the system drag threshold. A press on empty space is always eligible (there is
+    /// nothing to drag); a press on a MARKED row is always a drag (dragging a marked set must
+    /// never turn into a rubber band, regardless of timing); otherwise it depends on how long the
+    /// button was held before the pointer moved: under <see cref="RubberBandVsDragThresholdMs"/>
+    /// starts a rubber-band (anchored at the press point/row), at or past it starts the file drag —
+    /// matching Finder's press-and-hold-then-drag vs. press-and-immediately-drag distinction.
+    /// </summary>
+    internal static bool ShouldStartRubberBand(bool onEmptySpace, bool rowIsMarked, long elapsedMs)
+    {
+        if (onEmptySpace)
+        {
+            return true;
+        }
+
+        if (rowIsMarked)
+        {
+            return false;
+        }
+
+        return elapsedMs < RubberBandVsDragThresholdMs;
     }
 }

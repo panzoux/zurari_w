@@ -231,4 +231,50 @@ public class RubberBandTrackerTests
         Assert.Equal(-1, tracker.AnchorIndex);
         Assert.Null(tracker.LiveRange);
     }
+
+    [Fact]
+    public void LiveRange_anchored_below_the_last_row_includes_the_last_row_while_dragging_upward()
+    {
+        // Press on empty space below the last row anchors on that row (FindNearestRowIndex clamps
+        // to it in ColumnView); dragging up from there must still include it in every live range,
+        // and in the final range on release - see ColumnView.ResolveAnchorPixelY's remarks on why
+        // the anchor row must stay the fixed endpoint regardless of the pixel math.
+        var tracker = new RubberBandTracker();
+        var origin = new Point(100, 500);
+        const int lastRowIndex = 9;
+        tracker.Press(origin, onEmptySpace: true, anchorIndex: lastRowIndex);
+        tracker.Move(new Point(origin.X, origin.Y - 50));
+
+        var range = tracker.UpdateCurrentIndex(4);
+        Assert.Equal((4, lastRowIndex), range);
+
+        tracker.Move(new Point(origin.X, origin.Y - 200));
+        var finalRange = tracker.UpdateCurrentIndex(0);
+        Assert.Equal((0, lastRowIndex), finalRange);
+
+        tracker.Release();
+    }
+
+    [Theory]
+    [InlineData(true, false, 0, true)] // empty space: always rubber-band, timing irrelevant
+    [InlineData(true, false, 10_000, true)] // empty space: still rubber-band even after a long hold
+    [InlineData(true, true, 10_000, true)] // empty space ignores the marked flag entirely
+    [InlineData(false, true, 0, false)] // marked row: always a drag, even with no delay at all
+    [InlineData(false, true, 10_000, false)] // marked row: always a drag, even after a long hold
+    [InlineData(false, false, 0, true)] // unmarked row, moved immediately: rubber-band
+    [InlineData(false, false, 299, true)] // unmarked row, just under the threshold: rubber-band
+    [InlineData(false, false, 300, false)] // unmarked row, at the threshold: drag
+    [InlineData(false, false, 301, false)] // unmarked row, past the threshold: drag
+    public void ShouldStartRubberBand_matches_the_Finder_timing_rules(
+        bool onEmptySpace, bool rowIsMarked, long elapsedMs, bool expectedRubberBand)
+    {
+        Assert.Equal(
+            expectedRubberBand, RubberBandTracker.ShouldStartRubberBand(onEmptySpace, rowIsMarked, elapsedMs));
+    }
+
+    [Fact]
+    public void RubberBandVsDragThresholdMs_is_300()
+    {
+        Assert.Equal(300, RubberBandTracker.RubberBandVsDragThresholdMs);
+    }
 }

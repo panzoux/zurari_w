@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -97,9 +98,21 @@ public sealed class ColumnView : Control
     private readonly DragGestureTracker dragTracker = new();
     private readonly RubberBandTracker rubberBandTracker = new();
     private readonly DispatcherTimer autoScrollTimer = new() { Interval = TimeSpan.FromMilliseconds(50) };
+    private readonly Stopwatch rowPressStopwatch = new();
     private Rectangle? rubberBandVisual;
     private ScrollViewer? listScrollViewer;
     private Point lastMovePositionInList;
+    private Point rowPressPositionInList;
+
+    /// <summary>
+    /// Pixel offset between the exact press point that started the current rubber-band gesture and
+    /// the anchor row's top edge at press time (or the viewport edge, for an anchor with no
+    /// realized row). Captured once by <see cref="PressRubberBand"/> and reapplied by
+    /// <see cref="ResolveAnchorPixelY"/> on every subsequent move, so the rectangle's fixed corner
+    /// stays pinned to the actual press point - not the anchor row's top - even as the row's
+    /// on-screen position shifts under auto-scroll.
+    /// </summary>
+    private double anchorPixelOffset;
 
     static ColumnView()
     {
@@ -311,6 +324,10 @@ public sealed class ColumnView : Control
     /// <see cref="EntryPointerPressed"/> (and <see cref="EntryActivationRequested"/> on a
     /// double-click). Selection here is purely visual and reverted by
     /// <see cref="OnListSelectionChanged"/> — this view never decides where the cursor goes.
+    /// Also records the press point/time for the pressed row (<see cref="rowPressPositionInList"/>,
+    /// <see cref="rowPressStopwatch"/>) so <see cref="OnListPreviewMouseMove"/> can decide, once
+    /// movement first crosses the system drag threshold, whether the gesture is a Finder-style
+    /// rubber-band or a file drag - see <see cref="RubberBandTracker.ShouldStartRubberBand"/>.
     /// </summary>
     private void OnListPreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
@@ -319,11 +336,12 @@ public sealed class ColumnView : Control
         {
             // Empty space (below the rows, or the column background): start a rubber-band
             // instead of the entry-row drag/click handling below. No EntryPointerPressed,
-            // no EntryClicked - this is not a row interaction.
+            // no EntryClicked - this is not a row interaction. Always eligible, timing irrelevant -
+            // there is nothing here to drag.
             if (e.ChangedButton == MouseButton.Left && List is not null)
             {
                 var positionInList = e.GetPosition(List);
-                rubberBandTracker.Press(positionInList, onEmptySpace: true, FindNearestRowIndex(positionInList));
+                PressRubberBand(positionInList, FindNearestRowIndex(positionInList));
                 List.CaptureMouse();
             }
 
@@ -346,21 +364,40 @@ public sealed class ColumnView : Control
         if (e.ChangedButton == MouseButton.Left)
         {
             dragTracker.Press(e.GetPosition(this), entryIndex.Value);
+            rowPressPositionInList = List is not null ? e.GetPosition(List) : default;
+            rowPressStopwatch.Restart();
         }
     }
 
     /// <summary>
-    /// Tracks a left-button drag past the system threshold and raises
-    /// <see cref="EntryDragRequested"/> exactly once per gesture (the state machine
-    /// lives in <see cref="DragGestureTracker"/>; the next press-move-release cycle
-    /// starts fresh). The control does not start the OLE drag itself — see
-    /// <see cref="EntryDragRequested"/>.
+    /// Tracks a left-button drag past the system threshold. The state machine in
+    /// <see cref="DragGestureTracker"/> fires exactly once per gesture, at the moment the pointer
+    /// first travels past the system drag threshold - that single firing is also the Finder-timing
+    /// decision point: <see cref="RubberBandTracker.ShouldStartRubberBand"/> picks, from the
+    /// elapsed time since press and whether the pressed row is marked, whether this gesture is a
+    /// file drag (raises <see cref="EntryDragRequested"/> as before) or a rubber-band anchored at
+    /// the press point/row (armed retroactively via <see cref="PressRubberBand"/> - the drag
+    /// tracker having already fired is what suppresses the click at button-up, exactly as a real
+    /// drag would). Empty-space presses never reach here - they are decided immediately at press
+    /// time in <see cref="OnListPreviewMouseDown"/>.
     /// </summary>
     private void OnListPreviewMouseMove(object sender, MouseEventArgs e)
     {
         if (dragTracker.Move(e.GetPosition(this), e.LeftButton == MouseButtonState.Pressed) is { } entryIndex)
         {
-            EntryDragRequested?.Invoke(this, entryIndex);
+            var rowIsMarked = Column is { } column && entryIndex >= 0 && entryIndex < column.Entries.Count
+                && column.Entries[entryIndex].IsMarked;
+
+            if (RubberBandTracker.ShouldStartRubberBand(
+                    onEmptySpace: false, rowIsMarked, rowPressStopwatch.ElapsedMilliseconds))
+            {
+                PressRubberBand(rowPressPositionInList, entryIndex);
+                List?.CaptureMouse();
+            }
+            else
+            {
+                EntryDragRequested?.Invoke(this, entryIndex);
+            }
         }
 
         if (List is null)
@@ -456,9 +493,34 @@ public sealed class ColumnView : Control
     }
 
     /// <summary>
+    /// Arms <see cref="rubberBandTracker"/> for a gesture anchored at <paramref name="positionInList"/>
+    /// (list-relative) / <paramref name="anchorIndex"/>, and records <see cref="anchorPixelOffset"/>:
+    /// the pixel distance between that exact press point and the anchor row's edge at this instant
+    /// (computed via <see cref="ResolveAnchorPixelY"/> itself, with the offset momentarily zeroed,
+    /// so this is the only place that needs to know how the edge is resolved). Every later call to
+    /// <see cref="ResolveAnchorPixelY"/> reapplies this fixed offset, which is what keeps the
+    /// rendered rectangle's corner pinned to the actual press point - not the row's top - per
+    /// <see cref="UpdateRubberBandVisual"/>'s contract, including for a press on empty space below
+    /// the last row (whose "row" for anchoring purposes is that last row itself).
+    /// </summary>
+    private void PressRubberBand(Point positionInList, int anchorIndex)
+    {
+        anchorPixelOffset = 0;
+        anchorPixelOffset = positionInList.Y - ResolveAnchorPixelY(anchorIndex);
+        rubberBandTracker.Press(positionInList, onEmptySpace: true, anchorIndex);
+    }
+
+    /// <summary>
     /// Resolves the current pixel Y (in <see cref="List"/>-relative, i.e. viewport-relative,
-    /// coordinates) of <paramref name="anchorIndex"/>'s row: its realized container's top when the
-    /// row is still realized, otherwise the viewport edge it has scrolled past (top edge if the
+    /// coordinates) of the rubber-band's fixed corner for <paramref name="anchorIndex"/>: while its
+    /// row is still realized (in view), the exact press point is reconstructed as that row's
+    /// current top edge plus <see cref="anchorPixelOffset"/> (the fixed distance from the row's top
+    /// to the actual press point, captured once by <see cref="PressRubberBand"/>) - this is what
+    /// keeps the corner glued to the press point rather than snapping to the row's top, and is what
+    /// makes a press below the last row (which anchors on that row - see
+    /// <see cref="FindNearestRowIndex"/>) draw correctly instead of excluding it. Once the row has
+    /// scrolled out of the realized range, the exact point can no longer be reconstructed relative
+    /// to it, so this clamps to whichever viewport edge it scrolled past instead (top edge if the
     /// anchor is above the lowest realized index, bottom edge otherwise - realized indices are
     /// contiguous under virtualization, so the first realized row tells us which direction).
     /// </summary>
@@ -471,7 +533,8 @@ public sealed class ColumnView : Control
 
         if (anchorIndex >= 0 && List.ItemContainerGenerator.ContainerFromIndex(anchorIndex) is ListBoxItem anchorItem)
         {
-            return anchorItem.TransformToAncestor(List).TransformBounds(new Rect(anchorItem.RenderSize)).Top;
+            var rowTop = anchorItem.TransformToAncestor(List).TransformBounds(new Rect(anchorItem.RenderSize)).Top;
+            return Math.Clamp(rowTop + anchorPixelOffset, 0, Math.Max(0, List.ActualHeight));
         }
 
         for (var i = 0; i < List.Items.Count; i++)
