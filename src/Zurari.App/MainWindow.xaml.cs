@@ -47,7 +47,27 @@ public sealed partial class MainWindow : Window, IDisposable
         Loaded += (_, _) => Browser.Focus();
         KeyDown += OnWindowKeyDown;
 
+        if (ColumnBrowser.InputTraceEnabled)
+        {
+            // Window-level tunneling handlers see EVERY press/release before any child does,
+            // regardless of capture or which element the event targets - closes the diagnostic
+            // blind spot where a release never reaches a column's list (and therefore never
+            // shows up in the [input] log at all).
+            PreviewMouseDown += (_, e) => TraceWindowMouse("winDown", e);
+            PreviewMouseUp += (_, e) => TraceWindowMouse("winUp", e);
+        }
+
         Dispatch(new Msg.Refresh());
+    }
+
+    /// <summary>Diagnostic-only: logs a window-level mouse transition (see ctor wiring).</summary>
+    private void TraceWindowMouse(string kind, MouseButtonEventArgs e)
+    {
+        var position = e.GetPosition(this);
+        Trace.WriteLine(
+            $"[win] {kind} button={e.ChangedButton} state={e.ButtonState} clicks={e.ClickCount} " +
+            $"pos={position.X:F0},{position.Y:F0} src={e.OriginalSource?.GetType().Name} " +
+            $"captured={Mouse.Captured?.GetType().Name ?? "none"}");
     }
 
     /// <summary>Disposes the <see cref="WorkerRuntime"/> and <see cref="ShellEffectExecutor"/> owned by this window.</summary>

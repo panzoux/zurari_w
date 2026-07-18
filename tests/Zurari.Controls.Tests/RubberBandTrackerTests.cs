@@ -359,7 +359,9 @@ public class RubberBandTrackerTests
     [InlineData(true, true, true, true, false, 0.0, (int)RubberBandTracker.GestureReleaseAction.Click)] // row band, never escaped anchor: wiggle-click conversion
     [InlineData(true, true, true, true, true, 5.0, (int)RubberBandTracker.GestureReleaseAction.Click)] // row band, escaped but within displacement tolerance: wiggle-click conversion
     [InlineData(true, true, true, true, true, 50.0, (int)RubberBandTracker.GestureReleaseAction.MarkRange)] // row band, genuinely dragged: marks
-    [InlineData(true, true, false, true, false, 0.0, (int)RubberBandTracker.GestureReleaseAction.None)] // dragFired true but the band itself never produced a range (e.g. empty column)
+    [InlineData(true, true, false, true, false, 8.0, (int)RubberBandTracker.GestureReleaseAction.Click)] // stillborn row band (armed, never activated, quick release): the physical-button wiggle click
+    [InlineData(true, true, false, true, true, 8.0, (int)RubberBandTracker.GestureReleaseAction.Click)] // stillborn row band stays a click even if the jitter crossed a row boundary
+    [InlineData(true, true, false, false, false, 0.0, (int)RubberBandTracker.GestureReleaseAction.None)] // gesture became a FILE drag (band never armed): OLE owns the release, nothing here
     public void DecideRelease_matches_the_expected_action(
         bool dragFired,
         bool rowWasPressed,

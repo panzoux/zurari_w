@@ -833,6 +833,11 @@ public sealed class ColumnView : Control
     {
         if (e.ChangedButton != MouseButton.Left)
         {
+            if (ColumnBrowser.InputTraceEnabled)
+            {
+                Trace.WriteLine($"[input] col={Column?.Title} up ignored button={e.ChangedButton}");
+            }
+
             return;
         }
 

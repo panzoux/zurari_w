@@ -238,7 +238,15 @@ internal sealed class RubberBandTracker
 
         if (!bandProducedRange)
         {
-            return GestureReleaseAction.None;
+            // A ROW press whose gesture became a rubber band (startedOnRow) but was released
+            // before the band ever activated is a stillborn band: the pointer wiggled past the
+            // drag threshold and stopped - that is a click, not "nothing" (observed with
+            // physical touchpad buttons: press, ~8px jitter, quick release swallowed the click).
+            // startedOnRow=false with dragFired=true means the gesture became a FILE drag
+            // instead - OLE owns that release, so None stays correct there.
+            return startedOnRow && rowWasPressed
+                ? GestureReleaseAction.Click
+                : GestureReleaseAction.None;
         }
 
         return ShouldConvertToClick(startedOnRow, escapedAnchor, maxDisplacement)
