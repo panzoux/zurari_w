@@ -135,3 +135,17 @@ public sealed class MarkRangeRequestedEventArgs(int columnIndex, int fromIndex, 
     /// <summary>True when Ctrl was held at release (add to the existing selection).</summary>
     public bool Additive { get; } = additive;
 }
+
+/// <summary>
+/// Raised the moment a rubber-band (rectangle) drag ACTIVATES (the pointer first crosses the drag
+/// threshold), before it is released. The host uses this to clear the column's existing marks the
+/// instant a replace-mode (non-additive) band starts, rather than waiting for release - so stale
+/// marks never render alongside the live rubber-band highlight during the drag.
+/// </summary>
+public sealed class RubberBandStartedEventArgs(int columnIndex, bool additive) : EventArgs
+{
+    public int ColumnIndex { get; } = columnIndex;
+
+    /// <summary>True when Ctrl was held at the moment the band activated (adds to existing marks).</summary>
+    public bool Additive { get; } = additive;
+}

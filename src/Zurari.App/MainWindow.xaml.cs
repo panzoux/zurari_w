@@ -40,6 +40,7 @@ public sealed partial class MainWindow : Window, IDisposable
             new Msg.DropFiles(e.ColumnIndex, e.TargetEntryIndex, [.. e.Paths], e.ShiftHeld, e.CtrlHeld));
         Browser.MarkRangeRequested += (_, e) => loop.Dispatch(
             new Msg.MarkRange(e.ColumnIndex, e.FromIndex, e.ToIndex, e.Additive));
+        Browser.RubberBandStarted += OnRubberBandStarted;
 
         Closed += (_, _) => Dispose();
         Loaded += (_, _) => Browser.Focus();
@@ -146,7 +147,10 @@ public sealed partial class MainWindow : Window, IDisposable
     /// Finder style, then activates the clicked entry. Net behavior table (see also
     /// <see cref="Zurari.Controls.ColumnView.OnListPreviewMouseMove"/> for the drag/rubber-band half):
     /// <list type="bullet">
-    /// <item>plain click = select-only-this + enter</item>
+    /// <item>plain click = select-only-this + enter, but <see cref="Msg.EnterDirectory.FocusChild"/>
+    /// false - the child pane opens without stealing focus/cursor-highlight from the clicked column
+    /// (that only happens via Enter/→/double-click, which dispatch the FocusChild-true default via
+    /// <see cref="Zurari.Controls.ColumnBrowser.EntryActivated"/>)</item>
     /// <item>Ctrl+click = toggle mark (no navigation, no clearing)</item>
     /// <item>plain quick drag = replace-selection rubber band</item>
     /// <item>Ctrl+drag = additive rubber band</item>
@@ -165,7 +169,25 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         loop.Dispatch(new Msg.ClearMarks(e.ColumnIndex));
-        loop.Dispatch(new Msg.EnterDirectory(e.ColumnIndex, e.EntryIndex));
+        loop.Dispatch(new Msg.EnterDirectory(e.ColumnIndex, e.EntryIndex, FocusChild: false));
+    }
+
+    /// <summary>
+    /// A rubber-band drag just activated in <paramref name="e"/>.ColumnIndex - see
+    /// <see cref="Zurari.Controls.RubberBandStartedEventArgs"/>. A REPLACE-mode band (Ctrl not held
+    /// at activation) clears the column's existing marks immediately, so stale marks never render
+    /// alongside the live drag highlight; an additive band leaves them untouched. Note a band that
+    /// later converts back to a click (the wiggle-click fix in <see cref="Zurari.Controls.ColumnView"/>)
+    /// has already dispatched this <see cref="Msg.ClearMarks"/> by the time that happens - harmless,
+    /// since the click's own <see cref="OnEntryClicked"/> dispatches an equivalent
+    /// <see cref="Msg.ClearMarks"/> right before its <see cref="Msg.EnterDirectory"/> anyway.
+    /// </summary>
+    private void OnRubberBandStarted(object? sender, RubberBandStartedEventArgs e)
+    {
+        if (!e.Additive)
+        {
+            loop.Dispatch(new Msg.ClearMarks(e.ColumnIndex));
+        }
     }
 
     /// <summary>

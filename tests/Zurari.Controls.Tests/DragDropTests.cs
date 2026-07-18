@@ -123,6 +123,15 @@ public class DragDropTests
     }
 
     [Fact]
+    public void RubberBandStartedEventArgs_carries_column_index_and_additive()
+    {
+        var args = new RubberBandStartedEventArgs(columnIndex: 3, additive: true);
+
+        Assert.Equal(3, args.ColumnIndex);
+        Assert.True(args.Additive);
+    }
+
+    [Fact]
     public void Tracker_FiredThisGesture_is_false_before_and_true_after_a_threshold_crossing()
     {
         var tracker = new DragGestureTracker();

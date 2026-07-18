@@ -279,6 +279,46 @@ public class TransitionTests
     }
 
     [Fact]
+    public void EnterDirectory_default_focuses_the_new_child_column()
+    {
+        var state = StateWithColumns(new Column(@"C:\", [Dir, File1], Cursor: 0, Load: LoadState.Loaded));
+
+        var (next, _) = Transition.Apply(state, new Msg.EnterDirectory(0, 0));
+
+        Assert.Equal(1, next.FocusedColumn);
+    }
+
+    [Fact]
+    public void EnterDirectory_with_FocusChild_false_opens_the_child_but_keeps_focus_on_the_parent()
+    {
+        var state = StateWithColumns(new Column(@"C:\", [Dir, File1], Cursor: 0, Load: LoadState.Loaded));
+
+        var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(0, 0, FocusChild: false));
+
+        Assert.Equal(2, next.Columns.Length);
+        Assert.Equal(@"C:\sub", next.Columns[1].Path);
+        Assert.Equal(LoadState.Loading, next.Columns[1].Load);
+        Assert.Equal(0, next.FocusedColumn);
+        var effect = Assert.IsType<Effect.ReadDirectory>(Assert.Single(effects));
+        Assert.Equal(1, effect.ColumnIndex);
+    }
+
+    [Fact]
+    public void EnterDirectory_on_file_with_FocusChild_false_still_focuses_the_columnIndex()
+    {
+        // File selection semantics are unaffected by FocusChild - there is no child column to
+        // focus either way, so FocusedColumn is always the pressed column itself.
+        var state = StateWithColumns(new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded));
+
+        var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(0, 2, FocusChild: false));
+
+        Assert.Single(next.Columns);
+        Assert.Equal(2, next.Columns[0].Cursor);
+        Assert.Equal(0, next.FocusedColumn);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
     public void GoToParent_moves_focus_left_and_keeps_right_columns()
     {
         var state = StateWithColumns(
@@ -1174,7 +1214,8 @@ public class TransitionProperties
         GenColumnIndex.Select(i => (Msg)new Msg.CursorEnd(i)),
         Gen.Select(GenColumnIndex, GenEntryIndex).Select(t => (Msg)new Msg.CursorTo(t.Item1, t.Item2)),
         GenColumnIndex.Select(i => (Msg)new Msg.FocusColumn(i)),
-        Gen.Select(GenColumnIndex, GenEntryIndex).Select(t => (Msg)new Msg.EnterDirectory(t.Item1, t.Item2)),
+        Gen.Select(Gen.Select(GenColumnIndex, GenEntryIndex), GenIsMove)
+            .Select(t => (Msg)new Msg.EnterDirectory(t.Item1.Item1, t.Item1.Item2, t.Item2)),
         GenColumnIndex.Select(i => (Msg)new Msg.GoToParent(i)),
         Gen.Const<Msg>(new Msg.Refresh()),
         Gen.Select(GenColumnIndex, GenPath, GenEntries).Select(t => (Msg)new Msg.DirectoryLoaded(t.Item1, t.Item2, t.Item3)),

@@ -139,6 +139,23 @@ public sealed class ColumnView : Control
     /// </summary>
     private double anchorPixelOffset;
 
+    /// <summary>
+    /// The exact press point (list-relative) that started the current rubber-band gesture - the
+    /// same value passed to <see cref="PressRubberBand"/>. Fixed reference point for
+    /// <see cref="rubberBandMaxDisplacement"/>.
+    /// </summary>
+    private Point rubberBandPressPositionInList;
+
+    /// <summary>
+    /// Max distance (DIPs) the pointer has travelled from <see cref="rubberBandPressPositionInList"/>
+    /// at any point during the current rubber-band gesture, updated on every
+    /// <see cref="UpdateDuringMove"/> call. Reset to 0 by <see cref="PressRubberBand"/>. Feeds
+    /// <see cref="RubberBandTracker.ShouldConvertToClick"/>'s displacement-tolerance branch of the
+    /// wiggle-click fix (Item C) - the row-escape rule alone misfires for a press near a row
+    /// boundary, where even a few-px wiggle can cross into the neighbour row.
+    /// </summary>
+    private double rubberBandMaxDisplacement;
+
     static ColumnView()
     {
         DefaultStyleKeyProperty.OverrideMetadata(
@@ -202,6 +219,18 @@ public sealed class ColumnView : Control
     /// (that release is silently dropped, not a click).
     /// </summary>
     internal event EventHandler<MarkRangeRequestInfo>? MarkRangeRequested;
+
+    /// <summary>
+    /// Raised at the moment a rubber-band gesture ACTIVATES (the pointer first crosses the drag
+    /// threshold and the rectangle first appears) - for an empty-space start that is somewhere
+    /// during <see cref="OnListPreviewMouseMove"/>/<see cref="UpdateDuringMove"/>; for a row start it
+    /// is the same Finder-timing/Ctrl decision moment that arms <see cref="PressRubberBand"/>. Carries
+    /// whether Ctrl was held at that instant (additive) so <see cref="ColumnBrowser"/>'s host can
+    /// clear the column's existing marks the instant a REPLACE-mode band starts, instead of only at
+    /// release - see the Item A fix this exists for. Never raised for a gesture that never crosses
+    /// the threshold at all (a plain click).
+    /// </summary>
+    internal event EventHandler<bool>? RubberBandStarted;
 
     internal ListBox? List { get; private set; }
 
@@ -470,7 +499,20 @@ public sealed class ColumnView : Control
     private void UpdateDuringMove(Point positionInList)
     {
         lastMovePositionInList = positionInList;
+
+        var displacement = (positionInList - rubberBandPressPositionInList).Length;
+        if (displacement > rubberBandMaxDisplacement)
+        {
+            rubberBandMaxDisplacement = displacement;
+        }
+
+        var wasActive = rubberBandTracker.IsActive;
         var rect = rubberBandTracker.Move(positionInList);
+        if (rect is not null && !wasActive)
+        {
+            RubberBandStarted?.Invoke(this, Keyboard.Modifiers.HasFlag(ModifierKeys.Control));
+        }
+
         UpdateRubberBandVisual(rect, positionInList);
 
         if (rect is null)
@@ -564,6 +606,8 @@ public sealed class ColumnView : Control
         anchorPixelOffset = 0;
         anchorPixelOffset = positionInList.Y - ResolveAnchorPixelY(anchorIndex);
         rubberBandStartedOnRow = startedOnRow;
+        rubberBandPressPositionInList = positionInList;
+        rubberBandMaxDisplacement = 0;
         rubberBandTracker.Press(positionInList, onEmptySpace: true, anchorIndex);
     }
 
@@ -724,27 +768,13 @@ public sealed class ColumnView : Control
     /// <summary>
     /// Ends the current gesture and raises exactly one of <see cref="EntryClicked"/> or
     /// <see cref="MarkRangeRequested"/> (or neither, for an in-progress file drag - already reported
-    /// via <see cref="EntryDragRequested"/>). Three cases, checked in order:
-    /// <list type="number">
-    /// <item>The drag threshold never fired at all (<see cref="DragGestureTracker.FiredThisGesture"/>
-    /// false): a true click, raises <see cref="EntryClicked"/> for the pressed row - as before.</item>
-    /// <item><b>Wiggle-click fix</b> (bug repro: a physical mouse-button press nudges the pointer a
-    /// few px, crossing the system drag threshold within the Finder-timing window even though the
-    /// user meant a plain click): the threshold DID fire and armed a rubber-band via
-    /// <see cref="PressRubberBand"/>, but it <see cref="rubberBandStartedOnRow"/> (not empty space)
-    /// AND its live range never escaped the pressed row
-    /// (<c>!</c><see cref="RubberBandTracker.HasEscapedAnchor"/>) for the whole gesture - this is
-    /// still a click, not a mark-range: raises <see cref="EntryClicked"/>, not
-    /// <see cref="MarkRangeRequested"/>. A rubber-band that started on EMPTY space still applies
-    /// marks even for a final single-row range (only a row-started gesture gets this treatment).</item>
-    /// <item>Otherwise, if the rubber-band ever activated (<see cref="RubberBandTracker.Release"/>
-    /// returns non-null), raises <see cref="MarkRangeRequested"/> for its final range - additive
-    /// per Ctrl held now, at release (independent of whatever decided the gesture at threshold-cross
-    /// time).</item>
-    /// </list>
-    /// All the values these branches need are read up front, before any tracker's <c>Release()</c>
-    /// resets its gesture state, so ordering among the three branches cannot shift the answer -
-    /// and only one of the two events above is ever raised per gesture.
+    /// via <see cref="EntryDragRequested"/>). The decision itself is
+    /// <see cref="RubberBandTracker.DecideRelease"/>, a pure function of state read up front here -
+    /// before either tracker's <c>Release()</c> resets its gesture state, so which branch fires
+    /// cannot depend on read order. See that method's remarks for the empty-space bug
+    /// (<see cref="RubberBandTracker.DecideRelease"/>'s <c>dragFired</c>/<c>rowWasPressed</c>
+    /// parameters) and the wiggle-click fix (<see cref="RubberBandTracker.ShouldConvertToClick"/>)
+    /// it encodes.
     /// </summary>
     private void OnListPreviewMouseUp(object sender, MouseButtonEventArgs e)
     {
@@ -757,6 +787,7 @@ public sealed class ColumnView : Control
         var dragFired = dragTracker.FiredThisGesture;
         var startedOnRow = rubberBandStartedOnRow;
         var escapedAnchor = rubberBandTracker.HasEscapedAnchor;
+        var maxDisplacement = rubberBandMaxDisplacement;
 
         // LiveRange must be read before Release() - Release() resets the anchor/current
         // indices along with the rest of the gesture state.
@@ -773,30 +804,27 @@ public sealed class ColumnView : Control
 
         UpdateRubberBandVisual(null, default);
 
-        if (!dragFired)
+        var action = RubberBandTracker.DecideRelease(
+            dragFired,
+            rowWasPressed: pressedEntryIndex is not null,
+            bandProducedRange: rubberBandRect is not null && finalRange is not null,
+            startedOnRow,
+            escapedAnchor,
+            maxDisplacement);
+
+        switch (action)
         {
-            if (pressedEntryIndex is { } neverDraggedIndex)
-            {
-                EntryClicked?.Invoke(this, neverDraggedIndex);
-            }
+            case RubberBandTracker.GestureReleaseAction.Click when pressedEntryIndex is { } clickedIndex:
+                EntryClicked?.Invoke(this, clickedIndex);
+                break;
 
-            return;
+            case RubberBandTracker.GestureReleaseAction.MarkRange when finalRange is { } range:
+                MarkRangeRequested?.Invoke(
+                    this,
+                    new MarkRangeRequestInfo(
+                        range.From, range.To, Keyboard.Modifiers.HasFlag(ModifierKeys.Control)));
+                break;
         }
-
-        if (rubberBandRect is null || finalRange is not { } range)
-        {
-            return;
-        }
-
-        if (startedOnRow && !escapedAnchor && pressedEntryIndex is { } wiggleClickIndex)
-        {
-            EntryClicked?.Invoke(this, wiggleClickIndex);
-            return;
-        }
-
-        MarkRangeRequested?.Invoke(
-            this,
-            new MarkRangeRequestInfo(range.From, range.To, Keyboard.Modifiers.HasFlag(ModifierKeys.Control)));
     }
 
     /// <summary>

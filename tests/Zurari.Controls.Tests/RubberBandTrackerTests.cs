@@ -323,4 +323,87 @@ public class RubberBandTrackerTests
 
         Assert.False(tracker.HasEscapedAnchor);
     }
+
+    [Fact]
+    public void ClickDisplacementToleranceDips_is_10()
+    {
+        Assert.Equal(10.0, RubberBandTracker.ClickDisplacementToleranceDips);
+    }
+
+    [Theory]
+    // startedOnRow, escapedAnchor, maxDisplacement, expected
+    [InlineData(false, false, 0.0, false)] // empty-space band: never converts, even if it never escaped
+    [InlineData(false, true, 0.0, false)] // empty-space band: never converts, even a large escape
+    [InlineData(false, true, 500.0, false)]
+    [InlineData(true, false, 0.0, true)] // row band that never escaped the anchor: click
+    [InlineData(true, false, 500.0, true)] // never escaped, regardless of displacement
+    [InlineData(true, true, 9.9, true)] // escaped, but within the displacement tolerance: still a click
+    [InlineData(true, true, 10.0, false)] // escaped, at the tolerance boundary: mark-range
+    [InlineData(true, true, 10.1, false)] // escaped, past the tolerance: mark-range
+    public void ShouldConvertToClick_matches_the_wiggle_click_truth_table(
+        bool startedOnRow, bool escapedAnchor, double maxDisplacement, bool expected)
+    {
+        Assert.Equal(
+            expected, RubberBandTracker.ShouldConvertToClick(startedOnRow, escapedAnchor, maxDisplacement));
+    }
+
+    // GestureReleaseAction is internal, and a [Theory]'s InlineData/method signature must be at
+    // least as accessible as the (necessarily public) test method itself - so the expected action
+    // travels through InlineData as its underlying int and is cast back inside the test body.
+    [Theory]
+    // dragFired, rowWasPressed, bandProducedRange, startedOnRow, escapedAnchor, maxDisplacement, expected
+    [InlineData(false, true, false, false, false, 0.0, (int)RubberBandTracker.GestureReleaseAction.Click)] // plain click, no drag at all
+    [InlineData(false, false, false, false, false, 0.0, (int)RubberBandTracker.GestureReleaseAction.None)] // idle press/release on empty space, never crossed threshold
+    [InlineData(false, false, true, false, false, 0.0, (int)RubberBandTracker.GestureReleaseAction.MarkRange)] // THE BUG: empty-space band, dragTracker never armed (dragFired stays false) - must still mark
+    [InlineData(false, false, true, false, true, 500.0, (int)RubberBandTracker.GestureReleaseAction.MarkRange)] // empty-space band with a big escape: still marks (never converts to click)
+    [InlineData(true, true, true, true, false, 0.0, (int)RubberBandTracker.GestureReleaseAction.Click)] // row band, never escaped anchor: wiggle-click conversion
+    [InlineData(true, true, true, true, true, 5.0, (int)RubberBandTracker.GestureReleaseAction.Click)] // row band, escaped but within displacement tolerance: wiggle-click conversion
+    [InlineData(true, true, true, true, true, 50.0, (int)RubberBandTracker.GestureReleaseAction.MarkRange)] // row band, genuinely dragged: marks
+    [InlineData(true, true, false, true, false, 0.0, (int)RubberBandTracker.GestureReleaseAction.None)] // dragFired true but the band itself never produced a range (e.g. empty column)
+    public void DecideRelease_matches_the_expected_action(
+        bool dragFired,
+        bool rowWasPressed,
+        bool bandProducedRange,
+        bool startedOnRow,
+        bool escapedAnchor,
+        double maxDisplacement,
+        int expected)
+    {
+        Assert.Equal(
+            (RubberBandTracker.GestureReleaseAction)expected,
+            RubberBandTracker.DecideRelease(
+                dragFired, rowWasPressed, bandProducedRange, startedOnRow, escapedAnchor, maxDisplacement));
+    }
+
+    [Fact]
+    public void DecideRelease_reproduces_the_upward_empty_space_band_bug_end_to_end()
+    {
+        // Regression pin for Item B: directory with rows "26"/"27"/"28" (indices 0,1,2), press in
+        // the empty space below "28" (anchors on the last row via ColumnView.FindNearestRowIndex),
+        // drag up to "26". The empty-space press never arms DragGestureTracker at all, so
+        // FiredThisGesture stays permanently false for this gesture - reading that as "never
+        // dragged, so it's a click" is exactly the regression from commit ab6fc62. The mark range
+        // must still be requested for [0, 2], even though it collapses to nothing but a drag.
+        var tracker = new RubberBandTracker();
+        const int lastRowIndex = 2;
+        var origin = new Point(100, 500);
+        tracker.Press(origin, onEmptySpace: true, anchorIndex: lastRowIndex);
+        tracker.Move(new Point(origin.X, origin.Y - 200)); // past the threshold, dragging up
+
+        var range = tracker.UpdateCurrentIndex(0);
+        Assert.Equal((0, lastRowIndex), range);
+
+        var escapedAnchor = tracker.HasEscapedAnchor;
+        var rect = tracker.Release();
+
+        var action = RubberBandTracker.DecideRelease(
+            dragFired: false, // dragTracker.FiredThisGesture - never armed for an empty-space press
+            rowWasPressed: false, // dragTracker.PressedEntryIndex - never set either
+            bandProducedRange: rect is not null && range is not null,
+            startedOnRow: false,
+            escapedAnchor,
+            maxDisplacement: 200.0);
+
+        Assert.Equal(RubberBandTracker.GestureReleaseAction.MarkRange, action);
+    }
 }

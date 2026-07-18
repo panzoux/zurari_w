@@ -44,10 +44,15 @@ public abstract record Msg
 
     /// <summary>
     /// Activate the entry at <paramref name="EntryIndex"/> in <paramref name="ColumnIndex"/>. For a
-    /// directory or drive, extends the browser one column to the right and requests its listing.
-    /// For a file, currently a no-op.
+    /// directory or drive, extends the browser one column to the right and requests its listing;
+    /// <paramref name="FocusChild"/> (default <c>true</c>) decides whether keyboard focus follows
+    /// into that new child column (Enter / → / double-click) or stays on <paramref name="ColumnIndex"/>
+    /// itself (a plain click on the directory - the child pane still opens, but the strong
+    /// cursor-row highlight and title-bar path stay put). For a file, selects it and moves focus to
+    /// <paramref name="ColumnIndex"/> regardless of <paramref name="FocusChild"/> - there is no
+    /// child column to focus.
     /// </summary>
-    public sealed record EnterDirectory(int ColumnIndex, int EntryIndex) : Msg;
+    public sealed record EnterDirectory(int ColumnIndex, int EntryIndex, bool FocusChild = true) : Msg;
 
     /// <summary>Move focus from <paramref name="ColumnIndex"/> to the column to its left, Finder style.</summary>
     public sealed record GoToParent(int ColumnIndex) : Msg;

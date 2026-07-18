@@ -18,6 +18,15 @@ internal sealed class RubberBandTracker
     /// </summary>
     internal const int RubberBandVsDragThresholdMs = 300;
 
+    /// <summary>
+    /// Maximum pointer displacement (DIPs) from the press point, for the whole gesture, below which
+    /// a ROW-STARTED rubber band that escaped its anchor row still converts back to a click at
+    /// release - see <see cref="ShouldConvertToClick"/>. Covers the case where the press landed near
+    /// a row boundary: a few-px wiggle crosses into the neighbour row (latching
+    /// <see cref="HasEscapedAnchor"/>) even though the user never meant to drag anywhere.
+    /// </summary>
+    internal const double ClickDisplacementToleranceDips = 10.0;
+
     private Point? origin;
     private bool active;
     private Rect? currentRect;
@@ -165,5 +174,75 @@ internal sealed class RubberBandTracker
         }
 
         return elapsedMs < RubberBandVsDragThresholdMs;
+    }
+
+    /// <summary>
+    /// Wiggle-click rule: a ROW-STARTED rubber band (<paramref name="startedOnRow"/>) converts back
+    /// to a plain click at release when it either never escaped its anchor row
+    /// (<c>!</c><paramref name="escapedAnchor"/>) OR the pointer's max displacement from the press
+    /// point over the whole gesture never exceeded <see cref="ClickDisplacementToleranceDips"/> -
+    /// covering a wiggle that happened to cross a nearby row boundary anyway. An EMPTY-SPACE band
+    /// (<c>!</c><paramref name="startedOnRow"/>) is never converted - it always applies marks, even
+    /// for a final single-row range (see the empty-space rubber-band bug this guards against: it
+    /// must never be swallowed by the row-only click rule below).
+    /// </summary>
+    internal static bool ShouldConvertToClick(bool startedOnRow, bool escapedAnchor, double maxDisplacement)
+    {
+        if (!startedOnRow)
+        {
+            return false;
+        }
+
+        return !escapedAnchor || maxDisplacement < ClickDisplacementToleranceDips;
+    }
+
+    /// <summary>What a gesture's button-up should raise, computed purely from state captured before
+    /// either tracker (<see cref="DragGestureTracker"/> or this one) resets it.</summary>
+    internal enum GestureReleaseAction
+    {
+        /// <summary>Raise neither event - e.g. an empty-space press that never crossed the drag threshold.</summary>
+        None,
+
+        /// <summary><see cref="ColumnView.EntryClicked"/> - a true click or a wiggle-click conversion.</summary>
+        Click,
+
+        /// <summary><see cref="ColumnView.MarkRangeRequested"/> - a genuine rubber-band release.</summary>
+        MarkRange,
+    }
+
+    /// <summary>
+    /// Decides <see cref="GestureReleaseAction"/> for <see cref="ColumnView.OnListPreviewMouseUp"/>.
+    /// <paramref name="dragFired"/> is <see cref="DragGestureTracker.FiredThisGesture"/>, which is
+    /// only meaningful when <paramref name="rowWasPressed"/> is true: an empty-space press never
+    /// arms <see cref="DragGestureTracker"/> at all (only this tracker), so <paramref name="dragFired"/>
+    /// stays permanently false for an empty-space gesture regardless of whether a rubber band
+    /// actually ran - reading it as "never dragged, so it's a click" for that case is exactly the
+    /// bug this method fixes: an empty-space rubber band's marks were being silently dropped at
+    /// release. <paramref name="bandProducedRange"/> is whether the rubber band both activated
+    /// (<see cref="Release"/> returned a rect) and resolved a valid live range (<see cref="LiveRange"/>
+    /// non-null just before that) - false for a column with no rows at all, or a press that never
+    /// crossed the threshold.
+    /// </summary>
+    internal static GestureReleaseAction DecideRelease(
+        bool dragFired,
+        bool rowWasPressed,
+        bool bandProducedRange,
+        bool startedOnRow,
+        bool escapedAnchor,
+        double maxDisplacement)
+    {
+        if (!dragFired && rowWasPressed)
+        {
+            return GestureReleaseAction.Click;
+        }
+
+        if (!bandProducedRange)
+        {
+            return GestureReleaseAction.None;
+        }
+
+        return ShouldConvertToClick(startedOnRow, escapedAnchor, maxDisplacement)
+            ? GestureReleaseAction.Click
+            : GestureReleaseAction.MarkRange;
     }
 }

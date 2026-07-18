@@ -93,6 +93,12 @@ public sealed class ColumnBrowser : Control
     /// </summary>
     public event EventHandler<MarkRangeRequestedEventArgs>? MarkRangeRequested;
 
+    /// <summary>
+    /// Raised the moment a rubber-band drag activates in a column (before release) - see
+    /// <see cref="RubberBandStartedEventArgs"/>.
+    /// </summary>
+    public event EventHandler<RubberBandStartedEventArgs>? RubberBandStarted;
+
     /// <inheritdoc />
     public override void OnApplyTemplate()
     {
@@ -132,6 +138,7 @@ public sealed class ColumnBrowser : Control
             view.EntryDragRequested += OnColumnEntryDragRequested;
             view.FileDropRequested += OnColumnFileDropRequested;
             view.MarkRangeRequested += OnColumnMarkRangeRequested;
+            view.RubberBandStarted += OnColumnRubberBandStarted;
             children.Add(view);
         }
 
@@ -293,6 +300,22 @@ public sealed class ColumnBrowser : Control
 
         MarkRangeRequested?.Invoke(
             this, new MarkRangeRequestedEventArgs(index, info.FromIndex, info.ToIndex, info.Additive));
+    }
+
+    private void OnColumnRubberBandStarted(object? sender, bool additive)
+    {
+        if (sender is not ColumnView view || columnsPanel is null)
+        {
+            return;
+        }
+
+        var index = columnsPanel.Children.IndexOf(view);
+        if (index < 0)
+        {
+            return;
+        }
+
+        RubberBandStarted?.Invoke(this, new RubberBandStartedEventArgs(index, additive));
     }
 
     /// <inheritdoc />

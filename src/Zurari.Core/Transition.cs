@@ -27,7 +27,7 @@ public static class Transition
             Msg.CursorEnd m => (MoveCursorTo(state, m.ColumnIndex, index: int.MaxValue), NoEffects),
             Msg.CursorTo m => (MoveCursorTo(state, m.ColumnIndex, m.EntryIndex), NoEffects),
             Msg.FocusColumn m => (FocusColumn(state, m.ColumnIndex), NoEffects),
-            Msg.EnterDirectory m => EnterDirectory(state, m.ColumnIndex, m.EntryIndex),
+            Msg.EnterDirectory m => EnterDirectory(state, m.ColumnIndex, m.EntryIndex, m.FocusChild),
             Msg.GoToParent m => (GoToParent(state, m.ColumnIndex), NoEffects),
             Msg.Refresh => Refresh(state),
             Msg.DirectoryLoaded m => (DirectoryLoaded(state, m.ColumnIndex, m.Path, m.Entries), NoEffects),
@@ -88,7 +88,8 @@ public static class Transition
     private static AppState FocusColumn(AppState state, int columnIndex) =>
         InRange(state, columnIndex) ? state with { FocusedColumn = columnIndex } : state;
 
-    private static (AppState, IReadOnlyList<Effect>) EnterDirectory(AppState state, int columnIndex, int entryIndex)
+    private static (AppState, IReadOnlyList<Effect>) EnterDirectory(
+        AppState state, int columnIndex, int entryIndex, bool focusChild)
     {
         if (!InRange(state, columnIndex))
         {
@@ -121,7 +122,7 @@ public static class Transition
         var newColumn = new Column(Path: childPath, Entries: [], Cursor: -1, Load: LoadState.Loading);
         var newColumns = truncated.Add(newColumn);
 
-        var newState = state with { Columns = newColumns, FocusedColumn = newColumnIndex };
+        var newState = state with { Columns = newColumns, FocusedColumn = focusChild ? newColumnIndex : columnIndex };
         return (newState, [new Effect.ReadDirectory(newColumnIndex, childPath)]);
     }
 
