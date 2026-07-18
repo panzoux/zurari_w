@@ -112,6 +112,15 @@ public sealed class ColumnView : Control
     private readonly DragGestureTracker dragTracker = new();
     private readonly RubberBandTracker rubberBandTracker = new();
     private readonly DispatcherTimer autoScrollTimer = new() { Interval = TimeSpan.FromMilliseconds(50) };
+
+    /// <summary>
+    /// Watches an open left-button gesture for a release the OS never delivered (some touchpad
+    /// drivers occasionally drop the WM_LBUTTONUP of a physical-button click). Started on every
+    /// left press, stopped by <see cref="CompleteLeftRelease"/>; each tick polls the live device
+    /// state and synthesizes the release path when the button is up but no event arrived.
+    /// </summary>
+    private readonly DispatcherTimer releaseWatchdogTimer = new() { Interval = TimeSpan.FromMilliseconds(50) };
+
     private readonly Stopwatch rowPressStopwatch = new();
     private Rectangle? rubberBandVisual;
     private ScrollViewer? listScrollViewer;
@@ -184,6 +193,26 @@ public sealed class ColumnView : Control
         DragLeave += OnDragLeave;
         Drop += OnDrop;
         autoScrollTimer.Tick += OnAutoScrollTick;
+        releaseWatchdogTimer.Tick += OnReleaseWatchdogTick;
+    }
+
+    /// <summary>
+    /// Synthesizes the release path when the physical button is up but no
+    /// <see cref="UIElement.PreviewMouseUp"/> ever arrived — see <see cref="releaseWatchdogTimer"/>.
+    /// </summary>
+    private void OnReleaseWatchdogTick(object? sender, EventArgs e)
+    {
+        if (Mouse.PrimaryDevice.LeftButton != MouseButtonState.Released)
+        {
+            return;
+        }
+
+        if (ColumnBrowser.InputTraceEnabled)
+        {
+            Trace.WriteLine($"[input] col={Column?.Title} watchdog: button released without an up event - synthesizing release");
+        }
+
+        CompleteLeftRelease();
     }
 
     /// <summary>Snapshot of the column to display.</summary>
@@ -442,6 +471,7 @@ public sealed class ColumnView : Control
                 var positionInList = e.GetPosition(List);
                 PressRubberBand(positionInList, FindNearestRowIndex(positionInList), startedOnRow: false);
                 List.CaptureMouse();
+                releaseWatchdogTimer.Start();
             }
 
             return;
@@ -472,6 +502,7 @@ public sealed class ColumnView : Control
             dragTracker.Press(e.GetPosition(this), entryIndex.Value);
             rowPressPositionInList = List is not null ? e.GetPosition(List) : default;
             rowPressStopwatch.Restart();
+            releaseWatchdogTimer.Start();
         }
     }
 
@@ -840,6 +871,21 @@ public sealed class ColumnView : Control
 
             return;
         }
+
+        CompleteLeftRelease();
+    }
+
+    /// <summary>
+    /// Completes the current left-button gesture: decides click vs mark-range vs nothing and
+    /// resets every tracker. Called from <see cref="OnListPreviewMouseUp"/> for a normally
+    /// delivered release, and from <see cref="OnReleaseWatchdogTick"/> when the OS never delivered
+    /// one (observed in the wild: some touchpad drivers occasionally drop the WM_LBUTTONUP for a
+    /// physical-button click — the press arrives, the release never does, and the click was
+    /// silently swallowed). Idempotent: with all trackers already released it decides None.
+    /// </summary>
+    private void CompleteLeftRelease()
+    {
+        releaseWatchdogTimer.Stop();
 
         var pressedEntryIndex = dragTracker.PressedEntryIndex;
         var dragFired = dragTracker.FiredThisGesture;
