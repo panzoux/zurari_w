@@ -323,6 +323,87 @@ public class InputEventTests
         Assert.False(item!.Focusable);
     }
 
+    [StaFact]
+    public void Move_reporting_a_released_button_synthesizes_the_click_exactly_once()
+    {
+        // Reproduces the dropped-WM_LBUTTONUP recovery in-process: in a test run the REAL device
+        // button is released, so a synthesized move after a synthesized press is exactly the
+        // "driver dropped the up, the next move carries the released state" scenario. The click
+        // must fire once at that move, and a late real up must NOT fire it a second time.
+        var columns = VirtualizationTests.MakeColumns(columnCount: 1, entryCount: 10);
+        var browser = new ColumnBrowser { Columns = columns };
+        using var host = new TestWindow(browser);
+        TestWindow.DoEvents();
+
+        var list = FindListBox(browser, 0);
+        var item = list!.ItemContainerGenerator.ContainerFromIndex(4) as ListBoxItem;
+        Assert.NotNull(item);
+
+        var clickedCount = 0;
+        EntryClickedEventArgs? lastClicked = null;
+        browser.EntryClicked += (_, e) =>
+        {
+            clickedCount++;
+            lastClicked = e;
+        };
+
+        RaisePress(item!, MouseButton.Left);
+        Assert.Equal(0, clickedCount);
+
+        RaiseMove(item!);
+        Assert.Equal(1, clickedCount);
+        Assert.Equal(4, lastClicked!.EntryIndex);
+
+        // A late (delayed rather than dropped) real up must be a no-op: the trackers were
+        // already reset by the synthesized release, so DecideRelease sees no open gesture.
+        RaiseRelease(item!, MouseButton.Left);
+        Assert.Equal(1, clickedCount);
+    }
+
+    [StaFact]
+    public void Watchdog_synthesizes_the_click_when_neither_move_nor_up_arrives()
+    {
+        // The fallback layer: no move and no up after the press (the pointer is perfectly still
+        // and the driver dropped the release) - the 50ms watchdog polls the real device state
+        // (released in a test run) and must complete the click exactly once.
+        var columns = VirtualizationTests.MakeColumns(columnCount: 1, entryCount: 10);
+        var browser = new ColumnBrowser { Columns = columns };
+        using var host = new TestWindow(browser);
+        TestWindow.DoEvents();
+
+        var list = FindListBox(browser, 0);
+        var item = list!.ItemContainerGenerator.ContainerFromIndex(3) as ListBoxItem;
+        Assert.NotNull(item);
+
+        var clickedCount = 0;
+        browser.EntryClicked += (_, _) => clickedCount++;
+
+        RaisePress(item!, MouseButton.Left);
+        Assert.Equal(0, clickedCount);
+
+        // Pump the dispatcher until the watchdog tick fires (interval 50ms; allow up to 2s).
+        var deadline = Environment.TickCount64 + 2000;
+        while (clickedCount == 0 && Environment.TickCount64 < deadline)
+        {
+            System.Threading.Thread.Sleep(20);
+            TestWindow.DoEvents();
+        }
+
+        Assert.Equal(1, clickedCount);
+
+        RaiseRelease(item!, MouseButton.Left);
+        Assert.Equal(1, clickedCount);
+    }
+
+    private static void RaiseMove(UIElement target)
+    {
+        var e = new MouseEventArgs(Mouse.PrimaryDevice, 0)
+        {
+            RoutedEvent = Mouse.PreviewMouseMoveEvent,
+        };
+        target.RaiseEvent(e);
+    }
+
     private static void RaiseKey(UIElement target, Key key)
     {
         var e = new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(target), 0, key)

@@ -11,6 +11,19 @@ namespace Zurari.App;
 /// </summary>
 public partial class ZurariApp : Application
 {
+    static ZurariApp()
+    {
+        // Precision-touchpad input reaches WPF through the WISP stylus/touch stack, which then
+        // promotes it to mouse events. The --debug-input diagnostics proved that a physical
+        // touchpad button's WM_LBUTTONUP occasionally never reaches this app at all, while the
+        // very next mouse-move already carries the released state - a known-flaky corner of that
+        // promotion layer. This switch bypasses WISP so WPF consumes raw Win32 mouse messages
+        // directly. Touch-SCREEN manipulation (touch panning) is lost, which this
+        // keyboard/mouse-centric app does not use; the in-app recovery (move-observed release +
+        // release watchdog in ColumnView) stays as a second line of defense either way.
+        AppContext.SetSwitch("Switch.System.Windows.Input.Stylus.DisableStylusAndTouchSupport", true);
+    }
+
     /// <summary>
     /// Command-line switch that turns on the opt-in input-pipeline diagnostic tracing: sets
     /// <see cref="ColumnBrowser.InputTraceEnabled"/>, opens the log file via
