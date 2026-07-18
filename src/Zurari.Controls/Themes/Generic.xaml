@@ -110,11 +110,21 @@
                                                   wins over both the weak cursor and the hover preview, so a
                                                   marked row in an unfocused column stays visibly marked even
                                                   while a rubber-band is passing over some other row.
-                                               4. IsSelected + IsColumnFocused (#FFB3D3F2, strong cursor) -
+                                               4. IsDropTargetRow (#FFB3D3F2, strong selection blue) - the
+                                                  single row a file drag is hovering, when it is a Directory
+                                                  or Drive (set by ColumnView.OnDragOver, cleared on every
+                                                  other container each update). Deliberately wins over
+                                                  IsMarked/IsRubberBandHover/weak-cursor: the receiving
+                                                  directory must read unambiguously as "drop here", not be
+                                                  muddied by whatever selection state it happened to already
+                                                  have.
+                                               5. IsSelected + IsColumnFocused (#FFB3D3F2, strong cursor) -
                                                   last, so the cursor row in the FOCUSED column always reads
                                                   as the strong cursor blue even when also marked; unfocused
                                                   columns never get this trigger; their marked rows show only
-                                                  the weaker step 3 background as a result. -->
+                                                  the weaker step 3 background as a result. Same color as
+                                                  step 4 by design (a drop-target row and the strong cursor
+                                                  row are meant to look identical when they coincide). -->
                                         <Style.Triggers>
                                             <!-- Cursor row: selection reflects ColumnVm.CursorIndex only
                                                  (ColumnView keeps SelectedIndex in sync; it never lets
@@ -137,6 +147,14 @@
                                             <DataTrigger Binding="{Binding IsMarked}" Value="True">
                                                 <Setter Property="Background" Value="#FFCCE8FF" />
                                             </DataTrigger>
+                                            <!-- Explorer (or other app) file drag currently hovering this
+                                                 row, which is a Directory or Drive: set directly on the
+                                                 container by ColumnView.OnDragOver, cleared on DragLeave/
+                                                 Drop/every update. Reads as the strong selection blue so the
+                                                 receiving directory looks exactly like a selected row. -->
+                                            <Trigger Property="local:ColumnView.IsDropTargetRow" Value="True">
+                                                <Setter Property="Background" Value="#FFB3D3F2" />
+                                            </Trigger>
                                             <!-- Strong highlight only in the focused column. IsColumnFocused
                                                  is an inheritable attached property set once on the owning
                                                  ColumnView, not on WPF's own keyboard-focus state, so the

@@ -182,6 +182,68 @@ public class CursorVisualTests
     private static Color GetBackgroundColor(ListBoxItem item) =>
         item.Background is SolidColorBrush brush ? brush.Color : Colors.Transparent;
 
+    // Drop-target row highlight (Item 1): real DragEventArgs cannot be synthesized (internal
+    // constructors, per DragDropTests's remarks), so the hit-test path itself (OnDragOver walking
+    // FindEntryIndex, checking EntryVm.Kind) is a manual/Phase-4-checklist item. What IS unit-
+    // testable, mirroring Selected_marked_row_paints_the_style_background_on_screen_not_the_os_theme_gray
+    // below, is that setting the attached property on a realized container paints the strong
+    // selection blue via the template's actual Border - not just the container's Background
+    // property - proving the trigger and its precedence are wired correctly in Generic.xaml.
+    [StaFact]
+    public void IsDropTargetRow_attached_property_paints_the_strong_selection_blue_on_screen()
+    {
+        var entries = new[]
+        {
+            new EntryVm("plain", EntryKind.File, IsMarked: false, SizeText: null, DateText: null),
+        };
+        var columns = new[] { new ColumnVm("col", entries, CursorIndex: -1, IsFocused: true) };
+        var browser = new ColumnBrowser { Columns = columns };
+        using var host = new TestWindow(browser);
+        TestWindow.DoEvents();
+
+        var list = FindListBox(browser, 0);
+        Assert.NotNull(list);
+
+        var row = list!.ItemContainerGenerator.ContainerFromIndex(0) as ListBoxItem;
+        Assert.NotNull(row);
+        Assert.NotEqual(StrongCursorBackground, GetBackgroundColor(row));
+
+        ColumnView.SetIsDropTargetRow(row!, true);
+        TestWindow.DoEvents();
+
+        Assert.Equal(StrongCursorBackground, GetBackgroundColor(row));
+
+        var border = FindVisualChild<Border>(row!);
+        Assert.NotNull(border);
+        var painted = Assert.IsType<SolidColorBrush>(border!.Background);
+        Assert.Equal(StrongCursorBackground, painted.Color);
+    }
+
+    [StaFact]
+    public void IsDropTargetRow_beats_IsMarked_and_IsRubberBandHover()
+    {
+        var entries = new[]
+        {
+            new EntryVm("marked-and-hovered", EntryKind.File, IsMarked: true, SizeText: null, DateText: null),
+        };
+        var columns = new[] { new ColumnVm("col", entries, CursorIndex: -1, IsFocused: true) };
+        var browser = new ColumnBrowser { Columns = columns };
+        using var host = new TestWindow(browser);
+        TestWindow.DoEvents();
+
+        var list = FindListBox(browser, 0);
+        var row = list!.ItemContainerGenerator.ContainerFromIndex(0) as ListBoxItem;
+        Assert.NotNull(row);
+        ColumnView.SetIsRubberBandHover(row!, true);
+        TestWindow.DoEvents();
+        Assert.Equal(MarkedBackground, GetBackgroundColor(row!)); // marked already beats hover
+
+        ColumnView.SetIsDropTargetRow(row!, true);
+        TestWindow.DoEvents();
+
+        Assert.Equal(StrongCursorBackground, GetBackgroundColor(row!));
+    }
+
     [StaFact]
     public void Selected_marked_row_paints_the_style_background_on_screen_not_the_os_theme_gray()
     {

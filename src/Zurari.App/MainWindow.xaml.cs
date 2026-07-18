@@ -92,24 +92,22 @@ public sealed partial class MainWindow : Window, IDisposable
     }
 
     /// <summary>
-    /// Every press just moves the cursor there - directory activation happens on release-without-
-    /// drag instead (see <see cref="Zurari.Controls.EntryClickedEventArgs"/>), so a press that
-    /// turns into a drag never enters a directory out from under column 3, which would otherwise
-    /// collapse the very column the drag needs as a drop target. Ctrl+left instead toggles the
-    /// entry's mark (does not move the cursor via <see cref="Msg.CursorTo"/> - <see cref="Msg.ToggleMark"/>
-    /// moves it itself). A right click additionally shows the shell context menu - for every marked
-    /// entry in the column when the pressed row is marked, otherwise just that entry - blocking
-    /// synchronously until the user picks a command or dismisses it, and - if a command was invoked
-    /// - dispatches <see cref="Msg.Refresh"/> since the shell may have renamed/deleted/pasted
-    /// something that this pane needs to reflect.
+    /// Every plain press just moves the cursor there - directory activation happens on release-
+    /// without-drag instead (see <see cref="Zurari.Controls.EntryClickedEventArgs"/>), so a press
+    /// that turns into a drag never enters a directory out from under column 3, which would
+    /// otherwise collapse the very column the drag needs as a drop target. Ctrl+left does NOTHING
+    /// at press time - not even <see cref="Msg.CursorTo"/> - because a Ctrl press might still turn
+    /// into an additive rubber-band drag (see <see cref="Zurari.Controls.ColumnView.OnListPreviewMouseMove"/>)
+    /// and must not disturb cursor/mark state before that is decided; the toggle itself happens at
+    /// release instead, in <see cref="OnEntryClicked"/>. A right click additionally shows the shell
+    /// context menu - for every marked entry in the column when the pressed row is marked, otherwise
+    /// just that entry - blocking synchronously until the user picks a command or dismisses it, and
+    /// - if a command was invoked - dispatches <see cref="Msg.Refresh"/> since the shell may have
+    /// renamed/deleted/pasted something that this pane needs to reflect.
     /// </summary>
     private void OnEntryPointerPressed(object? sender, EntryPointerPressedEventArgs e)
     {
-        if (e.Button == MouseButton.Left && e.Modifiers == ModifierKeys.Control)
-        {
-            loop.Dispatch(new Msg.ToggleMark(e.ColumnIndex, e.EntryIndex));
-        }
-        else
+        if (!(e.Button == MouseButton.Left && e.Modifiers == ModifierKeys.Control))
         {
             loop.Dispatch(new Msg.CursorTo(e.ColumnIndex, e.EntryIndex));
         }
@@ -139,21 +137,34 @@ public sealed partial class MainWindow : Window, IDisposable
     }
 
     /// <summary>
-    /// A true click (release-without-drag - see <see cref="EntryClickedEventArgs"/>) collapses any
-    /// existing mark set in that column, Explorer/Finder style, before activating the clicked
-    /// entry - but only when Ctrl is not held at release, so Ctrl+click (handled on press as
-    /// <see cref="Msg.ToggleMark"/>) keeps building a multi-selection instead of wiping it out
-    /// immediately after. A press that turns into a drag never reaches here at all (no
-    /// <see cref="EntryClicked"/> is raised for it), which is what lets dragging a marked set keep
-    /// every mark.
+    /// A true click (release-without-drag - see <see cref="EntryClickedEventArgs"/>; this also
+    /// covers the wiggle-click case where <see cref="Zurari.Controls.ColumnView"/> converted a
+    /// stillborn rubber-band back into a click - see its <c>OnListPreviewMouseUp</c>). Ctrl held at
+    /// RELEASE toggles just that entry's mark and does nothing else - no <see cref="Msg.ClearMarks"/>,
+    /// no <see cref="Msg.EnterDirectory"/> - so Ctrl+click only ever builds/shrinks a multi-selection
+    /// without navigating. Without Ctrl, collapses any existing mark set in the column, Explorer/
+    /// Finder style, then activates the clicked entry. Net behavior table (see also
+    /// <see cref="Zurari.Controls.ColumnView.OnListPreviewMouseMove"/> for the drag/rubber-band half):
+    /// <list type="bullet">
+    /// <item>plain click = select-only-this + enter</item>
+    /// <item>Ctrl+click = toggle mark (no navigation, no clearing)</item>
+    /// <item>plain quick drag = replace-selection rubber band</item>
+    /// <item>Ctrl+drag = additive rubber band</item>
+    /// <item>plain hold-then-drag = file drag (the marked SET, if the pressed row was marked)</item>
+    /// <item>Ctrl+hold-then-drag = additive rubber band (Ctrl wins over the hold timing)</item>
+    /// </list>
+    /// A press that turns into a real drag never reaches here at all (no <see cref="EntryClicked"/>
+    /// is raised for it), which is what lets dragging a marked set keep every mark.
     /// </summary>
     private void OnEntryClicked(object? sender, EntryClickedEventArgs e)
     {
-        if ((Keyboard.Modifiers & ModifierKeys.Control) == 0)
+        if ((Keyboard.Modifiers & ModifierKeys.Control) != 0)
         {
-            loop.Dispatch(new Msg.ClearMarks(e.ColumnIndex));
+            loop.Dispatch(new Msg.ToggleMark(e.ColumnIndex, e.EntryIndex));
+            return;
         }
 
+        loop.Dispatch(new Msg.ClearMarks(e.ColumnIndex));
         loop.Dispatch(new Msg.EnterDirectory(e.ColumnIndex, e.EntryIndex));
     }
 

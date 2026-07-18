@@ -256,25 +256,71 @@ public class RubberBandTrackerTests
     }
 
     [Theory]
-    [InlineData(true, false, 0, true)] // empty space: always rubber-band, timing irrelevant
-    [InlineData(true, false, 10_000, true)] // empty space: still rubber-band even after a long hold
-    [InlineData(true, true, 10_000, true)] // empty space ignores the marked flag entirely
-    [InlineData(false, true, 0, false)] // marked row: always a drag, even with no delay at all
-    [InlineData(false, true, 10_000, false)] // marked row: always a drag, even after a long hold
-    [InlineData(false, false, 0, true)] // unmarked row, moved immediately: rubber-band
-    [InlineData(false, false, 299, true)] // unmarked row, just under the threshold: rubber-band
-    [InlineData(false, false, 300, false)] // unmarked row, at the threshold: drag
-    [InlineData(false, false, 301, false)] // unmarked row, past the threshold: drag
+    [InlineData(true, 0, true)] // empty space: always rubber-band, timing irrelevant
+    [InlineData(true, 10_000, true)] // empty space: still rubber-band even after a long hold
+    [InlineData(false, 0, true)] // row (marked or not), moved immediately: rubber-band
+    [InlineData(false, 299, true)] // row, just under the threshold: rubber-band
+    [InlineData(false, 300, false)] // row, at the threshold: drag
+    [InlineData(false, 301, false)] // row, past the threshold: drag
+    [InlineData(false, 10_000, false)] // row, long hold: drag - applies uniformly to marked rows too
     public void ShouldStartRubberBand_matches_the_Finder_timing_rules(
-        bool onEmptySpace, bool rowIsMarked, long elapsedMs, bool expectedRubberBand)
+        bool onEmptySpace, long elapsedMs, bool expectedRubberBand)
     {
         Assert.Equal(
-            expectedRubberBand, RubberBandTracker.ShouldStartRubberBand(onEmptySpace, rowIsMarked, elapsedMs));
+            expectedRubberBand, RubberBandTracker.ShouldStartRubberBand(onEmptySpace, elapsedMs));
     }
 
     [Fact]
     public void RubberBandVsDragThresholdMs_is_300()
     {
         Assert.Equal(300, RubberBandTracker.RubberBandVsDragThresholdMs);
+    }
+
+    [Fact]
+    public void HasEscapedAnchor_is_false_until_the_current_index_first_differs_from_the_anchor()
+    {
+        var tracker = new RubberBandTracker();
+        var origin = new Point(100, 100);
+        tracker.Press(origin, onEmptySpace: true, anchorIndex: 4);
+        tracker.Move(PastThreshold(origin));
+
+        Assert.False(tracker.HasEscapedAnchor);
+
+        tracker.UpdateCurrentIndex(4); // still on the anchor row
+        Assert.False(tracker.HasEscapedAnchor);
+
+        tracker.UpdateCurrentIndex(5); // escaped
+        Assert.True(tracker.HasEscapedAnchor);
+    }
+
+    [Fact]
+    public void HasEscapedAnchor_stays_true_after_the_range_shrinks_back_to_the_anchor()
+    {
+        var tracker = new RubberBandTracker();
+        var origin = new Point(100, 100);
+        tracker.Press(origin, onEmptySpace: true, anchorIndex: 4);
+        tracker.Move(PastThreshold(origin));
+
+        tracker.UpdateCurrentIndex(6);
+        Assert.True(tracker.HasEscapedAnchor);
+
+        tracker.UpdateCurrentIndex(4); // back to the anchor row
+        Assert.True(tracker.HasEscapedAnchor, "escaping once must be sticky for the rest of the gesture");
+    }
+
+    [Fact]
+    public void HasEscapedAnchor_resets_on_the_next_press()
+    {
+        var tracker = new RubberBandTracker();
+        var origin = new Point(100, 100);
+        tracker.Press(origin, onEmptySpace: true, anchorIndex: 4);
+        tracker.Move(PastThreshold(origin));
+        tracker.UpdateCurrentIndex(9);
+        Assert.True(tracker.HasEscapedAnchor);
+        tracker.Release();
+
+        tracker.Press(new Point(300, 300), onEmptySpace: true, anchorIndex: 2);
+
+        Assert.False(tracker.HasEscapedAnchor);
     }
 }

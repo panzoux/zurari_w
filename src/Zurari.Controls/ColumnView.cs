@@ -93,6 +93,20 @@ public sealed class ColumnView : Control
         typeof(ColumnView),
         new FrameworkPropertyMetadata(false));
 
+    /// <summary>
+    /// Identifies the attached <c>IsDropTargetRow</c> property: set directly on the single realized
+    /// <see cref="ListBoxItem"/> container the pointer is currently hovering during an Explorer (or
+    /// other app) file drag, but only while that row is a Directory or Drive (a file row is not a
+    /// valid drop target and gets no row highlight - only the column-level <see cref="IsDropTargetProperty"/>
+    /// border still applies). Mirrors <see cref="IsRubberBandHoverProperty"/>: set/cleared directly
+    /// on containers, never inherited, cleared from every other container on each update.
+    /// </summary>
+    public static readonly DependencyProperty IsDropTargetRowProperty = DependencyProperty.RegisterAttached(
+        "IsDropTargetRow",
+        typeof(bool),
+        typeof(ColumnView),
+        new FrameworkPropertyMetadata(false));
+
     private bool suppressSelectionChanged;
 
     private readonly DragGestureTracker dragTracker = new();
@@ -103,6 +117,17 @@ public sealed class ColumnView : Control
     private ScrollViewer? listScrollViewer;
     private Point lastMovePositionInList;
     private Point rowPressPositionInList;
+
+    /// <summary>
+    /// True when the in-progress rubber-band gesture (if any) started on an entry row (armed
+    /// retroactively from <see cref="OnListPreviewMouseMove"/>'s Finder-timing/Ctrl decision) rather
+    /// than on empty space (armed immediately from <see cref="OnListPreviewMouseDown"/>). Captured
+    /// by <see cref="PressRubberBand"/> and consumed at release by <see cref="OnListPreviewMouseUp"/>
+    /// to tell an actual row-anchored rubber-band drag apart from a physical-button press that only
+    /// wiggled the pointer past the system drag threshold without ever leaving the pressed row - see
+    /// the wiggle-click fix there.
+    /// </summary>
+    private bool rubberBandStartedOnRow;
 
     /// <summary>
     /// Pixel offset between the exact press point that started the current rubber-band gesture and
@@ -220,6 +245,20 @@ public sealed class ColumnView : Control
     {
         ArgumentNullException.ThrowIfNull(obj);
         obj.SetValue(IsRubberBandHoverProperty, value);
+    }
+
+    /// <summary>Gets the <see cref="IsDropTargetRowProperty"/> attached value.</summary>
+    public static bool GetIsDropTargetRow(DependencyObject obj)
+    {
+        ArgumentNullException.ThrowIfNull(obj);
+        return (bool)obj.GetValue(IsDropTargetRowProperty);
+    }
+
+    /// <summary>Sets the <see cref="IsDropTargetRowProperty"/> attached value.</summary>
+    public static void SetIsDropTargetRow(DependencyObject obj, bool value)
+    {
+        ArgumentNullException.ThrowIfNull(obj);
+        obj.SetValue(IsDropTargetRowProperty, value);
     }
 
     /// <inheritdoc />
@@ -341,7 +380,7 @@ public sealed class ColumnView : Control
             if (e.ChangedButton == MouseButton.Left && List is not null)
             {
                 var positionInList = e.GetPosition(List);
-                PressRubberBand(positionInList, FindNearestRowIndex(positionInList));
+                PressRubberBand(positionInList, FindNearestRowIndex(positionInList), startedOnRow: false);
                 List.CaptureMouse();
             }
 
@@ -373,25 +412,37 @@ public sealed class ColumnView : Control
     /// Tracks a left-button drag past the system threshold. The state machine in
     /// <see cref="DragGestureTracker"/> fires exactly once per gesture, at the moment the pointer
     /// first travels past the system drag threshold - that single firing is also the Finder-timing
-    /// decision point: <see cref="RubberBandTracker.ShouldStartRubberBand"/> picks, from the
-    /// elapsed time since press and whether the pressed row is marked, whether this gesture is a
-    /// file drag (raises <see cref="EntryDragRequested"/> as before) or a rubber-band anchored at
-    /// the press point/row (armed retroactively via <see cref="PressRubberBand"/> - the drag
-    /// tracker having already fired is what suppresses the click at button-up, exactly as a real
-    /// drag would). Empty-space presses never reach here - they are decided immediately at press
-    /// time in <see cref="OnListPreviewMouseDown"/>.
+    /// decision point. Net behavior (see also <see cref="OnEntryClicked"/> at
+    /// <c>MainWindow.OnEntryClicked</c> for the click/toggle-mark half of this table):
+    /// <list type="bullet">
+    /// <item>plain quick drag (&lt; <see cref="RubberBandTracker.RubberBandVsDragThresholdMs"/>) =
+    /// replace-selection rubber band</item>
+    /// <item>Ctrl+drag = additive rubber band, timing irrelevant - Ctrl wins outright</item>
+    /// <item>plain hold-then-drag = file drag (the marked SET, if the pressed row is marked)</item>
+    /// <item>Ctrl+hold-then-drag = additive rubber band (Ctrl still wins)</item>
+    /// </list>
+    /// Ctrl held at the moment the threshold crosses always starts a rubber band - additivity itself
+    /// is decided again at release, from Ctrl held at THAT moment (<see cref="OnListPreviewMouseUp"/>),
+    /// which is what lets the user let go of Ctrl mid-drag without losing the existing marks or hold
+    /// it down through release to add to them. Without Ctrl, <see cref="RubberBandTracker.ShouldStartRubberBand"/>
+    /// applies the plain timing rule uniformly - including on a marked row (no more "marked row is
+    /// always a drag" exception). Either way the gesture is armed retroactively via
+    /// <see cref="PressRubberBand"/> - the drag tracker having already fired is what suppresses the
+    /// click at button-up, exactly as a real drag would (see the wiggle-click fix in
+    /// <see cref="OnListPreviewMouseUp"/> for the case where it turns out not to have moved anywhere).
+    /// Empty-space presses never reach here - they are decided immediately at press time in
+    /// <see cref="OnListPreviewMouseDown"/>.
     /// </summary>
     private void OnListPreviewMouseMove(object sender, MouseEventArgs e)
     {
         if (dragTracker.Move(e.GetPosition(this), e.LeftButton == MouseButtonState.Pressed) is { } entryIndex)
         {
-            var rowIsMarked = Column is { } column && entryIndex >= 0 && entryIndex < column.Entries.Count
-                && column.Entries[entryIndex].IsMarked;
+            var ctrlHeld = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
 
-            if (RubberBandTracker.ShouldStartRubberBand(
-                    onEmptySpace: false, rowIsMarked, rowPressStopwatch.ElapsedMilliseconds))
+            if (ctrlHeld || RubberBandTracker.ShouldStartRubberBand(
+                    onEmptySpace: false, rowPressStopwatch.ElapsedMilliseconds))
             {
-                PressRubberBand(rowPressPositionInList, entryIndex);
+                PressRubberBand(rowPressPositionInList, entryIndex, startedOnRow: true);
                 List?.CaptureMouse();
             }
             else
@@ -501,12 +552,18 @@ public sealed class ColumnView : Control
     /// <see cref="ResolveAnchorPixelY"/> reapplies this fixed offset, which is what keeps the
     /// rendered rectangle's corner pinned to the actual press point - not the row's top - per
     /// <see cref="UpdateRubberBandVisual"/>'s contract, including for a press on empty space below
-    /// the last row (whose "row" for anchoring purposes is that last row itself).
+    /// the last row (whose "row" for anchoring purposes is that last row itself). Also records
+    /// <paramref name="startedOnRow"/> into <see cref="rubberBandStartedOnRow"/> - <c>true</c> when
+    /// called from <see cref="OnListPreviewMouseMove"/>'s Finder-timing/Ctrl decision (an entry row
+    /// was pressed first), <c>false</c> when called from <see cref="OnListPreviewMouseDown"/>'s
+    /// empty-space handling - so <see cref="OnListPreviewMouseUp"/> can later tell a genuine
+    /// row-anchored rubber-band apart from a click that merely wiggled past the drag threshold.
     /// </summary>
-    private void PressRubberBand(Point positionInList, int anchorIndex)
+    private void PressRubberBand(Point positionInList, int anchorIndex, bool startedOnRow)
     {
         anchorPixelOffset = 0;
         anchorPixelOffset = positionInList.Y - ResolveAnchorPixelY(anchorIndex);
+        rubberBandStartedOnRow = startedOnRow;
         rubberBandTracker.Press(positionInList, onEmptySpace: true, anchorIndex);
     }
 
@@ -665,10 +722,29 @@ public sealed class ColumnView : Control
     }
 
     /// <summary>
-    /// A true click (button released without the drag threshold ever firing) raises
-    /// <see cref="EntryClicked"/> for the row that was pressed, before the tracker resets for the
-    /// next gesture. A drag that did fire raises nothing here - the drag itself already reported
-    /// via <see cref="EntryDragRequested"/>.
+    /// Ends the current gesture and raises exactly one of <see cref="EntryClicked"/> or
+    /// <see cref="MarkRangeRequested"/> (or neither, for an in-progress file drag - already reported
+    /// via <see cref="EntryDragRequested"/>). Three cases, checked in order:
+    /// <list type="number">
+    /// <item>The drag threshold never fired at all (<see cref="DragGestureTracker.FiredThisGesture"/>
+    /// false): a true click, raises <see cref="EntryClicked"/> for the pressed row - as before.</item>
+    /// <item><b>Wiggle-click fix</b> (bug repro: a physical mouse-button press nudges the pointer a
+    /// few px, crossing the system drag threshold within the Finder-timing window even though the
+    /// user meant a plain click): the threshold DID fire and armed a rubber-band via
+    /// <see cref="PressRubberBand"/>, but it <see cref="rubberBandStartedOnRow"/> (not empty space)
+    /// AND its live range never escaped the pressed row
+    /// (<c>!</c><see cref="RubberBandTracker.HasEscapedAnchor"/>) for the whole gesture - this is
+    /// still a click, not a mark-range: raises <see cref="EntryClicked"/>, not
+    /// <see cref="MarkRangeRequested"/>. A rubber-band that started on EMPTY space still applies
+    /// marks even for a final single-row range (only a row-started gesture gets this treatment).</item>
+    /// <item>Otherwise, if the rubber-band ever activated (<see cref="RubberBandTracker.Release"/>
+    /// returns non-null), raises <see cref="MarkRangeRequested"/> for its final range - additive
+    /// per Ctrl held now, at release (independent of whatever decided the gesture at threshold-cross
+    /// time).</item>
+    /// </list>
+    /// All the values these branches need are read up front, before any tracker's <c>Release()</c>
+    /// resets its gesture state, so ordering among the three branches cannot shift the answer -
+    /// and only one of the two events above is ever raised per gesture.
     /// </summary>
     private void OnListPreviewMouseUp(object sender, MouseButtonEventArgs e)
     {
@@ -677,17 +753,16 @@ public sealed class ColumnView : Control
             return;
         }
 
-        if (dragTracker.PressedEntryIndex is { } pressedEntryIndex && !dragTracker.FiredThisGesture)
-        {
-            EntryClicked?.Invoke(this, pressedEntryIndex);
-        }
-
-        dragTracker.Release();
+        var pressedEntryIndex = dragTracker.PressedEntryIndex;
+        var dragFired = dragTracker.FiredThisGesture;
+        var startedOnRow = rubberBandStartedOnRow;
+        var escapedAnchor = rubberBandTracker.HasEscapedAnchor;
 
         // LiveRange must be read before Release() - Release() resets the anchor/current
         // indices along with the rest of the gesture state.
         var finalRange = rubberBandTracker.LiveRange;
         var rubberBandRect = rubberBandTracker.Release();
+        dragTracker.Release();
         StopAutoScroll();
         UpdateRubberBandHoverHighlight(null);
 
@@ -698,12 +773,30 @@ public sealed class ColumnView : Control
 
         UpdateRubberBandVisual(null, default);
 
-        if (rubberBandRect is not null && finalRange is { } range)
+        if (!dragFired)
         {
-            MarkRangeRequested?.Invoke(
-                this,
-                new MarkRangeRequestInfo(range.From, range.To, Keyboard.Modifiers.HasFlag(ModifierKeys.Control)));
+            if (pressedEntryIndex is { } neverDraggedIndex)
+            {
+                EntryClicked?.Invoke(this, neverDraggedIndex);
+            }
+
+            return;
         }
+
+        if (rubberBandRect is null || finalRange is not { } range)
+        {
+            return;
+        }
+
+        if (startedOnRow && !escapedAnchor && pressedEntryIndex is { } wiggleClickIndex)
+        {
+            EntryClicked?.Invoke(this, wiggleClickIndex);
+            return;
+        }
+
+        MarkRangeRequested?.Invoke(
+            this,
+            new MarkRangeRequestInfo(range.From, range.To, Keyboard.Modifiers.HasFlag(ModifierKeys.Control)));
     }
 
     /// <summary>
@@ -765,8 +858,11 @@ public sealed class ColumnView : Control
 
     /// <summary>
     /// Explorer drag hovering over this column with file data: accept it (Copy by default, Move
-    /// with Shift held) and highlight the column via <see cref="IsDropTargetProperty"/>. Anything
-    /// else (no file data) is rejected.
+    /// with Shift held), highlight the column via <see cref="IsDropTargetProperty"/>, and - if the
+    /// pointer is over a Directory or Drive row - highlight that single row via
+    /// <see cref="IsDropTargetRowProperty"/> so the receiving directory reads exactly like a
+    /// selected row (a file row or the column background gets no row highlight, only the
+    /// column-level border). Anything else (no file data) is rejected.
     /// </summary>
     private void OnDragOver(object sender, DragEventArgs e)
     {
@@ -774,6 +870,7 @@ public sealed class ColumnView : Control
         {
             e.Effects = DragDropEffects.None;
             e.Handled = true;
+            UpdateDropTargetRowHighlight(null);
             return;
         }
 
@@ -781,10 +878,21 @@ public sealed class ColumnView : Control
             ? DragDropEffects.Move
             : DragDropEffects.Copy;
         SetIsDropTarget(this, true);
+
+        var hoveredIndex = FindEntryIndex(e.OriginalSource as DependencyObject);
+        var isDirectoryOrDrive = hoveredIndex is { } index && Column is { } column
+            && index >= 0 && index < column.Entries.Count
+            && column.Entries[index].Kind is EntryKind.Directory or EntryKind.Drive;
+        UpdateDropTargetRowHighlight(isDirectoryOrDrive ? hoveredIndex : null);
+
         e.Handled = true;
     }
 
-    private void OnDragLeave(object sender, DragEventArgs e) => SetIsDropTarget(this, false);
+    private void OnDragLeave(object sender, DragEventArgs e)
+    {
+        SetIsDropTarget(this, false);
+        UpdateDropTargetRowHighlight(null);
+    }
 
     /// <summary>
     /// Extracts the dropped file paths, hit-tests which row (if any) the pointer was over, and
@@ -794,6 +902,7 @@ public sealed class ColumnView : Control
     private void OnDrop(object sender, DragEventArgs e)
     {
         SetIsDropTarget(this, false);
+        UpdateDropTargetRowHighlight(null);
 
         if (e.Data.GetData(DataFormats.FileDrop) is not string[] paths || paths.Length == 0)
         {
@@ -805,6 +914,30 @@ public sealed class ColumnView : Control
         var ctrlHeld = (e.KeyStates & DragDropKeyStates.ControlKey) != 0;
         FileDropRequested?.Invoke(this, new FileDropInfo(paths, targetEntryIndex, shiftHeld, ctrlHeld));
         e.Handled = true;
+    }
+
+    /// <summary>
+    /// Sets/clears <see cref="IsDropTargetRowProperty"/> on every currently realized row container so
+    /// only <paramref name="targetRowIndex"/> (or none, when <c>null</c>) is highlighted. Iterating
+    /// every realized container - not just the target - is what clears a stale flag left on a
+    /// container the pointer has moved off of, mirroring <see cref="UpdateRubberBandHoverHighlight"/>.
+    /// </summary>
+    private void UpdateDropTargetRowHighlight(int? targetRowIndex)
+    {
+        if (List is null)
+        {
+            return;
+        }
+
+        for (var i = 0; i < List.Items.Count; i++)
+        {
+            if (List.ItemContainerGenerator.ContainerFromIndex(i) is not ListBoxItem item)
+            {
+                continue;
+            }
+
+            SetIsDropTargetRow(item, targetRowIndex == i);
+        }
     }
 
     /// <summary>Walks up from a click's <c>OriginalSource</c> to the containing <see cref="ListBoxItem"/>.</summary>
