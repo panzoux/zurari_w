@@ -77,6 +77,26 @@
                                         <Setter Property="IsTabStop" Value="False" />
                                         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                         <Setter Property="Padding" Value="6,2" />
+                                        <!-- Minimal template: the DEFAULT ListBoxItem template paints
+                                             selected rows with the OS theme's (inactive-)selection
+                                             brushes on an internal Border, OVERRIDING the Background
+                                             set by the triggers below - which made the cursor row of
+                                             a fresh multi-selection look gray instead of the marked
+                                             blue. A bare Border bound to Background keeps this style
+                                             the single source of row colors. -->
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                                                    <Border Background="{TemplateBinding Background}"
+                                                            Padding="{TemplateBinding Padding}"
+                                                            SnapsToDevicePixels="True">
+                                                        <ContentPresenter
+                                                            HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                            VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                                                    </Border>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
                                         <!-- Trigger ORDER is deliberate (later triggers win when several
                                              apply at once - standard WPF style-trigger precedence):
                                                1. IsSelected (weak cursor, #FFE0E0E0)

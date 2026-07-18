@@ -183,6 +183,37 @@ public class CursorVisualTests
         item.Background is SolidColorBrush brush ? brush.Color : Colors.Transparent;
 
     [StaFact]
+    public void Selected_marked_row_paints_the_style_background_on_screen_not_the_os_theme_gray()
+    {
+        // Regression: the DEFAULT ListBoxItem template paints selected rows with the OS theme's
+        // (inactive-)selection brushes on an internal Border, overriding the style triggers on
+        // screen even though the container's Background property reads correctly. The cursor row
+        // of a fresh multi-selection therefore looked gray instead of marked blue. The minimal
+        // template in Generic.xaml must keep the internal Border bound to the container Background.
+        var entries = new[]
+        {
+            new EntryVm("a", EntryKind.File, IsMarked: true, SizeText: null, DateText: null),
+            new EntryVm("b", EntryKind.File, IsMarked: true, SizeText: null, DateText: null),
+        };
+        var columns = new[] { new ColumnVm("col", entries, CursorIndex: 1, IsFocused: false) };
+        var browser = new ColumnBrowser { Columns = columns };
+        using var host = new TestWindow(browser);
+        TestWindow.DoEvents();
+
+        var list = FindListBox(browser, 0);
+        var cursorRow = list!.ItemContainerGenerator.ContainerFromIndex(1) as ListBoxItem;
+        Assert.NotNull(cursorRow);
+        Assert.True(cursorRow!.IsSelected);
+
+        // The visual actually painted behind the row content is the template's root Border.
+        var border = FindVisualChild<Border>(cursorRow);
+        Assert.NotNull(border);
+        var painted = Assert.IsType<SolidColorBrush>(border!.Background);
+        Assert.Equal(GetBackgroundColor(cursorRow), painted.Color);
+        Assert.Equal(MarkedBackground, painted.Color);
+    }
+
+    [StaFact]
     public void Focused_column_is_marked_via_attached_property_distinct_from_unfocused_column()
     {
         var columns = VirtualizationTests.MakeColumns(columnCount: 2, entryCount: 5, focused: 1);
