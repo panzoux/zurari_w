@@ -218,4 +218,25 @@ public abstract record Msg
     /// if the job is unknown or still Queued/Running.
     /// </summary>
     public sealed record JobDismissed(int JobId) : Msg;
+
+    /// <summary>
+    /// An <see cref="Effect.LoadPreview"/> succeeded. Ignored unless <paramref name="Generation"/>
+    /// still matches <see cref="AppState.Preview"/>'s current generation (otherwise this is a
+    /// stale result from a target the cursor has since moved past). <paramref name="BinaryLabel"/>
+    /// is only meaningful when <paramref name="Kind"/> is <see cref="PreviewKind.Binary"/> - see
+    /// <see cref="PreviewState.Text"/>'s remarks for why it lands in that same field rather than a
+    /// dedicated one.
+    /// </summary>
+    public sealed record PreviewLoaded(
+        int Generation,
+        PreviewKind Kind,
+        string? Text,
+        ImmutableArray<byte> ImageBytes,
+        string? BinaryLabel) : Msg;
+
+    /// <summary>
+    /// An <see cref="Effect.LoadPreview"/> failed. Subject to the same staleness check as
+    /// <see cref="PreviewLoaded"/>.
+    /// </summary>
+    public sealed record PreviewFailed(int Generation, string Error) : Msg;
 }

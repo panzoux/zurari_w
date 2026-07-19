@@ -3,6 +3,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media.Imaging;
 using Zurari.Controls;
 using Zurari.Core;
 using Zurari.Runtime;
@@ -23,6 +24,14 @@ public sealed partial class MainWindow : Window, IDisposable
     private readonly JobEngine jobEngine;
     private readonly MessageLoop loop;
     private readonly ShellIconCache iconCache = new();
+
+    /// <summary>
+    /// The <see cref="StateProjection.PreviewVm.Generation"/> of the image most recently decoded
+    /// into <see cref="PreviewImage"/>'s source - lets <see cref="RenderPreview"/> skip re-decoding
+    /// the same <c>BitmapImage</c> on every unrelated re-render (e.g. a job progress tick) and only
+    /// pay the decode cost when the previewed file actually changed.
+    /// </summary>
+    private int lastDecodedImageGeneration = -1;
 
     public MainWindow()
     {
@@ -94,6 +103,7 @@ public sealed partial class MainWindow : Window, IDisposable
         switch (effect)
         {
             case Effect.ReadDirectory _:
+            case Effect.LoadPreview _:
                 runtime.Submit(effect);
                 break;
             case Effect.DeleteToRecycleBin _:
@@ -560,6 +570,8 @@ public sealed partial class MainWindow : Window, IDisposable
         JobStrip.ItemsSource = jobs;
         JobStrip.Visibility = jobs.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
+        RenderPreview(state);
+
         var focused = state.Columns[state.FocusedColumn];
         var focusedPath = focused.Path.Length == 0 ? "ドライブ" : focused.Path;
         Title = "zurari — " + focusedPath;
@@ -580,5 +592,79 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         StatusText.Text = statusText;
+    }
+
+    /// <summary>
+    /// Wires <see cref="StateProjection.ProjectPreview"/> onto the preview pane's three
+    /// mutually-exclusive views (image / text / metadata), toggling visibility by
+    /// <see cref="PreviewKind"/>. The only decision made here rather than in the projection is the
+    /// <c>ImageBytes</c> -&gt; <c>BitmapImage</c> decode, which is wiring (WPF-specific, not a
+    /// display-formatting choice) - cached by <see cref="lastDecodedImageGeneration"/> so it only
+    /// runs once per distinct preview, not on every unrelated re-render.
+    /// </summary>
+    private void RenderPreview(AppState state)
+    {
+        var vm = StateProjection.ProjectPreview(state);
+        PreviewFileName.Text = vm.FileName ?? string.Empty;
+
+        PreviewImage.Visibility = Visibility.Collapsed;
+        PreviewTextBox.Visibility = Visibility.Collapsed;
+        PreviewMeta.Visibility = Visibility.Collapsed;
+
+        switch (vm.Kind)
+        {
+            case PreviewKind.Image:
+                if (lastDecodedImageGeneration != vm.Generation)
+                {
+                    PreviewImage.Source = DecodeImage(vm.ImageBytes);
+                    lastDecodedImageGeneration = vm.Generation;
+                }
+
+                PreviewImage.Visibility = Visibility.Visible;
+                break;
+
+            case PreviewKind.Text:
+                PreviewTextBox.Text = vm.Text ?? string.Empty;
+                PreviewTextBox.Visibility = Visibility.Visible;
+                break;
+
+            case PreviewKind.Binary:
+                PreviewMeta.Text = vm.Text ?? "バイナリファイル";
+                PreviewMeta.Visibility = Visibility.Visible;
+                break;
+
+            case PreviewKind.Loading:
+                PreviewMeta.Text = "読み込み中…";
+                PreviewMeta.Visibility = Visibility.Visible;
+                break;
+
+            case PreviewKind.None:
+            default:
+                if (vm.Error is not null)
+                {
+                    PreviewMeta.Text = vm.Error;
+                    PreviewMeta.Visibility = Visibility.Visible;
+                }
+
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Decodes already-loaded image bytes (from <see cref="Msg.PreviewLoaded"/>, via
+    /// <see cref="Effect.LoadPreview"/> - Runtime's job, not this method's) into a frozen
+    /// <see cref="BitmapImage"/> so it is safe to hand to the UI thread's <see cref="Image"/>
+    /// control from here regardless of which thread posted the underlying <see cref="Msg"/>.
+    /// </summary>
+    private static BitmapImage DecodeImage(System.Collections.Immutable.ImmutableArray<byte> bytes)
+    {
+        using var stream = new MemoryStream([.. bytes]);
+        var image = new BitmapImage();
+        image.BeginInit();
+        image.CacheOption = BitmapCacheOption.OnLoad;
+        image.StreamSource = stream;
+        image.EndInit();
+        image.Freeze();
+        return image;
     }
 }

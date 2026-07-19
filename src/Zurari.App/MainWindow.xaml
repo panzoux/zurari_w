@@ -53,12 +53,26 @@
                 <ColumnDefinition Width="280" />
             </Grid.ColumnDefinitions>
             <controls:ColumnBrowser x:Name="Browser" Grid.Column="0" />
-            <!-- Preview pane placeholder (Phase 5 will fill this) -->
-            <Border Grid.Column="1" Margin="8,0,0,0"
-                    BorderBrush="#FFB0B0B0" BorderThickness="1" Background="#FFF7F7F7">
-                <TextBlock Text="preview" Foreground="#FF909090"
-                           HorizontalAlignment="Center" VerticalAlignment="Center" />
-            </Border>
+            <Grid Grid.Column="1" Margin="8,0,0,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBlock x:Name="PreviewFileName" Grid.Row="0" Margin="0,0,0,4" FontWeight="Bold"
+                           TextTrimming="CharacterEllipsis" />
+                <Border Grid.Row="1" BorderBrush="#FFB0B0B0" BorderThickness="1" Background="#FFF7F7F7">
+                    <Grid>
+                        <Image x:Name="PreviewImage" Stretch="Uniform" Visibility="Collapsed" />
+                        <TextBox x:Name="PreviewTextBox" IsReadOnly="True" TextWrapping="NoWrap"
+                                 AcceptsReturn="True" FontFamily="Consolas"
+                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                 BorderThickness="0" Background="Transparent" Visibility="Collapsed" />
+                        <TextBlock x:Name="PreviewMeta" Foreground="#FF909090" Margin="8"
+                                   TextWrapping="Wrap" TextAlignment="Center"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
+                    </Grid>
+                </Border>
+            </Grid>
         </Grid>
     </DockPanel>
 </Window>

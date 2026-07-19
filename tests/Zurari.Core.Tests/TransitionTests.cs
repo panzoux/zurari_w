@@ -39,7 +39,9 @@ public class TransitionTests
         var (next, effects) = Transition.Apply(state, new Msg.CursorDown(0));
 
         Assert.Equal(1, next.Columns[0].Cursor);
-        Assert.Empty(effects);
+        // Landing on File1 triggers a preview load (see Transition.ReconcilePreview).
+        var effect = Assert.IsType<Effect.LoadPreview>(Assert.Single(effects));
+        Assert.Equal(@"C:\a.txt", effect.Path);
     }
 
     [Fact]
@@ -128,7 +130,9 @@ public class TransitionTests
         var (next, effects) = Transition.Apply(state, new Msg.CursorTo(0, 2));
 
         Assert.Equal(2, next.Columns[0].Cursor);
-        Assert.Empty(effects);
+        // Landing on File2 triggers a preview load (see Transition.ReconcilePreview).
+        var effect = Assert.IsType<Effect.LoadPreview>(Assert.Single(effects));
+        Assert.Equal(@"C:\b.txt", effect.Path);
     }
 
     [Fact]
@@ -238,7 +242,7 @@ public class TransitionTests
     }
 
     [Fact]
-    public void EnterDirectory_on_file_selects_it_and_moves_focus_without_effects()
+    public void EnterDirectory_on_file_selects_it_and_moves_focus()
     {
         var state = StateWithColumns(new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded));
 
@@ -247,7 +251,9 @@ public class TransitionTests
         Assert.Single(next.Columns);
         Assert.Equal(2, next.Columns[0].Cursor);
         Assert.Equal(0, next.FocusedColumn);
-        Assert.Empty(effects);
+        // No directory-read effect for a file, but selecting it does trigger a preview load.
+        var effect = Assert.IsType<Effect.LoadPreview>(Assert.Single(effects));
+        Assert.Equal(@"C:\b.txt", effect.Path);
     }
 
     [Fact]
@@ -264,7 +270,9 @@ public class TransitionTests
         Assert.Single(next.Columns);
         Assert.Equal(1, next.Columns[0].Cursor);
         Assert.Equal(0, next.FocusedColumn);
-        Assert.Empty(effects);
+        // Selecting File1 (and losing focus from the now-truncated column 2) triggers a preview load.
+        var effect = Assert.IsType<Effect.LoadPreview>(Assert.Single(effects));
+        Assert.Equal(@"C:\a.txt", effect.Path);
     }
 
     [Fact]
@@ -315,7 +323,9 @@ public class TransitionTests
         Assert.Single(next.Columns);
         Assert.Equal(2, next.Columns[0].Cursor);
         Assert.Equal(0, next.FocusedColumn);
-        Assert.Empty(effects);
+        // Selecting File2 triggers a preview load.
+        var effect = Assert.IsType<Effect.LoadPreview>(Assert.Single(effects));
+        Assert.Equal(@"C:\b.txt", effect.Path);
     }
 
     [Fact]
@@ -515,7 +525,9 @@ public class TransitionTests
 
         Assert.True(next.Columns[0].Entries[2].IsMarked);
         Assert.Equal(2, next.Columns[0].Cursor);
-        Assert.Empty(effects);
+        // Moving the cursor onto File2 triggers a preview load.
+        var effect = Assert.IsType<Effect.LoadPreview>(Assert.Single(effects));
+        Assert.Equal(@"C:\b.txt", effect.Path);
     }
 
     [Fact]
@@ -572,7 +584,9 @@ public class TransitionTests
 
         Assert.True(next.Columns[0].Entries[0].IsMarked);
         Assert.Equal(1, next.Columns[0].Cursor);
-        Assert.Empty(effects);
+        // Advancing onto File1 triggers a preview load.
+        var effect = Assert.IsType<Effect.LoadPreview>(Assert.Single(effects));
+        Assert.Equal(@"C:\a.txt", effect.Path);
     }
 
     [Fact]
@@ -715,7 +729,9 @@ public class TransitionTests
         Assert.True(next.Columns[0].Entries[2].IsMarked);
         Assert.False(next.Columns[0].Entries[3].IsMarked);
         Assert.Equal(2, next.Columns[0].Cursor);
-        Assert.Empty(effects);
+        // The cursor lands on File2 (entries[2]), triggering a preview load.
+        var effect = Assert.IsType<Effect.LoadPreview>(Assert.Single(effects));
+        Assert.Equal(@"C:\b.txt", effect.Path);
     }
 
     [Fact]
@@ -1491,6 +1507,178 @@ public class TransitionTests
         Assert.Equal(state, next);
         Assert.Empty(effects);
     }
+
+    [Fact]
+    public void CursorMove_onto_a_file_emits_LoadPreview_with_incremented_generation()
+    {
+        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+        Assert.Equal(0, state.Preview.Generation);
+
+        var (next, effects) = Transition.Apply(state, new Msg.CursorDown(0));
+
+        Assert.Equal(PreviewKind.Loading, next.Preview.Kind);
+        Assert.Equal(@"C:\a.txt", next.Preview.Path);
+        Assert.Equal(1, next.Preview.Generation);
+        var effect = Assert.IsType<Effect.LoadPreview>(Assert.Single(effects));
+        Assert.Equal(1, effect.Generation);
+        Assert.Equal(@"C:\a.txt", effect.Path);
+    }
+
+    [Fact]
+    public void CursorMove_onto_a_directory_clears_the_preview_and_emits_no_effect()
+    {
+        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 1, Load: LoadState.Loaded);
+        var state = StateWithColumns(column) with
+        {
+            Preview = new PreviewState(3, @"C:\a.txt", PreviewKind.Text, "hi", [], null),
+        };
+
+        var (next, effects) = Transition.Apply(state, new Msg.CursorUp(0));
+
+        Assert.Equal(PreviewKind.None, next.Preview.Kind);
+        Assert.Null(next.Preview.Path);
+        Assert.Equal(4, next.Preview.Generation);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void Repeated_Apply_with_the_same_cursor_target_does_not_re_emit_LoadPreview()
+    {
+        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        var (afterMove, moveEffects) = Transition.Apply(state, new Msg.CursorDown(0)); // lands on File1
+        Assert.Single(moveEffects); // sanity: the move itself does trigger a load
+
+        var (again, againEffects) = Transition.Apply(afterMove, new Msg.CursorTo(0, 1)); // same index - no-op
+
+        Assert.Empty(againEffects);
+        Assert.Equal(afterMove.Preview, again.Preview);
+    }
+
+    [Fact]
+    public void DirectoryLoaded_that_lands_the_cursor_on_a_file_triggers_a_preview_load()
+    {
+        var column = new Column(@"C:\", [], Load: LoadState.Loading);
+        var state = StateWithColumns(column);
+
+        var (next, effects) = Transition.Apply(state, new Msg.DirectoryLoaded(0, @"C:\", [File1]));
+
+        Assert.Equal(PreviewKind.Loading, next.Preview.Kind);
+        var effect = Assert.IsType<Effect.LoadPreview>(Assert.Single(effects));
+        Assert.Equal(@"C:\a.txt", effect.Path);
+    }
+
+    /// <summary>
+    /// Starting point shared by the <c>Msg.PreviewLoaded</c>/<c>Msg.PreviewFailed</c> tests below:
+    /// a column whose cursor moves from a directory onto a file, so the move itself (via
+    /// <c>Transition.ReconcilePreview</c>) is what produces the live generation these tests react
+    /// against - constructing a state with the cursor pre-positioned on a file bypasses that
+    /// reconciliation entirely and leaves <see cref="AppState.Preview"/> stuck at
+    /// <see cref="PreviewKind.None"/> generation 0.
+    /// </summary>
+    private static AppState StateWithLoadingPreview()
+    {
+        var column = new Column(@"C:\", [Dir, File1], Cursor: 0, Load: LoadState.Loaded);
+        var (afterMove, _) = Transition.Apply(StateWithColumns(column), new Msg.CursorDown(0));
+        Assert.Equal(PreviewKind.Loading, afterMove.Preview.Kind); // sanity
+        return afterMove;
+    }
+
+    [Fact]
+    public void PreviewLoaded_with_matching_generation_fills_in_image_bytes()
+    {
+        var afterCursor = StateWithLoadingPreview();
+        var generation = afterCursor.Preview.Generation;
+        ImmutableArray<byte> bytes = [1, 2, 3, 4];
+
+        var (next, effects) = Transition.Apply(
+            afterCursor, new Msg.PreviewLoaded(generation, PreviewKind.Image, null, bytes, null));
+
+        Assert.Equal(PreviewKind.Image, next.Preview.Kind);
+        Assert.Equal(bytes, next.Preview.ImageBytes);
+        Assert.Null(next.Preview.Text);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void PreviewLoaded_binary_stores_the_label_in_Text()
+    {
+        var afterCursor = StateWithLoadingPreview();
+        var generation = afterCursor.Preview.Generation;
+
+        var (next, _) = Transition.Apply(
+            afterCursor, new Msg.PreviewLoaded(generation, PreviewKind.Binary, null, [], "PE Executable"));
+
+        Assert.Equal(PreviewKind.Binary, next.Preview.Kind);
+        Assert.Equal("PE Executable", next.Preview.Text);
+    }
+
+    [Fact]
+    public void PreviewLoaded_with_stale_generation_is_ignored()
+    {
+        var afterCursor = StateWithLoadingPreview();
+
+        var (next, effects) = Transition.Apply(
+            afterCursor, new Msg.PreviewLoaded(afterCursor.Preview.Generation - 1, PreviewKind.Text, "stale", [], null));
+
+        Assert.Equal(afterCursor.Preview, next.Preview);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void PreviewFailed_with_matching_generation_sets_error_and_clears_kind()
+    {
+        var afterCursor = StateWithLoadingPreview();
+
+        var (next, effects) = Transition.Apply(
+            afterCursor, new Msg.PreviewFailed(afterCursor.Preview.Generation, "denied"));
+
+        Assert.Equal(PreviewKind.None, next.Preview.Kind);
+        Assert.Equal("denied", next.Preview.Error);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void PreviewFailed_with_stale_generation_is_ignored()
+    {
+        var afterCursor = StateWithLoadingPreview();
+
+        var (next, effects) = Transition.Apply(
+            afterCursor, new Msg.PreviewFailed(afterCursor.Preview.Generation - 1, "denied"));
+
+        Assert.Equal(afterCursor.Preview, next.Preview);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void FocusColumn_change_to_a_column_whose_cursor_is_on_a_file_triggers_a_preview_load()
+    {
+        var state = StateWithColumns(
+            new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded),
+            new Column(@"C:\sub", [File1], Cursor: 0, Load: LoadState.Loaded));
+
+        var (next, effects) = Transition.Apply(state, new Msg.FocusColumn(1));
+
+        Assert.Equal(PreviewKind.Loading, next.Preview.Kind);
+        var effect = Assert.IsType<Effect.LoadPreview>(Assert.Single(effects));
+        Assert.Equal(@"C:\sub\a.txt", effect.Path);
+    }
+
+    [Fact]
+    public void EnterDirectory_into_a_child_column_appends_a_LoadPreview_effect_alongside_ReadDirectory_when_relevant()
+    {
+        // The parent column's cursor lands on the directory it just entered (not a file), and the
+        // new child column starts with cursor -1 - so no preview effect should be appended, just
+        // the usual ReadDirectory.
+        var state = StateWithColumns(new Column(@"C:\", [Dir, File1], Cursor: 0, Load: LoadState.Loaded));
+
+        var (_, effects) = Transition.Apply(state, new Msg.EnterDirectory(0, 0));
+
+        var effect = Assert.IsType<Effect.ReadDirectory>(Assert.Single(effects));
+        Assert.Equal(@"C:\sub", effect.Path);
+    }
 }
 
 /// <summary>
@@ -1519,6 +1707,12 @@ public class TransitionProperties
     private static Gen<bool> GenIsMove => Gen.OneOfConst(true, false);
 
     private static Gen<int> GenJobId => Gen.Int[-2, 4];
+
+    private static Gen<PreviewKind> GenPreviewKind => Gen.OneOfConst(
+        PreviewKind.None, PreviewKind.Loading, PreviewKind.Image, PreviewKind.Text, PreviewKind.Binary);
+
+    private static Gen<ImmutableArray<byte>> GenImageBytes => Gen.OneOfConst(
+        ImmutableArray<byte>.Empty, ImmutableArray.Create<byte>(1, 2, 3));
 
     private static Gen<EntryKind> GenEntryKind => Gen.OneOfConst(
         EntryKind.Drive,
@@ -1572,7 +1766,10 @@ public class TransitionProperties
         GenJobId.Select(i => (Msg)new Msg.JobFailed(i, "error")),
         Gen.Select(GenJobId, GenPaths).Select(t => (Msg)new Msg.JobCancelled(t.Item1, t.Item2)),
         GenJobId.Select(i => (Msg)new Msg.JobCancelRequested(i)),
-        GenJobId.Select(i => (Msg)new Msg.JobDismissed(i)));
+        GenJobId.Select(i => (Msg)new Msg.JobDismissed(i)),
+        Gen.Select(GenJobId, GenPreviewKind, GenImageBytes)
+            .Select(t => (Msg)new Msg.PreviewLoaded(t.Item1, t.Item2, "text", t.Item3, "label")),
+        GenJobId.Select(i => (Msg)new Msg.PreviewFailed(i, "error")));
 
     [Fact]
     public void Any_msg_sequence_yields_valid_state_and_effects()
@@ -1586,6 +1783,9 @@ public class TransitionProperties
                 Assert.NotNull(next);
                 Assert.NotNull(effects);
                 Assert.Empty(next.CheckInvariants());
+                // Preview.Generation only ever increases - PreviewLoaded/PreviewFailed never bump
+                // it themselves, and ReconcilePreview only bumps forward.
+                Assert.True(next.Preview.Generation >= state.Preview.Generation);
                 state = next;
             }
         });
@@ -1614,6 +1814,12 @@ public class TransitionProperties
         Assert.Equal(expected.FocusedColumn, actual.FocusedColumn);
         Assert.Equal(expected.NextJobId, actual.NextJobId);
         Assert.Equal(expected.Jobs, actual.Jobs);
+        Assert.Equal(expected.Preview.Generation, actual.Preview.Generation);
+        Assert.Equal(expected.Preview.Path, actual.Preview.Path);
+        Assert.Equal(expected.Preview.Kind, actual.Preview.Kind);
+        Assert.Equal(expected.Preview.Text, actual.Preview.Text);
+        Assert.Equal(expected.Preview.ImageBytes, actual.Preview.ImageBytes);
+        Assert.Equal(expected.Preview.Error, actual.Preview.Error);
         Assert.Equal(expected.Columns.Length, actual.Columns.Length);
         for (var i = 0; i < expected.Columns.Length; i++)
         {

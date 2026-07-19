@@ -16,6 +16,12 @@ public static class Transition
         ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(msg);
 
+        var (newState, effects) = ApplyCore(state, msg);
+        return ReconcilePreview(state, newState, effects);
+    }
+
+    private static (AppState State, IReadOnlyList<Effect> Effects) ApplyCore(AppState state, Msg msg)
+    {
         return msg switch
         {
             Msg.Noop => (state, NoEffects),
@@ -51,6 +57,9 @@ public static class Transition
                 state, m.JobId, JobStatus.Cancelled, error: null, skippedFiles: null, m.AffectedDirs),
             Msg.JobCancelRequested m => JobCancelRequested(state, m.JobId),
             Msg.JobDismissed m => (JobDismissed(state, m.JobId), NoEffects),
+            Msg.PreviewLoaded m =>
+                (PreviewLoaded(state, m.Generation, m.Kind, m.Text, m.ImageBytes, m.BinaryLabel), NoEffects),
+            Msg.PreviewFailed m => (PreviewFailed(state, m.Generation, m.Error), NoEffects),
             _ => (state, NoEffects),
         };
     }
@@ -714,5 +723,100 @@ public static class Transition
         }
 
         return state with { Jobs = state.Jobs.RemoveAt(index) };
+    }
+
+    /// <summary>
+    /// Common post-step run after every <see cref="Msg"/> (see <see cref="Apply"/>): compares the
+    /// focused column's cursor target (the full path of a File-kind entry, or <c>null</c> for
+    /// none/directory/drive/out-of-range) between <paramref name="oldState"/> and
+    /// <paramref name="newState"/>. Unchanged - including both sides being <c>null</c> - leaves
+    /// <see cref="AppState.Preview"/> untouched, which is what keeps
+    /// <see cref="Msg.PreviewLoaded"/>/<see cref="Msg.PreviewFailed"/> (results, not cursor moves)
+    /// from re-triggering themselves. A change to a file bumps <see cref="PreviewState.Generation"/>,
+    /// sets <see cref="PreviewKind.Loading"/>, and appends <see cref="Effect.LoadPreview"/>; a
+    /// change to none/directory/drive bumps the generation and resets to
+    /// <see cref="PreviewKind.None"/> with no effect (any in-flight load for the old target is left
+    /// to arrive and be discarded by the generation mismatch).
+    /// </summary>
+    private static (AppState, IReadOnlyList<Effect>) ReconcilePreview(
+        AppState oldState, AppState newState, IReadOnlyList<Effect> effects)
+    {
+        var oldTarget = ResolveCursorFileTarget(oldState);
+        var newTarget = ResolveCursorFileTarget(newState);
+        if (string.Equals(oldTarget, newTarget, StringComparison.Ordinal))
+        {
+            return (newState, effects);
+        }
+
+        var nextGeneration = newState.Preview.Generation + 1;
+
+        if (newTarget is null)
+        {
+            var cleared = newState with { Preview = PreviewState.Initial with { Generation = nextGeneration } };
+            return (cleared, effects);
+        }
+
+        var loading = newState with
+        {
+            Preview = new PreviewState(
+                nextGeneration, newTarget, PreviewKind.Loading, Text: null, ImageBytes: [], Error: null),
+        };
+
+        var withPreviewEffect = new List<Effect>(effects) { new Effect.LoadPreview(nextGeneration, newTarget) };
+        return (loading, withPreviewEffect);
+    }
+
+    /// <summary>
+    /// Full path of the File-kind entry under <paramref name="state"/>'s focused column's cursor,
+    /// or <c>null</c> when the focused column is out of range, empty, its cursor is on a
+    /// Directory/Drive, or its cursor is -1.
+    /// </summary>
+    private static string? ResolveCursorFileTarget(AppState state)
+    {
+        if (!InRange(state, state.FocusedColumn))
+        {
+            return null;
+        }
+
+        var column = state.Columns[state.FocusedColumn];
+        if (column.Cursor < 0 || column.Cursor >= column.Entries.Length)
+        {
+            return null;
+        }
+
+        var entry = column.Entries[column.Cursor];
+        if (entry.Kind != EntryKind.File)
+        {
+            return null;
+        }
+
+        return column.Path.Length == 0 ? entry.Name : System.IO.Path.Combine(column.Path, entry.Name);
+    }
+
+    private static AppState PreviewLoaded(
+        AppState state, int generation, PreviewKind kind, string? text, ImmutableArray<byte> imageBytes, string? binaryLabel)
+    {
+        if (generation != state.Preview.Generation)
+        {
+            return state;
+        }
+
+        // Binary results have no body to show, so the label doubles as PreviewState.Text - see its
+        // remarks.
+        var displayText = kind == PreviewKind.Binary ? binaryLabel : text;
+        return state with
+        {
+            Preview = state.Preview with { Kind = kind, Text = displayText, ImageBytes = imageBytes, Error = null },
+        };
+    }
+
+    private static AppState PreviewFailed(AppState state, int generation, string error)
+    {
+        if (generation != state.Preview.Generation)
+        {
+            return state;
+        }
+
+        return state with { Preview = state.Preview with { Kind = PreviewKind.None, Error = error } };
     }
 }

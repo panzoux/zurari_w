@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Windows.Media;
 using Zurari.Core;
@@ -191,5 +192,45 @@ public static class StateProjection
         var isFinished = job.Status is JobStatus.Completed or JobStatus.Failed or JobStatus.Cancelled;
 
         return new JobVm(job.JobId, description, detail, progressFraction, isIndeterminate, isRunning, isFinished, statusLabel);
+    }
+
+    /// <summary>
+    /// View model for the preview pane (see <see cref="ProjectPreview"/>). Carries the raw
+    /// <see cref="AppState.Preview"/> data straight through - <see cref="Zurari.App.MainWindow"/>
+    /// is the one that decides how to render each <see cref="Kind"/> (Image bytes -&gt;
+    /// <c>BitmapImage</c> is wiring, not projection logic).
+    /// </summary>
+    /// <param name="Generation">
+    /// Mirrors <see cref="PreviewState.Generation"/> so the renderer can cache the last
+    /// <c>BitmapImage</c> it decoded and skip re-decoding on an unrelated re-render.
+    /// </param>
+    /// <param name="FileName">Last path segment of <see cref="PreviewState.Path"/>, or <c>null</c> when <see cref="Kind"/> is <see cref="PreviewKind.None"/>.</param>
+    /// <param name="Kind">What to render.</param>
+    /// <param name="Text">
+    /// Decoded text body when <see cref="Kind"/> is <see cref="PreviewKind.Text"/>, or the type
+    /// label when <see cref="Kind"/> is <see cref="PreviewKind.Binary"/> - straight passthrough of
+    /// <see cref="PreviewState.Text"/>, see its remarks.
+    /// </param>
+    /// <param name="ImageBytes">Whole-file bytes when <see cref="Kind"/> is <see cref="PreviewKind.Image"/>.</param>
+    /// <param name="Error">Set when the most recent load for this generation failed.</param>
+    public sealed record PreviewVm(
+        int Generation,
+        string? FileName,
+        PreviewKind Kind,
+        string? Text,
+        ImmutableArray<byte> ImageBytes,
+        string? Error);
+
+    /// <summary>
+    /// Projects <see cref="AppState.Preview"/> into a <see cref="PreviewVm"/>. Pure - no I/O, no
+    /// decisions beyond display formatting (the file name).
+    /// </summary>
+    public static PreviewVm ProjectPreview(AppState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+
+        var preview = state.Preview;
+        var fileName = preview.Path is null ? null : LastPathSegment(preview.Path);
+        return new PreviewVm(preview.Generation, fileName, preview.Kind, preview.Text, preview.ImageBytes, preview.Error);
     }
 }
