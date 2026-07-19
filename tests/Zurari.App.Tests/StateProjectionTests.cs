@@ -196,4 +196,65 @@ public class StateProjectionTests
 
         Assert.Empty(vms[0].Entries);
     }
+
+    [Fact]
+    public void Entry_whose_full_path_is_in_CutPending_projects_as_IsCut()
+    {
+        var cut = new Entry("cut.txt", EntryKind.File);
+        var plain = new Entry("plain.txt", EntryKind.File);
+        var state = StateWithColumns(new Column(@"C:\", [cut, plain], Cursor: 0, Load: LoadState.Loaded))
+            with
+        { CutPending = [@"C:\cut.txt"] };
+
+        var vms = StateProjection.Project(state);
+
+        Assert.True(vms[0].Entries[0].IsCut);
+        Assert.False(vms[0].Entries[1].IsCut);
+    }
+
+    [Fact]
+    public void CutPending_comparison_is_case_insensitive()
+    {
+        var entry = new Entry("Cut.TXT", EntryKind.File);
+        var state = StateWithColumns(new Column(@"C:\", [entry], Cursor: 0, Load: LoadState.Loaded))
+            with
+        { CutPending = [@"c:\cut.txt"] };
+
+        var vms = StateProjection.Project(state);
+
+        Assert.True(vms[0].Entries[0].IsCut);
+    }
+
+    [Fact]
+    public void Empty_CutPending_projects_every_entry_as_not_cut()
+    {
+        var entry = new Entry("a.txt", EntryKind.File);
+        var state = StateWithColumns(new Column(@"C:\", [entry], Cursor: 0, Load: LoadState.Loaded));
+
+        var vms = StateProjection.Project(state);
+
+        Assert.False(vms[0].Entries[0].IsCut);
+    }
+
+    [Fact]
+    public void CutPending_only_marks_entries_in_the_matching_column()
+    {
+        var entryA = new Entry("same-name.txt", EntryKind.File);
+        var entryB = new Entry("same-name.txt", EntryKind.File);
+        var state = new AppState
+        {
+            Columns =
+            [
+                new Column(@"C:\a", [entryA], Cursor: 0, Load: LoadState.Loaded),
+                new Column(@"C:\b", [entryB], Cursor: 0, Load: LoadState.Loaded),
+            ],
+            FocusedColumn = 0,
+            CutPending = [@"C:\a\same-name.txt"],
+        };
+
+        var vms = StateProjection.Project(state);
+
+        Assert.True(vms[0].Entries[0].IsCut);
+        Assert.False(vms[1].Entries[0].IsCut);
+    }
 }

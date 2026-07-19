@@ -75,11 +75,12 @@ public abstract record Msg
 
     /// <summary>
     /// Delete the entry at <paramref name="EntryIndex"/> in <paramref name="ColumnIndex"/> to the
-    /// recycle bin. Drive entries are ignored (there is nothing to delete). Marks the column
+    /// recycle bin, or - when <paramref name="Permanent"/> is <c>true</c> (Shift+Delete) - bypassing
+    /// it entirely. Drive entries are ignored (there is nothing to delete). Marks the column
     /// <see cref="LoadState.Loading"/> (keeping its entries visible) and emits
     /// <see cref="Effect.DeleteToRecycleBin"/>.
     /// </summary>
-    public sealed record DeleteEntry(int ColumnIndex, int EntryIndex) : Msg;
+    public sealed record DeleteEntry(int ColumnIndex, int EntryIndex, bool Permanent = false) : Msg;
 
     /// <summary>
     /// Drop <paramref name="Paths"/> onto <paramref name="ColumnIndex"/>, to be copied or moved
@@ -141,13 +142,14 @@ public abstract record Msg
 
     /// <summary>
     /// Delete every marked Directory/File entry (marked Drives are ignored) in
-    /// <paramref name="ColumnIndex"/> to the recycle bin as a single batch. No-op if the column has
-    /// no such marked entry (or is out of range) - the App layer is expected to fall back to
-    /// <see cref="DeleteEntry"/> for the cursor entry in that case. Marks the column
+    /// <paramref name="ColumnIndex"/> to the recycle bin as a single batch, or - when
+    /// <paramref name="Permanent"/> is <c>true</c> (Shift+Delete) - bypassing it entirely. No-op if
+    /// the column has no such marked entry (or is out of range) - the App layer is expected to fall
+    /// back to <see cref="DeleteEntry"/> for the cursor entry in that case. Marks the column
     /// <see cref="LoadState.Loading"/> (keeping its entries visible) and emits one
     /// <see cref="Effect.DeleteToRecycleBin"/> carrying all marked full paths.
     /// </summary>
-    public sealed record DeleteMarked(int ColumnIndex) : Msg;
+    public sealed record DeleteMarked(int ColumnIndex, bool Permanent = false) : Msg;
 
     /// <summary>
     /// Marks every entry in <paramref name="ColumnIndex"/> between <paramref name="FromIndex"/> and
@@ -243,4 +245,12 @@ public abstract record Msg
     /// <see cref="PreviewLoaded"/>.
     /// </summary>
     public sealed record PreviewFailed(int Generation, string Error) : Msg;
+
+    /// <summary>
+    /// Replaces <see cref="AppState.CutPending"/> with <paramref name="Paths"/> (an empty array
+    /// clears it) - the Explorer-style "dim the cut rows" feedback for Ctrl+X. Dispatched by the App
+    /// layer alongside its own clipboard write; Ctrl+C dispatches this with an empty array (copying
+    /// clears any pending-cut look). Also cleared automatically by <see cref="PasteRequested"/>.
+    /// </summary>
+    public sealed record SetCutPending(ImmutableArray<string> Paths) : Msg;
 }

@@ -446,9 +446,11 @@ public sealed partial class MainWindow : Window, IDisposable
             Dispatch(new Msg.Refresh());
             e.Handled = true;
         }
-        else if (e.Key == Key.Delete)
+        else if (e.Key == Key.Delete && Keyboard.Modifiers is ModifierKeys.None or ModifierKeys.Shift)
         {
-            TryDelete();
+            // Shift+Delete bypasses the recycle bin entirely (Windows Explorer convention);
+            // plain Delete is the normal recycle-bin path.
+            TryDelete(permanent: Keyboard.Modifiers == ModifierKeys.Shift);
             e.Handled = true;
         }
         else if (e.Key == Key.Space && Keyboard.Modifiers == ModifierKeys.None)
@@ -485,7 +487,10 @@ public sealed partial class MainWindow : Window, IDisposable
     /// directions. No-op when the focused column has nothing to offer (empty/no cursor) or is the
     /// virtual root (empty <see cref="Column.Path"/> - drives cannot be copied). Clipboard access
     /// can transiently fail with CLIPBRD_E_CANT_OPEN when another process holds the clipboard open;
-    /// that failure is swallowed - the user simply sees nothing happen and can retry.
+    /// that failure is swallowed - the user simply sees nothing happen and can retry. Also dispatches
+    /// <see cref="Msg.SetCutPending"/>: <paramref name="isMove"/> (Ctrl+X) sets it to the same paths
+    /// just placed on the clipboard, so <see cref="Controls.ColumnBrowser"/> dims those rows
+    /// Explorer-style; a plain Ctrl+C clears it (a copy is not a pending cut).
     /// </summary>
     private void TryCopyToClipboard(bool isMove)
     {
@@ -524,8 +529,13 @@ public sealed partial class MainWindow : Window, IDisposable
         }
         catch (System.Runtime.InteropServices.ExternalException)
         {
-            // CLIPBRD_E_CANT_OPEN or similar transient clipboard-ownership failure - nothing to do.
+            // CLIPBRD_E_CANT_OPEN or similar transient clipboard-ownership failure - nothing to do,
+            // including the cut-pending dispatch below (dimming rows for a cut that never actually
+            // reached the clipboard would be misleading).
+            return;
         }
+
+        Dispatch(new Msg.SetCutPending(isMove ? [.. paths] : []));
     }
 
     /// <summary>
@@ -557,8 +567,10 @@ public sealed partial class MainWindow : Window, IDisposable
     /// Deletes the marked entries of the focused column when it has any (Drives are never
     /// eligible, so a column with only a marked drive falls through to the single-entry path
     /// below); otherwise falls back to deleting just the cursor entry, as before marks existed.
+    /// <paramref name="permanent"/> (Shift+Delete) bypasses the recycle bin entirely; the
+    /// confirmation text warns about that explicitly rather than reusing the recycle-bin wording.
     /// </summary>
-    private void TryDelete()
+    private void TryDelete(bool permanent)
     {
         var state = loop.State;
         var columnIndex = state.FocusedColumn;
@@ -577,22 +589,24 @@ public sealed partial class MainWindow : Window, IDisposable
         {
             var markedResult = MessageBox.Show(
                 this,
-                $"選択した {markedCount} 件をゴミ箱に移動しますか?",
+                permanent
+                    ? $"選択した {markedCount} 件を完全に削除しますか?(ゴミ箱に入りません)"
+                    : $"選択した {markedCount} 件をゴミ箱に移動しますか?",
                 "削除の確認",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Question);
             if (markedResult == MessageBoxResult.Yes)
             {
-                Dispatch(new Msg.DeleteMarked(columnIndex));
+                Dispatch(new Msg.DeleteMarked(columnIndex, permanent));
             }
 
             return;
         }
 
-        TryDeleteFocusedEntry();
+        TryDeleteFocusedEntry(permanent);
     }
 
-    private void TryDeleteFocusedEntry()
+    private void TryDeleteFocusedEntry(bool permanent)
     {
         var state = loop.State;
         var columnIndex = state.FocusedColumn;
@@ -610,13 +624,15 @@ public sealed partial class MainWindow : Window, IDisposable
 
         var result = MessageBox.Show(
             this,
-            $"{entry.Name} をゴミ箱に移動しますか?",
+            permanent
+                ? $"{entry.Name} を完全に削除しますか?(ゴミ箱に入りません)"
+                : $"{entry.Name} をゴミ箱に移動しますか?",
             "削除の確認",
             MessageBoxButton.YesNo,
             MessageBoxImage.Question);
         if (result == MessageBoxResult.Yes)
         {
-            Dispatch(new Msg.DeleteEntry(columnIndex, column.Cursor));
+            Dispatch(new Msg.DeleteEntry(columnIndex, column.Cursor, permanent));
         }
     }
 

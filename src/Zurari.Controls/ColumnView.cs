@@ -487,6 +487,21 @@ public sealed class ColumnView : Control
 
         if (entryIndex is null)
         {
+            if (IsOnScrollBar(e.OriginalSource as DependencyObject))
+            {
+                if (ColumnBrowser.InputTraceEnabled)
+                {
+                    Trace.WriteLine(
+                        $"[input] col={Column?.Title} down entry=null button={e.ChangedButton} clicks={e.ClickCount} "
+                        + $"pos={inputTracePressPositionInList} branch=scrollbar");
+                }
+
+                // Left entirely to the ListBox's own ScrollViewer/ScrollBar handling - starting a
+                // rubber-band drag and capturing the mouse (like the empty-space branch below does)
+                // would prevent the user from dragging the scrollbar thumb to scroll.
+                return;
+            }
+
             if (ColumnBrowser.InputTraceEnabled)
             {
                 Trace.WriteLine(
@@ -1143,6 +1158,30 @@ public sealed class ColumnView : Control
 
             SetIsDropTargetRow(item, targetRowIndex == i);
         }
+    }
+
+    /// <summary>
+    /// True when <paramref name="source"/> (typically a mouse event's <c>OriginalSource</c>) is a
+    /// <see cref="ScrollBar"/> itself or one of its descendants (Thumb, RepeatButtons, Track),
+    /// walking up the visual/logical tree only as far as <see cref="List"/>. Used to keep a press on
+    /// the vertical scrollbar out of the empty-space rubber-band branch of
+    /// <see cref="OnListPreviewMouseDown"/> - see its remarks.
+    /// </summary>
+    private bool IsOnScrollBar(DependencyObject? source)
+    {
+        while (source is not null && !ReferenceEquals(source, List))
+        {
+            if (source is ScrollBar)
+            {
+                return true;
+            }
+
+            source = source is Visual visual
+                ? VisualTreeHelper.GetParent(visual)
+                : LogicalTreeHelper.GetParent(source);
+        }
+
+        return false;
     }
 
     /// <summary>Walks up from a click's <c>OriginalSource</c> to the containing <see cref="ListBoxItem"/>.</summary>

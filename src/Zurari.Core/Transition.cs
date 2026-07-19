@@ -38,14 +38,14 @@ public static class Transition
             Msg.Refresh => Refresh(state),
             Msg.DirectoryLoaded m => (DirectoryLoaded(state, m.ColumnIndex, m.Path, m.Entries), NoEffects),
             Msg.DirectoryLoadFailed m => (DirectoryLoadFailed(state, m.ColumnIndex, m.Path, m.Error), NoEffects),
-            Msg.DeleteEntry m => DeleteEntry(state, m.ColumnIndex, m.EntryIndex),
+            Msg.DeleteEntry m => DeleteEntry(state, m.ColumnIndex, m.EntryIndex, m.Permanent),
             Msg.DropFiles m => DropFiles(state, m.ColumnIndex, m.TargetEntryIndex, m.Paths, m.ShiftHeld, m.CtrlHeld),
             Msg.ShellOpCompleted m => ShellOpCompleted(state, m.ColumnIndex, m.Path, m.AffectedDirs),
             Msg.ShellOpFailed m => (ShellOpFailed(state, m.ColumnIndex, m.Path, m.Error), NoEffects),
             Msg.ToggleMark m => (ToggleMark(state, m.ColumnIndex, m.EntryIndex), NoEffects),
             Msg.ToggleMarkAtCursor m => (ToggleMarkAtCursor(state, m.ColumnIndex), NoEffects),
             Msg.ClearMarks m => (ClearMarks(state, m.ColumnIndex), NoEffects),
-            Msg.DeleteMarked m => DeleteMarked(state, m.ColumnIndex),
+            Msg.DeleteMarked m => DeleteMarked(state, m.ColumnIndex, m.Permanent),
             Msg.MarkRange m => (MarkRange(state, m.ColumnIndex, m.FromIndex, m.ToIndex, m.Additive), NoEffects),
             Msg.PasteRequested m => PasteRequested(state, m.ColumnIndex, m.Sources, m.IsMove),
             Msg.JobProgress m =>
@@ -60,6 +60,7 @@ public static class Transition
             Msg.PreviewLoaded m =>
                 (PreviewLoaded(state, m.Generation, m.Kind, m.Text, m.ImageBytes, m.BinaryLabel), NoEffects),
             Msg.PreviewFailed m => (PreviewFailed(state, m.Generation, m.Error), NoEffects),
+            Msg.SetCutPending m => (state with { CutPending = m.Paths }, NoEffects),
             _ => (state, NoEffects),
         };
     }
@@ -230,7 +231,8 @@ public static class Transition
         return WithColumn(state, columnIndex, updated);
     }
 
-    private static (AppState, IReadOnlyList<Effect>) DeleteEntry(AppState state, int columnIndex, int entryIndex)
+    private static (AppState, IReadOnlyList<Effect>) DeleteEntry(
+        AppState state, int columnIndex, int entryIndex, bool permanent)
     {
         if (!InRange(state, columnIndex))
         {
@@ -254,7 +256,7 @@ public static class Transition
             : System.IO.Path.Combine(column.Path, entry.Name);
 
         var newState = WithColumn(state, columnIndex, column with { Load = LoadState.Loading });
-        return (newState, [new Effect.DeleteToRecycleBin(columnIndex, column.Path, [targetFullPath])]);
+        return (newState, [new Effect.DeleteToRecycleBin(columnIndex, column.Path, [targetFullPath], permanent)]);
     }
 
     private static AppState ToggleMark(AppState state, int columnIndex, int entryIndex)
@@ -311,7 +313,7 @@ public static class Transition
         return WithColumn(state, columnIndex, column with { Entries = newEntries });
     }
 
-    private static (AppState, IReadOnlyList<Effect>) DeleteMarked(AppState state, int columnIndex)
+    private static (AppState, IReadOnlyList<Effect>) DeleteMarked(AppState state, int columnIndex, bool permanent)
     {
         if (!InRange(state, columnIndex))
         {
@@ -336,7 +338,7 @@ public static class Transition
         }
 
         var newState = WithColumn(state, columnIndex, column with { Load = LoadState.Loading });
-        return (newState, [new Effect.DeleteToRecycleBin(columnIndex, column.Path, targets.ToImmutable())]);
+        return (newState, [new Effect.DeleteToRecycleBin(columnIndex, column.Path, targets.ToImmutable(), permanent)]);
     }
 
     private static AppState MarkRange(AppState state, int columnIndex, int fromIndex, int toIndex, bool additive)
@@ -599,7 +601,14 @@ public static class Transition
 
         var jobId = state.NextJobId;
         var job = new Job(jobId, isMove ? JobKind.Move : JobKind.Copy, filtered, column.Path);
-        var newState = state with { Jobs = state.Jobs.Add(job), NextJobId = jobId + 1 };
+        var newState = state with
+        {
+            Jobs = state.Jobs.Add(job),
+            NextJobId = jobId + 1,
+            // Any paste - whether or not it consumes the exact paths that were cut - consumes the
+            // pending-cut look; keeping it simple rather than trying to diff which paths were pasted.
+            CutPending = [],
+        };
         return (newState, [new Effect.RunFileJob(jobId, job.Kind, filtered, column.Path)]);
     }
 

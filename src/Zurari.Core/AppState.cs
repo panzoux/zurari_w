@@ -149,6 +149,14 @@ public sealed record AppState
     /// <summary>What the preview pane currently shows - see <see cref="PreviewState"/>.</summary>
     public PreviewState Preview { get; init; } = PreviewState.Initial;
 
+    /// <summary>
+    /// Full paths of entries the user has cut (Ctrl+X) but not yet pasted - Explorer-style "dim the
+    /// cut rows" feedback. Set wholesale by <see cref="Msg.SetCutPending"/> (replacing whatever was
+    /// there); cleared automatically by <see cref="Msg.PasteRequested"/>, since any paste consumes
+    /// the pending-cut look regardless of what was pasted. Empty by default.
+    /// </summary>
+    public ImmutableArray<string> CutPending { get; init; } = [];
+
     /// <summary>Starting state: a single, still-loading virtual root column (the drive list).</summary>
     public static AppState Initial { get; } = new()
     {

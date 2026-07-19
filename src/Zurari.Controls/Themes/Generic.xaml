@@ -124,8 +124,17 @@
                                                   columns never get this trigger; their marked rows show only
                                                   the weaker step 3 background as a result. Same color as
                                                   step 4 by design (a drop-target row and the strong cursor
-                                                  row are meant to look identical when they coincide). -->
+                                                  row are meant to look identical when they coincide).
+                                             IsCut (below, outside this numbered list) dims the whole row via
+                                             Opacity rather than Background, so it layers independently of
+                                             the precedence above - a cut row keeps whatever
+                                             selection/marked/hover background it would otherwise have, just
+                                             faded, Explorer-style, until the pending cut is consumed by a
+                                             paste or replaced by a new cut/copy. -->
                                         <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsCut}" Value="True">
+                                                <Setter Property="Opacity" Value="0.55" />
+                                            </DataTrigger>
                                             <!-- Cursor row: selection reflects ColumnVm.CursorIndex only
                                                  (ColumnView keeps SelectedIndex in sync; it never lets
                                                  a stray user selection stick). Weak highlight by default -

@@ -57,6 +57,36 @@ public class ShellEffectExecutorTests
     }
 
     [StaFact]
+    public void DeleteToRecycleBin_with_Permanent_true_reports_completed_and_removes_file()
+    {
+        // Recycle-vs-permanent is not observable on %TEMP% (both remove the file); this only
+        // verifies the Permanent flag does not break the happy path - the flag's actual effect
+        // (omitting FOF_ALLOWUNDO) is a one-line code review item, not something a %TEMP% test can
+        // distinguish from the recycle-bin path above.
+        var dir = CreateTempDir();
+        try
+        {
+            var filePath = Path.Combine(dir, "victim-permanent.txt");
+            File.WriteAllText(filePath, "bye");
+
+            var queue = new ConcurrentQueue<Msg>();
+            using var executor = new ShellEffectExecutor(queue.Enqueue);
+            executor.Submit(new Effect.DeleteToRecycleBin(0, dir, [filePath], Permanent: true));
+
+            var msg = WaitForMsg(queue, TimeSpan.FromSeconds(15));
+            var completed = Assert.IsType<Msg.ShellOpCompleted>(msg);
+            Assert.Equal(0, completed.ColumnIndex);
+            Assert.Equal(dir, completed.Path);
+            Assert.Equal([dir], completed.AffectedDirs);
+            Assert.False(File.Exists(filePath));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [StaFact]
     public void DeleteToRecycleBin_of_temp_directory_with_content_reports_completed_and_removes_it()
     {
         var dir = CreateTempDir();

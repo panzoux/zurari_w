@@ -467,6 +467,19 @@ public class TransitionTests
         Assert.Equal(0, effect.ColumnIndex);
         Assert.Equal(@"C:\", effect.Path);
         Assert.Equal([@"C:\a.txt"], effect.Targets);
+        Assert.False(effect.Permanent);
+    }
+
+    [Fact]
+    public void DeleteEntry_with_Permanent_true_carries_it_through_to_the_effect()
+    {
+        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 1, Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        var (_, effects) = Transition.Apply(state, new Msg.DeleteEntry(0, 1, Permanent: true));
+
+        var effect = Assert.IsType<Effect.DeleteToRecycleBin>(Assert.Single(effects));
+        Assert.True(effect.Permanent);
     }
 
     [Fact]
@@ -677,6 +690,19 @@ public class TransitionTests
         Assert.Equal(0, effect.ColumnIndex);
         Assert.Equal(@"C:\", effect.Path);
         Assert.Equal([@"C:\sub", @"C:\b.txt"], effect.Targets);
+        Assert.False(effect.Permanent);
+    }
+
+    [Fact]
+    public void DeleteMarked_with_Permanent_true_carries_it_through_to_the_effect()
+    {
+        var column = new Column(@"C:\", [File1 with { IsMarked = true }], Cursor: 0, Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        var (_, effects) = Transition.Apply(state, new Msg.DeleteMarked(0, Permanent: true));
+
+        var effect = Assert.IsType<Effect.DeleteToRecycleBin>(Assert.Single(effects));
+        Assert.True(effect.Permanent);
     }
 
     [Fact]
@@ -1207,6 +1233,30 @@ public class TransitionTests
     }
 
     [Fact]
+    public void PasteRequested_clears_CutPending()
+    {
+        var column = new Column(@"C:\dest", [], Load: LoadState.Loaded);
+        var state = StateWithColumns(column) with { CutPending = [@"C:\src\a.txt"] };
+
+        var (next, _) = Transition.Apply(state, new Msg.PasteRequested(0, [@"C:\src\a.txt"], IsMove: false));
+
+        Assert.Empty(next.CutPending);
+    }
+
+    [Fact]
+    public void PasteRequested_that_is_a_complete_no_op_leaves_CutPending_untouched()
+    {
+        var state = StateWithColumns(new Column(@"C:\dest", [], Load: LoadState.Loaded))
+            with
+        { CutPending = [@"C:\src\a.txt"] };
+
+        var (next, _) = Transition.Apply(
+            state, new Msg.PasteRequested(0, [@"C:\dest\already-here.txt"], IsMove: false));
+
+        Assert.Equal([@"C:\src\a.txt"], next.CutPending);
+    }
+
+    [Fact]
     public void PasteRequested_with_IsMove_true_creates_a_Move_job()
     {
         var column = new Column(@"C:\dest", [], Load: LoadState.Loaded);
@@ -1723,6 +1773,42 @@ public class TransitionTests
         var effect = Assert.IsType<Effect.ReadDirectory>(Assert.Single(effects));
         Assert.Equal(@"C:\sub", effect.Path);
     }
+
+    [Fact]
+    public void SetCutPending_replaces_CutPending_with_the_given_paths()
+    {
+        var state = StateWithColumns(new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded));
+        ImmutableArray<string> paths = [@"C:\a.txt", @"C:\b.txt"];
+
+        var (next, effects) = Transition.Apply(state, new Msg.SetCutPending(paths));
+
+        Assert.Equal(paths, next.CutPending);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void SetCutPending_with_an_empty_array_clears_CutPending()
+    {
+        var state = StateWithColumns(new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded))
+            with
+        { CutPending = [@"C:\a.txt"] };
+
+        var (next, _) = Transition.Apply(state, new Msg.SetCutPending([]));
+
+        Assert.Empty(next.CutPending);
+    }
+
+    [Fact]
+    public void SetCutPending_overwrites_a_previous_pending_cut()
+    {
+        var state = StateWithColumns(new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded))
+            with
+        { CutPending = [@"C:\old.txt"] };
+
+        var (next, _) = Transition.Apply(state, new Msg.SetCutPending([@"C:\new.txt"]));
+
+        Assert.Equal([@"C:\new.txt"], next.CutPending);
+    }
 }
 
 /// <summary>
@@ -1786,7 +1872,8 @@ public class TransitionProperties
         Gen.Const<Msg>(new Msg.Refresh()),
         Gen.Select(GenColumnIndex, GenPath, GenEntries).Select(t => (Msg)new Msg.DirectoryLoaded(t.Item1, t.Item2, t.Item3)),
         Gen.Select(GenColumnIndex, GenPath).Select(t => (Msg)new Msg.DirectoryLoadFailed(t.Item1, t.Item2, "error")),
-        Gen.Select(GenColumnIndex, GenEntryIndex).Select(t => (Msg)new Msg.DeleteEntry(t.Item1, t.Item2)),
+        Gen.Select(Gen.Select(GenColumnIndex, GenEntryIndex), GenIsMove)
+            .Select(t => (Msg)new Msg.DeleteEntry(t.Item1.Item1, t.Item1.Item2, t.Item2)),
         Gen.Select(
             Gen.Select(GenColumnIndex, GenEntryIndex),
             Gen.Select(GenPaths, GenIsMove, GenIsMove))
@@ -1797,7 +1884,7 @@ public class TransitionProperties
         Gen.Select(GenColumnIndex, GenEntryIndex).Select(t => (Msg)new Msg.ToggleMark(t.Item1, t.Item2)),
         GenColumnIndex.Select(i => (Msg)new Msg.ToggleMarkAtCursor(i)),
         GenColumnIndex.Select(i => (Msg)new Msg.ClearMarks(i)),
-        GenColumnIndex.Select(i => (Msg)new Msg.DeleteMarked(i)),
+        Gen.Select(GenColumnIndex, GenIsMove).Select(t => (Msg)new Msg.DeleteMarked(t.Item1, t.Item2)),
         Gen.Select(
             Gen.Select(GenColumnIndex, GenEntryIndex),
             Gen.Select(GenEntryIndex, GenIsMove))
@@ -1813,7 +1900,8 @@ public class TransitionProperties
         GenJobId.Select(i => (Msg)new Msg.JobDismissed(i)),
         Gen.Select(GenJobId, GenPreviewKind, GenImageBytes)
             .Select(t => (Msg)new Msg.PreviewLoaded(t.Item1, t.Item2, "text", t.Item3, "label")),
-        GenJobId.Select(i => (Msg)new Msg.PreviewFailed(i, "error")));
+        GenJobId.Select(i => (Msg)new Msg.PreviewFailed(i, "error")),
+        GenPaths.Select(paths => (Msg)new Msg.SetCutPending(paths)));
 
     [Fact]
     public void Any_msg_sequence_yields_valid_state_and_effects()
@@ -1864,6 +1952,7 @@ public class TransitionProperties
         Assert.Equal(expected.Preview.Text, actual.Preview.Text);
         Assert.Equal(expected.Preview.ImageBytes, actual.Preview.ImageBytes);
         Assert.Equal(expected.Preview.Error, actual.Preview.Error);
+        Assert.Equal(expected.CutPending, actual.CutPending);
         Assert.Equal(expected.Columns.Length, actual.Columns.Length);
         for (var i = 0; i < expected.Columns.Length; i++)
         {

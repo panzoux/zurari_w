@@ -180,6 +180,31 @@ public class CursorVisualTests
     }
 
     [StaFact]
+    public void IsCut_entries_render_dimmed_and_others_stay_at_full_opacity()
+    {
+        var entries = new[]
+        {
+            new EntryVm("plain", EntryKind.File, IsMarked: false, SizeText: null, DateText: null, IsCut: false),
+            new EntryVm("cut", EntryKind.File, IsMarked: false, SizeText: null, DateText: null, IsCut: true),
+        };
+        var columns = new[] { new ColumnVm("col", entries, CursorIndex: -1, IsFocused: true) };
+        var browser = new ColumnBrowser { Columns = columns };
+        using var host = new TestWindow(browser);
+        TestWindow.DoEvents();
+
+        var list = FindListBox(browser, 0);
+        Assert.NotNull(list);
+
+        var plain = list!.ItemContainerGenerator.ContainerFromIndex(0) as ListBoxItem;
+        var cut = list.ItemContainerGenerator.ContainerFromIndex(1) as ListBoxItem;
+        Assert.NotNull(plain);
+        Assert.NotNull(cut);
+
+        Assert.Equal(1.0, plain!.Opacity);
+        Assert.Equal(0.55, cut!.Opacity);
+    }
+
+    [StaFact]
     public void Cursor_row_that_is_also_marked_reads_as_the_strong_cursor_blue_in_the_focused_column()
     {
         var entries = new[]

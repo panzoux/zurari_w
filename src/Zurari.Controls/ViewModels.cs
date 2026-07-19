@@ -25,7 +25,8 @@ public sealed record EntryVm(
     bool IsMarked,
     string? SizeText,
     string? DateText,
-    ImageSource? Icon = null);
+    ImageSource? Icon = null,
+    bool IsCut = false);
 
 /// <summary>
 /// One column (the contents of one directory). Immutable snapshot.

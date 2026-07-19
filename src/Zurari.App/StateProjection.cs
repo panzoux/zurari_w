@@ -25,21 +25,29 @@ public static class StateProjection
     {
         ArgumentNullException.ThrowIfNull(state);
 
+        // Built once per Project call (not per column/entry) - CutPending is a flat list of full
+        // paths shared across every column, so a HashSet lookup here is what keeps the per-entry
+        // membership check cheap instead of an O(entries * CutPending) scan.
+        var cutPending = state.CutPending.IsDefaultOrEmpty
+            ? null
+            : state.CutPending.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         var result = new Controls.ColumnVm[state.Columns.Length];
         for (var i = 0; i < state.Columns.Length; i++)
         {
-            result[i] = ProjectColumn(state.Columns[i], isFocused: i == state.FocusedColumn, iconResolver);
+            result[i] = ProjectColumn(state.Columns[i], isFocused: i == state.FocusedColumn, iconResolver, cutPending);
         }
 
         return result;
     }
 
-    private static Controls.ColumnVm ProjectColumn(Column column, bool isFocused, Func<Entry, ImageSource?>? iconResolver)
+    private static Controls.ColumnVm ProjectColumn(
+        Column column, bool isFocused, Func<Entry, ImageSource?>? iconResolver, HashSet<string>? cutPending)
     {
         var entries = new Controls.EntryVm[column.Entries.Length];
         for (var i = 0; i < column.Entries.Length; i++)
         {
-            entries[i] = ProjectEntry(column.Entries[i], iconResolver);
+            entries[i] = ProjectEntry(column.Entries[i], iconResolver, column.Path, cutPending);
         }
 
         return new Controls.ColumnVm(
@@ -74,14 +82,19 @@ public static class StateProjection
         return separatorIndex < 0 ? trimmed : trimmed[(separatorIndex + 1)..];
     }
 
-    private static Controls.EntryVm ProjectEntry(Entry entry, Func<Entry, ImageSource?>? iconResolver) =>
-        new(
+    private static Controls.EntryVm ProjectEntry(
+        Entry entry, Func<Entry, ImageSource?>? iconResolver, string columnPath, HashSet<string>? cutPending)
+    {
+        var fullPath = columnPath.Length == 0 ? entry.Name : System.IO.Path.Combine(columnPath, entry.Name);
+        return new(
             Name: entry.Name,
             Kind: ProjectKind(entry.Kind),
             IsMarked: entry.IsMarked,
             SizeText: ProjectSize(entry),
             DateText: ProjectDate(entry.Modified),
-            Icon: iconResolver?.Invoke(entry));
+            Icon: iconResolver?.Invoke(entry),
+            IsCut: cutPending?.Contains(fullPath) ?? false);
+    }
 
     private static Controls.EntryKind ProjectKind(EntryKind kind) => kind switch
     {

@@ -126,6 +126,9 @@ public sealed class ShellEffectExecutor : IDisposable
     /// <c>PerformOperations</c>. If any target fails to parse (or any <c>DeleteItem</c> call
     /// fails), the whole batch is reported failed with that target's message - none of the queued
     /// deletes have been performed yet at that point, since <c>PerformOperations</c> has not run.
+    /// <see cref="Effect.DeleteToRecycleBin.Permanent"/> (Shift+Delete) omits
+    /// <see cref="FileOperationInterop.FOF_ALLOWUNDO"/>, which is what routes the delete through the
+    /// recycle bin in the first place - without it, <c>IFileOperation</c> deletes outright.
     /// </summary>
     private void ExecuteDeleteToRecycleBin(Effect.DeleteToRecycleBin effect)
     {
@@ -136,11 +139,15 @@ public sealed class ShellEffectExecutor : IDisposable
             fileOperation = new FileOperationInterop.FileOperation();
             var op = (FileOperationInterop.IFileOperation)fileOperation;
 
-            var hr = op.SetOperationFlags(
-                FileOperationInterop.FOF_ALLOWUNDO
-                | FileOperationInterop.FOF_NOCONFIRMATION
+            var flags = FileOperationInterop.FOF_NOCONFIRMATION
                 | FileOperationInterop.FOF_SILENT
-                | FileOperationInterop.FOF_NOERRORUI);
+                | FileOperationInterop.FOF_NOERRORUI;
+            if (!effect.Permanent)
+            {
+                flags |= FileOperationInterop.FOF_ALLOWUNDO;
+            }
+
+            var hr = op.SetOperationFlags(flags);
             ThrowIfFailed(hr, "SetOperationFlags");
 
             foreach (var targetFullPath in effect.Targets)
