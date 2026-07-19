@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using Zurari.Controls;
 using Zurari.Core;
 using Zurari.Runtime;
@@ -53,6 +54,18 @@ public sealed partial class MainWindow : Window, IDisposable
     /// pay the decode cost when the previewed file actually changed.
     /// </summary>
     private int lastDecodedImageGeneration = -1;
+
+    /// <summary>
+    /// How long <see cref="RunEffect"/> holds the latest <see cref="Effect.LoadPreview"/> before
+    /// submitting it (Phase 5 fix P1). Every newer <c>LoadPreview</c> replaces the held one and
+    /// restarts <see cref="previewDebounceTimer"/>, so a fast cursor never queues more than one
+    /// outstanding preview load - the fix that stops preview I/O from making cursor movement feel
+    /// sluggish. Non-preview effects are unaffected; they still flow to their executor immediately.
+    /// </summary>
+    private static readonly TimeSpan PreviewDebounceInterval = TimeSpan.FromMilliseconds(150);
+
+    private readonly PendingPreviewGate previewGate = new();
+    private DispatcherTimer? previewDebounceTimer;
 
     public MainWindow()
     {
@@ -111,6 +124,7 @@ public sealed partial class MainWindow : Window, IDisposable
     /// </summary>
     public void Dispose()
     {
+        previewDebounceTimer?.Stop();
         runtime.Dispose();
         shellExecutor.Dispose();
         jobEngine.Dispose();
@@ -119,15 +133,20 @@ public sealed partial class MainWindow : Window, IDisposable
     /// <summary>
     /// Routes an <see cref="Effect"/> to the executor that can perform it: filesystem effects go
     /// to <see cref="WorkerRuntime"/>, shell effects go to <see cref="ShellEffectExecutor"/>. Pure
-    /// dispatch by effect type — no decisions beyond "which executor".
+    /// dispatch by effect type — no decisions beyond "which executor", with one exception:
+    /// <see cref="Effect.LoadPreview"/> is debounced (see <see cref="SchedulePreviewLoad"/>) rather
+    /// than submitted immediately, since it is the one effect a fast cursor can otherwise flood
+    /// the worker pool with (Phase 5 fix P1). Every other effect still flows straight through.
     /// </summary>
     private void RunEffect(Effect effect)
     {
         switch (effect)
         {
             case Effect.ReadDirectory _:
-            case Effect.LoadPreview _:
                 runtime.Submit(effect);
+                break;
+            case Effect.LoadPreview loadPreview:
+                SchedulePreviewLoad(loadPreview);
                 break;
             case Effect.DeleteToRecycleBin _:
             case Effect.ShellCopyOrMove _:
@@ -137,6 +156,38 @@ public sealed partial class MainWindow : Window, IDisposable
             case Effect.CancelJob _:
                 jobEngine.Submit(effect);
                 break;
+        }
+    }
+
+    /// <summary>
+    /// Holds <paramref name="effect"/> in <see cref="previewGate"/> (replacing whatever was
+    /// pending) and (re)starts <see cref="previewDebounceTimer"/> at <see cref="PreviewDebounceInterval"/>.
+    /// Only the timer tick (<see cref="OnPreviewDebounceTick"/>) ever actually submits a
+    /// <see cref="Effect.LoadPreview"/> to <see cref="runtime"/> - this method never does, which is
+    /// the coalescing behavior itself (Phase 5 fix P1). The timer is created lazily on first use and
+    /// reused afterward.
+    /// </summary>
+    private void SchedulePreviewLoad(Effect.LoadPreview effect)
+    {
+        previewGate.Hold(effect);
+
+        if (previewDebounceTimer is null)
+        {
+            previewDebounceTimer = new DispatcherTimer { Interval = PreviewDebounceInterval };
+            previewDebounceTimer.Tick += OnPreviewDebounceTick;
+        }
+
+        previewDebounceTimer.Stop();
+        previewDebounceTimer.Start();
+    }
+
+    private void OnPreviewDebounceTick(object? sender, EventArgs e)
+    {
+        previewDebounceTimer?.Stop();
+        var effect = previewGate.Take();
+        if (effect is not null)
+        {
+            runtime.Submit(effect);
         }
     }
 
@@ -697,11 +748,14 @@ public sealed partial class MainWindow : Window, IDisposable
 
     /// <summary>
     /// Wires <see cref="StateProjection.ProjectPreview"/> onto the preview pane's three
-    /// mutually-exclusive views (image / text / metadata), toggling visibility by
-    /// <see cref="PreviewKind"/>. The only decision made here rather than in the projection is the
-    /// <c>ImageBytes</c> -&gt; <c>BitmapImage</c> decode, which is wiring (WPF-specific, not a
-    /// display-formatting choice) - cached by <see cref="lastDecodedImageGeneration"/> so it only
-    /// runs once per distinct preview, not on every unrelated re-render.
+    /// mutually-exclusive views (image / text-or-hex / metadata), toggling visibility by
+    /// <see cref="PreviewKind"/>. <see cref="PreviewKind.Binary"/> shares the same monospace text
+    /// box as <see cref="PreviewKind.Text"/> - its <c>vm.Text</c> is already the label header plus
+    /// hex dump, composed in the projection. The only decision made here rather than in the
+    /// projection is the <c>ImageBytes</c> -&gt; <c>BitmapImage</c> decode, which is wiring
+    /// (WPF-specific, not a display-formatting choice) - cached by
+    /// <see cref="lastDecodedImageGeneration"/> so it only runs once per distinct preview, not on
+    /// every unrelated re-render.
     /// </summary>
     private void RenderPreview(AppState state)
     {
@@ -725,13 +779,12 @@ public sealed partial class MainWindow : Window, IDisposable
                 break;
 
             case PreviewKind.Text:
+            case PreviewKind.Binary:
+                // Binary's vm.Text is already the label header + hex dump (see
+                // StateProjection.ProjectPreview) - the same monospace box as Text needs no
+                // special-casing to show it.
                 PreviewTextBox.Text = vm.Text ?? string.Empty;
                 PreviewTextBox.Visibility = Visibility.Visible;
-                break;
-
-            case PreviewKind.Binary:
-                PreviewMeta.Text = vm.Text ?? "バイナリファイル";
-                PreviewMeta.Visibility = Visibility.Visible;
                 break;
 
             case PreviewKind.Loading:
@@ -752,6 +805,14 @@ public sealed partial class MainWindow : Window, IDisposable
     }
 
     /// <summary>
+    /// Caps decode resolution (Phase 5 fix P1) so a huge photo cannot make the UI thread's decode
+    /// pass itself sluggish - roughly the preview pane's width; <see cref="BitmapImage.DecodePixelWidth"/>
+    /// alone (leaving <see cref="BitmapImage.DecodePixelHeight"/> at its default 0) preserves aspect
+    /// ratio automatically.
+    /// </summary>
+    private const int PreviewDecodePixelWidth = 1024;
+
+    /// <summary>
     /// Decodes already-loaded image bytes (from <see cref="Msg.PreviewLoaded"/>, via
     /// <see cref="Effect.LoadPreview"/> - Runtime's job, not this method's) into a frozen
     /// <see cref="BitmapImage"/> so it is safe to hand to the UI thread's <see cref="Image"/>
@@ -763,6 +824,7 @@ public sealed partial class MainWindow : Window, IDisposable
         var image = new BitmapImage();
         image.BeginInit();
         image.CacheOption = BitmapCacheOption.OnLoad;
+        image.DecodePixelWidth = PreviewDecodePixelWidth;
         image.StreamSource = stream;
         image.EndInit();
         image.Freeze();

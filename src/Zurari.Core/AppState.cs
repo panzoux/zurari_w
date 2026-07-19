@@ -108,7 +108,12 @@ public enum PreviewKind
 /// <see cref="PreviewKind.Binary"/> (chosen over a separate label field to keep this record small -
 /// the two kinds never need both a body and a label at once). <c>null</c> otherwise.
 /// </param>
-/// <param name="ImageBytes">The whole file's bytes when <see cref="Kind"/> is <see cref="PreviewKind.Image"/>; empty otherwise.</param>
+/// <param name="ImageBytes">
+/// The whole file's bytes when <see cref="Kind"/> is <see cref="PreviewKind.Image"/>; a capped
+/// head of the file (for the hex-dump view, see <see cref="HexDump.Format"/>) when <see cref="Kind"/>
+/// is <see cref="PreviewKind.Binary"/> - see <see cref="Msg.PreviewLoaded"/>'s remarks; empty
+/// otherwise.
+/// </param>
 /// <param name="Error">Set only when a <see cref="Msg.PreviewFailed"/> was the most recent result for the current generation.</param>
 public sealed record PreviewState(
     int Generation,

@@ -76,7 +76,9 @@ public class LoadPreviewTests
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
             Assert.Equal(PreviewKind.Binary, loaded.Kind);
-            Assert.Empty(loaded.ImageBytes);
+            Assert.NotEmpty(loaded.ImageBytes);
+            Assert.True(loaded.ImageBytes.Length <= 4096);
+            Assert.Equal(content, loaded.ImageBytes);
             Assert.Contains("PNG Image", loaded.BinaryLabel);
             Assert.Contains("サイズ超過", loaded.BinaryLabel);
         }
@@ -150,7 +152,7 @@ public class LoadPreviewTests
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
             Assert.Equal(PreviewKind.Binary, loaded.Kind);
             Assert.Equal("Binary Data", loaded.BinaryLabel);
-            Assert.Empty(loaded.ImageBytes);
+            Assert.Equal(content, loaded.ImageBytes);
         }
         finally
         {
@@ -175,6 +177,34 @@ public class LoadPreviewTests
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
             Assert.Equal(PreviewKind.Binary, loaded.Kind);
             Assert.Equal("ZIP Archive", loaded.BinaryLabel);
+            Assert.Equal(content, loaded.ImageBytes);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadPreview_of_a_binary_file_larger_than_4KB_caps_the_carried_head_at_4096_bytes()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var path = Path.Combine(dir, "large.bin");
+            var content = new byte[10_000];
+            content[0] = 0x10;
+            content[1] = 0x00; // Forces the NUL-byte binary heuristic rather than any text decode.
+            File.WriteAllBytes(path, content);
+
+            var queue = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(queue.Enqueue);
+            runtime.Submit(new Effect.LoadPreview(9, path));
+
+            var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
+            Assert.Equal(PreviewKind.Binary, loaded.Kind);
+            Assert.Equal(4096, loaded.ImageBytes.Length);
+            Assert.Equal(content[..4096], loaded.ImageBytes);
         }
         finally
         {

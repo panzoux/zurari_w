@@ -207,9 +207,11 @@ public static class StateProjection
     /// <param name="FileName">Last path segment of <see cref="PreviewState.Path"/>, or <c>null</c> when <see cref="Kind"/> is <see cref="PreviewKind.None"/>.</param>
     /// <param name="Kind">What to render.</param>
     /// <param name="Text">
-    /// Decoded text body when <see cref="Kind"/> is <see cref="PreviewKind.Text"/>, or the type
-    /// label when <see cref="Kind"/> is <see cref="PreviewKind.Binary"/> - straight passthrough of
-    /// <see cref="PreviewState.Text"/>, see its remarks.
+    /// Decoded text body when <see cref="Kind"/> is <see cref="PreviewKind.Text"/>. When
+    /// <see cref="Kind"/> is <see cref="PreviewKind.Binary"/>, this is the type label from
+    /// <see cref="PreviewState.Text"/> followed by a <see cref="HexDump.Format"/> of
+    /// <see cref="ImageBytes"/> - so the App layer can show both in the same monospace box it
+    /// already uses for <see cref="PreviewKind.Text"/>, no separate widget needed.
     /// </param>
     /// <param name="ImageBytes">Whole-file bytes when <see cref="Kind"/> is <see cref="PreviewKind.Image"/>.</param>
     /// <param name="Error">Set when the most recent load for this generation failed.</param>
@@ -231,6 +233,24 @@ public static class StateProjection
 
         var preview = state.Preview;
         var fileName = preview.Path is null ? null : LastPathSegment(preview.Path);
-        return new PreviewVm(preview.Generation, fileName, preview.Kind, preview.Text, preview.ImageBytes, preview.Error);
+        var text = preview.Kind == PreviewKind.Binary ? FormatBinaryText(preview) : preview.Text;
+        return new PreviewVm(preview.Generation, fileName, preview.Kind, text, preview.ImageBytes, preview.Error);
+    }
+
+    /// <summary>
+    /// Builds the Binary-kind display text: the type label (<see cref="PreviewState.Text"/>) as a
+    /// header line, then a blank line, then a <see cref="HexDump.Format"/> of the carried head
+    /// bytes - or just the label alone when there are no bytes to dump (e.g. a
+    /// <see cref="Msg.PreviewFailed"/> raced in before any bytes arrived).
+    /// </summary>
+    private static string FormatBinaryText(PreviewState preview)
+    {
+        var label = preview.Text ?? "バイナリファイル";
+        if (preview.ImageBytes.IsEmpty)
+        {
+            return label;
+        }
+
+        return label + "\n\n" + HexDump.Format(preview.ImageBytes.AsSpan());
     }
 }

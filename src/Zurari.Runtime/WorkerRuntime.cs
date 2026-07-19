@@ -22,6 +22,14 @@ public sealed class WorkerRuntime : IDisposable
     /// <summary>How much of a file <see cref="Effect.LoadPreview"/> reads to sniff/decode as text.</summary>
     private const int PreviewHeadBytes = 64 * 1024;
 
+    /// <summary>
+    /// How much of the already-read head is carried along on a <see cref="PreviewKind.Binary"/>
+    /// result (in <see cref="Msg.PreviewLoaded.ImageBytes"/> - see its remarks) for the hex-dump
+    /// view. A hex pane never needs more than a handful of KB, so this is far smaller than
+    /// <see cref="PreviewHeadBytes"/>.
+    /// </summary>
+    private const int PreviewHexHeadBytes = 4096;
+
     private readonly Channel<Effect> _channel;
     private readonly Action<Msg> _post;
     private readonly CancellationTokenSource _cts;
@@ -196,6 +204,10 @@ public sealed class WorkerRuntime : IDisposable
     /// the decoded head.</item>
     /// <item>Everything else -&gt; <see cref="PreviewKind.Binary"/> with the detected label.</item>
     /// </list>
+    /// Both <see cref="PreviewKind.Binary"/> cases above also carry up to
+    /// <see cref="PreviewHexHeadBytes"/> of the head in the result's <c>ImageBytes</c> (see
+    /// <see cref="HexHead"/> and <see cref="Msg.PreviewLoaded"/>'s remarks) so the App layer can
+    /// render a hex dump.
     /// Any exception (missing file, access denied, ...) is reported as
     /// <see cref="Msg.PreviewFailed"/> instead of propagating - a bad preview request must never
     /// take down a worker.
@@ -215,7 +227,7 @@ public sealed class WorkerRuntime : IDisposable
 
             if (detected.Category == FileCategory.Image)
             {
-                PostImagePreview(effect, stream, detected);
+                PostImagePreview(effect, stream, detected, head);
                 return;
             }
 
@@ -226,7 +238,7 @@ public sealed class WorkerRuntime : IDisposable
             }
 
             _post(new Msg.PreviewLoaded(
-                effect.Generation, PreviewKind.Binary, null, ImmutableArray<byte>.Empty, detected.Label));
+                effect.Generation, PreviewKind.Binary, null, HexHead(head), detected.Label));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -234,12 +246,22 @@ public sealed class WorkerRuntime : IDisposable
         }
     }
 
-    private void PostImagePreview(Effect.LoadPreview effect, FileStream stream, DetectedType detected)
+    /// <summary>
+    /// Slices <paramref name="head"/> down to <see cref="PreviewHexHeadBytes"/> for the hex-dump
+    /// view carried on a <see cref="PreviewKind.Binary"/> result - see <see cref="PreviewHexHeadBytes"/>.
+    /// </summary>
+    private static ImmutableArray<byte> HexHead(byte[] head)
+    {
+        var length = Math.Min(head.Length, PreviewHexHeadBytes);
+        return ImmutableArray.Create(head, 0, length);
+    }
+
+    private void PostImagePreview(Effect.LoadPreview effect, FileStream stream, DetectedType detected, byte[] head)
     {
         if (stream.Length > _previewImageSizeLimitBytes)
         {
             _post(new Msg.PreviewLoaded(
-                effect.Generation, PreviewKind.Binary, null, ImmutableArray<byte>.Empty, $"{detected.Label} (サイズ超過)"));
+                effect.Generation, PreviewKind.Binary, null, HexHead(head), $"{detected.Label} (サイズ超過)"));
             return;
         }
 

@@ -225,7 +225,11 @@ public abstract record Msg
     /// stale result from a target the cursor has since moved past). <paramref name="BinaryLabel"/>
     /// is only meaningful when <paramref name="Kind"/> is <see cref="PreviewKind.Binary"/> - see
     /// <see cref="PreviewState.Text"/>'s remarks for why it lands in that same field rather than a
-    /// dedicated one.
+    /// dedicated one. <paramref name="ImageBytes"/> is likewise reused for <see cref="PreviewKind.Binary"/>:
+    /// rather than add a dedicated field, it carries the file's head (up to a few KB - the Runtime's
+    /// job to cap) so the App layer's hex-dump view (<see cref="HexDump.Format"/>) has bytes to
+    /// format; for <see cref="PreviewKind.Image"/> it is the whole file, and for every other kind
+    /// it is empty.
     /// </summary>
     public sealed record PreviewLoaded(
         int Generation,

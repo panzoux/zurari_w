@@ -1640,6 +1640,25 @@ public class TransitionTests
         Assert.Equal("PE Executable", next.Preview.Text);
     }
 
+    /// <summary>
+    /// The hex-dump view (Phase 5 fix) depends on <c>ImageBytes</c> surviving a Binary result -
+    /// unlike the label (which lands in <c>Text</c>), it must not be dropped just because the kind
+    /// is not <see cref="PreviewKind.Image"/>. See <see cref="Msg.PreviewLoaded"/>'s remarks.
+    /// </summary>
+    [Fact]
+    public void PreviewLoaded_binary_retains_the_carried_head_bytes()
+    {
+        var afterCursor = StateWithLoadingPreview();
+        var generation = afterCursor.Preview.Generation;
+        ImmutableArray<byte> head = [0x4D, 0x5A, 0x90, 0x00];
+
+        var (next, _) = Transition.Apply(
+            afterCursor, new Msg.PreviewLoaded(generation, PreviewKind.Binary, null, head, "PE Executable"));
+
+        Assert.Equal(PreviewKind.Binary, next.Preview.Kind);
+        Assert.Equal(head, next.Preview.ImageBytes);
+    }
+
     [Fact]
     public void PreviewLoaded_with_stale_generation_is_ignored()
     {

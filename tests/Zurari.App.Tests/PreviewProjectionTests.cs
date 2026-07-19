@@ -72,7 +72,7 @@ public class PreviewProjectionTests
     }
 
     [Fact]
-    public void Binary_kind_projects_the_type_label_via_Text()
+    public void Binary_kind_with_no_bytes_projects_just_the_type_label_via_Text()
     {
         var preview = new PreviewState(1, @"C:\app.exe", PreviewKind.Binary, "PE Executable", [], null);
         var state = StateWithPreview(preview);
@@ -81,6 +81,20 @@ public class PreviewProjectionTests
 
         Assert.Equal(PreviewKind.Binary, vm.Kind);
         Assert.Equal("PE Executable", vm.Text);
+    }
+
+    [Fact]
+    public void Binary_kind_with_bytes_projects_the_label_followed_by_a_hex_dump()
+    {
+        ImmutableArray<byte> head = [0x4D, 0x5A, 0x90, 0x00];
+        var preview = new PreviewState(1, @"C:\app.exe", PreviewKind.Binary, "PE Executable", head, null);
+        var state = StateWithPreview(preview);
+
+        var vm = StateProjection.ProjectPreview(state);
+
+        Assert.Equal(PreviewKind.Binary, vm.Kind);
+        Assert.StartsWith("PE Executable\n\n", vm.Text);
+        Assert.Contains(HexDump.Format(head.AsSpan()), vm.Text);
     }
 
     [Fact]
