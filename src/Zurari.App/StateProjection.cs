@@ -96,12 +96,21 @@ public static class StateProjection
             return null;
         }
 
-        if (entry.SizeBytes < 1024)
+        return FormatBytes(entry.SizeBytes);
+    }
+
+    /// <summary>
+    /// Human-readable byte count ("512 B", "1.0 KB", "1.0 MB", ...), shared by file-size display
+    /// (<see cref="ProjectSize"/>) and job progress display (<see cref="ProjectJobs"/>).
+    /// </summary>
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes < 1024)
         {
-            return entry.SizeBytes.ToString(CultureInfo.InvariantCulture) + " B";
+            return bytes.ToString(CultureInfo.InvariantCulture) + " B";
         }
 
-        double size = entry.SizeBytes;
+        double size = bytes;
         var unitIndex = -1;
         while (size >= 1024 && unitIndex < SizeUnits.Length - 1)
         {
@@ -114,4 +123,73 @@ public static class StateProjection
 
     private static string? ProjectDate(DateTime modified) =>
         modified == default ? null : modified.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// View model for a single row in the job strip (see <see cref="ProjectJobs"/>).
+    /// </summary>
+    /// <param name="JobId">Identifies the underlying <see cref="Job"/>, for dispatching
+    /// <see cref="Msg.JobCancelRequested"/> / <see cref="Msg.JobDismissed"/> from the UI.</param>
+    /// <param name="Description">Short summary of what the job is doing, e.g. "コピー: dest へ (3件)".</param>
+    /// <param name="Detail">Secondary line: current file + progress, or a status message.</param>
+    /// <param name="ProgressFraction">0..1 byte-based completion ratio (0 when unknown).</param>
+    /// <param name="IsIndeterminate">True while running but the total size is not yet known.</param>
+    /// <param name="IsRunning">True while Queued or Running (cancel button should show).</param>
+    /// <param name="IsFinished">True once Completed/Failed/Cancelled (dismiss button should show).</param>
+    /// <param name="StatusLabel">Short status word for the row (待機中/実行中/完了/失敗/キャンセル済み).</param>
+    public sealed record JobVm(
+        int JobId,
+        string Description,
+        string Detail,
+        double ProgressFraction,
+        bool IsIndeterminate,
+        bool IsRunning,
+        bool IsFinished,
+        string StatusLabel);
+
+    /// <summary>
+    /// Projects every job in <paramref name="state"/> into a <see cref="JobVm"/>, in the order they
+    /// appear in <see cref="AppState.Jobs"/>. Pure - no I/O, no decisions beyond display formatting.
+    /// </summary>
+    public static IReadOnlyList<JobVm> ProjectJobs(AppState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+
+        var result = new JobVm[state.Jobs.Length];
+        for (var i = 0; i < state.Jobs.Length; i++)
+        {
+            result[i] = ProjectJob(state.Jobs[i]);
+        }
+
+        return result;
+    }
+
+    private static JobVm ProjectJob(Job job)
+    {
+        var kindLabel = job.Kind == JobKind.Copy ? "コピー" : "移動";
+        var destName = LastPathSegment(job.DestDir);
+        var count = job.TotalFiles > 0 ? job.TotalFiles : job.Sources.Length;
+        var description = $"{kindLabel}: {destName} へ ({count}件)";
+
+        var (detail, statusLabel) = job.Status switch
+        {
+            JobStatus.Queued => ("待機中", "待機中"),
+            JobStatus.Running => (
+                $"{job.CurrentFile} — {job.DoneFiles}/{job.TotalFiles} "
+                + $"({FormatBytes(job.DoneBytes)}/{FormatBytes(job.TotalBytes)})",
+                "実行中"),
+            JobStatus.Completed => (
+                job.SkippedFiles > 0 ? $"完了 (スキップ {job.SkippedFiles}件)" : "完了",
+                "完了"),
+            JobStatus.Failed => ($"失敗: {job.Error}", "失敗"),
+            JobStatus.Cancelled => ("キャンセル済み", "キャンセル済み"),
+            _ => (string.Empty, string.Empty),
+        };
+
+        var progressFraction = job.TotalBytes > 0 ? job.DoneBytes / (double)job.TotalBytes : 0;
+        var isIndeterminate = job.Status == JobStatus.Running && job.TotalBytes == 0;
+        var isRunning = job.Status is JobStatus.Queued or JobStatus.Running;
+        var isFinished = job.Status is JobStatus.Completed or JobStatus.Failed or JobStatus.Cancelled;
+
+        return new JobVm(job.JobId, description, detail, progressFraction, isIndeterminate, isRunning, isFinished, statusLabel);
+    }
 }

@@ -534,9 +534,31 @@ public sealed partial class MainWindow : Window, IDisposable
         }
     }
 
+    /// <summary>Job strip "キャンセル" button: dispatches <see cref="Msg.JobCancelRequested"/> for the row's job.</summary>
+    private void OnJobCancelClicked(object sender, RoutedEventArgs e)
+    {
+        if (((FrameworkElement)sender).DataContext is StateProjection.JobVm vm)
+        {
+            Dispatch(new Msg.JobCancelRequested(vm.JobId));
+        }
+    }
+
+    /// <summary>Job strip "×" button: dispatches <see cref="Msg.JobDismissed"/> for the row's job.</summary>
+    private void OnJobDismissClicked(object sender, RoutedEventArgs e)
+    {
+        if (((FrameworkElement)sender).DataContext is StateProjection.JobVm vm)
+        {
+            Dispatch(new Msg.JobDismissed(vm.JobId));
+        }
+    }
+
     private void Render(AppState state)
     {
         Browser.Columns = StateProjection.Project(state, e => iconCache.GetIcon(e.Kind, e.Name));
+
+        var jobs = StateProjection.ProjectJobs(state);
+        JobStrip.ItemsSource = jobs;
+        JobStrip.Visibility = jobs.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
         var focused = state.Columns[state.FocusedColumn];
         var focusedPath = focused.Path.Length == 0 ? "ドライブ" : focused.Path;

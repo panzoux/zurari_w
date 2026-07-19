@@ -7,12 +7,46 @@
         xmlns:controls="clr-namespace:Zurari.Controls;assembly=Zurari.Controls"
         mc:Ignorable="d"
         Title="zurari" Height="600" Width="1000">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+    </Window.Resources>
     <DockPanel>
         <StatusBar DockPanel.Dock="Bottom">
             <StatusBarItem>
                 <TextBlock x:Name="StatusText" Text="(no state yet)" />
             </StatusBarItem>
         </StatusBar>
+        <ItemsControl x:Name="JobStrip" DockPanel.Dock="Bottom" Margin="8,0,8,4">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Border BorderBrush="#FFB0B0B0" BorderThickness="0,0,0,1" Padding="0,4">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="{Binding Description}" FontSize="11" />
+                                <ProgressBar Height="8" Width="160" Maximum="1" Margin="0,2,0,2"
+                                             HorizontalAlignment="Left"
+                                             Value="{Binding ProgressFraction, Mode=OneWay}"
+                                             IsIndeterminate="{Binding IsIndeterminate}" />
+                                <TextBlock Text="{Binding Detail}" FontSize="10" Foreground="#FF808080"
+                                           TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button Content="キャンセル" FontSize="11" Padding="4,0"
+                                        Visibility="{Binding IsRunning, Converter={StaticResource BoolToVisibility}}"
+                                        Click="OnJobCancelClicked" />
+                                <Button Content="×" FontSize="11" Padding="4,0" Margin="4,0,0,0"
+                                        Visibility="{Binding IsFinished, Converter={StaticResource BoolToVisibility}}"
+                                        Click="OnJobDismissClicked" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
         <Grid Margin="8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
