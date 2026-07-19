@@ -179,6 +179,20 @@ public sealed class ColumnView : Control
     /// </summary>
     private bool inputTraceFirstMoveLogged;
 
+    /// <summary>
+    /// The <see cref="ColumnVm.CursorIndex"/> last passed to <see cref="List"/>.ScrollIntoView by
+    /// <see cref="SyncFromColumn"/>, or <c>null</c> before the first sync. Defense-in-depth for
+    /// Phase 5 bug B3 (scroll position snapping back during a running job): even with the App
+    /// composition root now skipping its <c>Columns</c> reassignment when the underlying state's
+    /// columns are unchanged, a snapshot swap that DOES carry real changes (e.g. a sibling column's
+    /// directory reloading) still calls <see cref="SyncFromColumn"/> for every realized
+    /// <see cref="ColumnView"/>, this one included - unconditionally re-scrolling to the cursor row
+    /// would yank back any scrolling the user did in between, even though this column's cursor
+    /// never moved. <see cref="List"/>.SelectedIndex is still resynced unconditionally every call
+    /// (cheap, and it must never drift from the VM).
+    /// </summary>
+    private int? lastSyncedCursorIndex;
+
     static ColumnView()
     {
         DefaultStyleKeyProperty.OverrideMetadata(
@@ -274,6 +288,16 @@ public sealed class ColumnView : Control
     /// the threshold at all (a plain click).
     /// </summary>
     internal event EventHandler<bool>? RubberBandStarted;
+
+    /// <summary>
+    /// Test-only hook: raised immediately before <see cref="SyncFromColumn"/> actually calls
+    /// <see cref="List"/>.ScrollIntoView - i.e. exactly when <see cref="lastSyncedCursorIndex"/>
+    /// caused it to proceed rather than short-circuit. Lets a test assert the scroll call did or
+    /// did not happen without depending on WPF's virtualization/binding timing to observe an actual
+    /// scroll offset change (Phase 5 bug B3 regression coverage - see
+    /// <c>CursorVisualTests.Snapshot_swap_with_unchanged_cursor_does_not_call_ScrollIntoView</c>).
+    /// </summary>
+    internal event EventHandler? ScrollIntoViewInvoked;
 
     internal ListBox? List { get; private set; }
 
@@ -400,8 +424,16 @@ public sealed class ColumnView : Control
             suppressSelectionChanged = false;
         }
 
+        if (lastSyncedCursorIndex == cursorIndex)
+        {
+            return;
+        }
+
+        lastSyncedCursorIndex = cursorIndex;
+
         if (column is not null && cursorIndex >= 0 && cursorIndex < column.Entries.Count)
         {
+            ScrollIntoViewInvoked?.Invoke(this, EventArgs.Empty);
             List.ScrollIntoView(column.Entries[cursorIndex]);
         }
     }

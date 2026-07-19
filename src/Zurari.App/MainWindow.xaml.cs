@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
@@ -26,6 +28,25 @@ public sealed partial class MainWindow : Window, IDisposable
     private readonly ShellIconCache iconCache = new();
 
     /// <summary>
+    /// The job strip's actual <c>ItemsSource</c>, assigned once in the constructor and never
+    /// replaced - <see cref="RenderJobs"/> reconciles it in place (update/insert/remove/move) on
+    /// every render instead, which is what keeps a running job's row (and its "キャンセル" button
+    /// container) alive across the frequent <see cref="Msg.JobProgress"/>-driven renders. See
+    /// <see cref="JobRowVm"/>'s remarks for why that matters (Phase 5 bug B1).
+    /// </summary>
+    private readonly ObservableCollection<JobRowVm> jobRows = new();
+
+    /// <summary>
+    /// The <see cref="AppState.Columns"/> most recently pushed into <see cref="Browser"/>.
+    /// <see cref="Render"/> only reassigns <see cref="Controls.ColumnBrowser.Columns"/> when this
+    /// differs (by the underlying array reference - see its remarks) from the incoming state's,
+    /// so unrelated renders (job progress, preview loads, ...) do not force
+    /// <see cref="Controls.ColumnBrowser"/> to rebuild/re-sync every column, which otherwise yanks
+    /// back any in-progress user scrolling (Phase 5 bug B3).
+    /// </summary>
+    private ImmutableArray<Column> lastRenderedColumns;
+
+    /// <summary>
     /// The <see cref="StateProjection.PreviewVm.Generation"/> of the image most recently decoded
     /// into <see cref="PreviewImage"/>'s source - lets <see cref="RenderPreview"/> skip re-decoding
     /// the same <c>BitmapImage</c> on every unrelated re-render (e.g. a job progress tick) and only
@@ -36,6 +57,8 @@ public sealed partial class MainWindow : Window, IDisposable
     public MainWindow()
     {
         InitializeComponent();
+
+        JobStrip.ItemsSource = jobRows;
 
         runtime = new WorkerRuntime(post: PostToLoop);
         shellExecutor = new ShellEffectExecutor(post: PostToLoop);
@@ -365,8 +388,10 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void OnWindowKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.F5)
+        if (e.Key == Key.F5 || (e.Key == Key.R && Keyboard.Modifiers == ModifierKeys.Control))
         {
+            // F5 is the primary refresh key (already wired); Ctrl+R is a discoverability alias -
+            // some users look for that instead, especially coming from a browser-style filer.
             Dispatch(new Msg.Refresh());
             e.Handled = true;
         }
@@ -547,7 +572,7 @@ public sealed partial class MainWindow : Window, IDisposable
     /// <summary>Job strip "キャンセル" button: dispatches <see cref="Msg.JobCancelRequested"/> for the row's job.</summary>
     private void OnJobCancelClicked(object sender, RoutedEventArgs e)
     {
-        if (((FrameworkElement)sender).DataContext is StateProjection.JobVm vm)
+        if (((FrameworkElement)sender).DataContext is JobRowVm vm)
         {
             Dispatch(new Msg.JobCancelRequested(vm.JobId));
         }
@@ -556,7 +581,7 @@ public sealed partial class MainWindow : Window, IDisposable
     /// <summary>Job strip "×" button: dispatches <see cref="Msg.JobDismissed"/> for the row's job.</summary>
     private void OnJobDismissClicked(object sender, RoutedEventArgs e)
     {
-        if (((FrameworkElement)sender).DataContext is StateProjection.JobVm vm)
+        if (((FrameworkElement)sender).DataContext is JobRowVm vm)
         {
             Dispatch(new Msg.JobDismissed(vm.JobId));
         }
@@ -564,12 +589,20 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void Render(AppState state)
     {
-        Browser.Columns = StateProjection.Project(state, e => iconCache.GetIcon(e.Kind, e.Name));
+        // Reference comparison, not value comparison: Transition returns the very same
+        // ImmutableArray<Column> instance (same underlying array) whenever a Msg does not touch
+        // AppState.Columns at all (JobProgress/JobFailed/JobCancelRequested/JobDismissed, and the
+        // untouched columns inside ShellOpCompleted/JobFinished's per-column loop). Skipping the
+        // reassignment in that case is what stops Controls.ColumnBrowser.RebuildColumns and
+        // ColumnView.SyncFromColumn from running - and yanking back user scroll/hover state - on
+        // renders that have nothing to do with the browsed columns (Phase 5 bug B3).
+        if (state.Columns != lastRenderedColumns)
+        {
+            Browser.Columns = StateProjection.Project(state, e => iconCache.GetIcon(e.Kind, e.Name));
+            lastRenderedColumns = state.Columns;
+        }
 
-        var jobs = StateProjection.ProjectJobs(state);
-        JobStrip.ItemsSource = jobs;
-        JobStrip.Visibility = jobs.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-
+        RenderJobs(state);
         RenderPreview(state);
 
         var focused = state.Columns[state.FocusedColumn];
@@ -592,6 +625,74 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         StatusText.Text = statusText;
+    }
+
+    /// <summary>
+    /// Reconciles <see cref="jobRows"/> (the job strip's stable <c>ItemsSource</c>) against the
+    /// freshly-projected job list: existing rows are updated in place via
+    /// <see cref="JobRowVm.UpdateFrom"/> (raising only property-level <c>PropertyChanged</c>, never
+    /// touching the collection), a job no longer tracked in <see cref="AppState.Jobs"/> (dismissed,
+    /// or auto-removed on a clean completion - see <c>Transition.JobFinished</c>) has its row
+    /// removed, and a brand-new job gets a brand-new row inserted/moved into position. This is what
+    /// keeps a running job's row container - including its "キャンセル" button - alive across the
+    /// ~10/second <see cref="Msg.JobProgress"/>-driven renders instead of the whole list being
+    /// discarded and rebuilt every tick (Phase 5 bug B1 - see <see cref="JobRowVm"/>'s remarks).
+    /// </summary>
+    private void RenderJobs(AppState state)
+    {
+        var jobs = StateProjection.ProjectJobs(state);
+
+        for (var i = jobRows.Count - 1; i >= 0; i--)
+        {
+            var jobId = jobRows[i].JobId;
+            var stillTracked = false;
+            for (var j = 0; j < jobs.Count; j++)
+            {
+                if (jobs[j].JobId == jobId)
+                {
+                    stillTracked = true;
+                    break;
+                }
+            }
+
+            if (!stillTracked)
+            {
+                jobRows.RemoveAt(i);
+            }
+        }
+
+        for (var i = 0; i < jobs.Count; i++)
+        {
+            var vm = jobs[i];
+            var existingIndex = FindJobRowIndex(vm.JobId);
+            if (existingIndex < 0)
+            {
+                jobRows.Insert(i, new JobRowVm(vm));
+                continue;
+            }
+
+            if (existingIndex != i)
+            {
+                jobRows.Move(existingIndex, i);
+            }
+
+            jobRows[i].UpdateFrom(vm);
+        }
+
+        JobStrip.Visibility = jobRows.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private int FindJobRowIndex(int jobId)
+    {
+        for (var i = 0; i < jobRows.Count; i++)
+        {
+            if (jobRows[i].JobId == jobId)
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 
     /// <summary>

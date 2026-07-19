@@ -85,17 +85,12 @@ public class JobPasteE2ETests
                 loop.Dispatch(new Msg.PasteRequested(0, [sourceFile], IsMove: false));
 
                 Assert.Single(loop.State.Jobs);
-                var jobId = loop.State.Jobs[0].JobId;
 
-                DrainUntil(
-                    loop,
-                    queue,
-                    () => loop.State.Jobs.Length > 0 && loop.State.Jobs[0].Status == JobStatus.Completed,
-                    TimeSpan.FromSeconds(10));
-
-                var job = loop.State.Jobs[0];
-                Assert.Equal(jobId, job.JobId);
-                Assert.Equal(0, job.SkippedFiles);
+                // A clean (no-skip) Completed job is removed from AppState.Jobs immediately (see
+                // Transition.JobFinished) - the strip auto-clears rather than lingering until
+                // Msg.JobDismissed - so the completion signal to wait on here is the job list
+                // going back to empty, not a Completed status that would never be observed.
+                DrainUntil(loop, queue, () => loop.State.Jobs.Length == 0, TimeSpan.FromSeconds(10));
 
                 var destFile = Path.Combine(destDir, "hello.txt");
                 DrainUntil(loop, queue, () => loop.State.Columns[0].Load == LoadState.Loaded, TimeSpan.FromSeconds(10));
@@ -143,11 +138,9 @@ public class JobPasteE2ETests
 
                 Assert.Single(loop.State.Jobs);
 
-                DrainUntil(
-                    loop,
-                    queue,
-                    () => loop.State.Jobs.Length > 0 && loop.State.Jobs[0].Status == JobStatus.Completed,
-                    TimeSpan.FromSeconds(10));
+                // See the copy test's comment above: a clean Completed job is removed from
+                // AppState.Jobs immediately, so wait on the job list emptying out.
+                DrainUntil(loop, queue, () => loop.State.Jobs.Length == 0, TimeSpan.FromSeconds(10));
 
                 DrainUntil(
                     loop,

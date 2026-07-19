@@ -652,7 +652,12 @@ public static class Transition
     /// <summary>
     /// Shared handling for <see cref="Msg.JobCompleted"/> and <see cref="Msg.JobCancelled"/>: both
     /// finish a job and refresh every column matching <paramref name="affectedDirs"/>, following
-    /// the same re-read mechanism as <see cref="ShellOpCompleted"/>.
+    /// the same re-read mechanism as <see cref="ShellOpCompleted"/>. A job that completed cleanly
+    /// (<see cref="JobStatus.Completed"/> with no skipped files) carries no information the user
+    /// needs to review, so it is removed from <see cref="AppState.Jobs"/> immediately instead of
+    /// lingering until <see cref="Msg.JobDismissed"/> - the strip then clears itself. Completed-
+    /// with-skips, Failed, and Cancelled jobs stay put (they carry information the user may want to
+    /// see) until explicitly dismissed.
     /// </summary>
     private static (AppState, IReadOnlyList<Effect>) JobFinished(
         AppState state, int jobId, JobStatus status, string? error, int? skippedFiles, ImmutableArray<string> affectedDirs)
@@ -664,15 +669,18 @@ public static class Transition
         }
 
         var job = state.Jobs[index];
-        var updated = job with
-        {
-            Status = status,
-            CurrentFile = null,
-            DoneFiles = status == JobStatus.Completed ? job.TotalFiles : job.DoneFiles,
-            SkippedFiles = skippedFiles ?? job.SkippedFiles,
-            Error = error,
-        };
-        var stateWithJob = state with { Jobs = state.Jobs.SetItem(index, updated) };
+        var effectiveSkippedFiles = skippedFiles ?? job.SkippedFiles;
+        var jobs = status == JobStatus.Completed && effectiveSkippedFiles == 0
+            ? state.Jobs.RemoveAt(index)
+            : state.Jobs.SetItem(index, job with
+            {
+                Status = status,
+                CurrentFile = null,
+                DoneFiles = status == JobStatus.Completed ? job.TotalFiles : job.DoneFiles,
+                SkippedFiles = effectiveSkippedFiles,
+                Error = error,
+            });
+        var stateWithJob = state with { Jobs = jobs };
 
         var columns = stateWithJob.Columns;
         var newColumns = columns;

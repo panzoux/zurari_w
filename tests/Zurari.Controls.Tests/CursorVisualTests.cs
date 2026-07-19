@@ -61,6 +61,53 @@ public class CursorVisualTests
     }
 
     [StaFact]
+    public void Snapshot_swap_with_unchanged_cursor_does_not_call_ScrollIntoView()
+    {
+        // Phase 5 bug B3 (defense in depth): a re-render unrelated to this column - e.g. a sibling
+        // column reloading after a job completes - still pushes a brand-new ColumnVm/EntryVm[]
+        // snapshot down to every realized ColumnView (StateProjection.Project always allocates
+        // fresh arrays on every render), even when this column's own data is unchanged
+        // content-for-content. Re-scrolling to the cursor row on every such render would yank back
+        // any scrolling the user did in between, even though the cursor never moved - so
+        // ScrollIntoView must not be invoked a second time here. Asserted via the
+        // ScrollIntoViewInvoked test hook directly (see its remarks) rather than an actual scroll
+        // offset, which is unreliable to observe deterministically across a virtualized
+        // ItemsSource swap within a single WPF dispatcher pass.
+        var columns = VirtualizationTests.MakeColumns(columnCount: 1, entryCount: 100_000);
+        columns = [columns[0] with { CursorIndex = 50000 }];
+        var browser = new ColumnBrowser { Columns = columns };
+        using var host = new TestWindow(browser);
+        TestWindow.DoEvents();
+        TestWindow.DoEvents();
+
+        var columnView = FindVisualChild<ColumnView>(browser);
+        Assert.NotNull(columnView);
+
+        var scrollIntoViewCallCount = 0;
+        columnView!.ScrollIntoViewInvoked += (_, _) => scrollIntoViewCallCount++;
+
+        // A content-equivalent but instance-distinct snapshot (fresh arrays throughout, exactly
+        // like a real StateProjection.Project call), same CursorIndex (still 50000).
+        var equivalent = VirtualizationTests.MakeColumns(columnCount: 1, entryCount: 100_000);
+        equivalent = [equivalent[0] with { CursorIndex = 50000 }];
+        browser.Columns = equivalent;
+        TestWindow.DoEvents();
+        TestWindow.DoEvents();
+
+        Assert.Equal(0, scrollIntoViewCallCount);
+
+        // Sanity check the hook actually fires when the cursor DOES move (otherwise a count of 0
+        // above would be vacuously true because the hook is broken, not because the guard works).
+        var moved = VirtualizationTests.MakeColumns(columnCount: 1, entryCount: 100_000);
+        moved = [moved[0] with { CursorIndex = 60000 }];
+        browser.Columns = moved;
+        TestWindow.DoEvents();
+        TestWindow.DoEvents();
+
+        Assert.Equal(1, scrollIntoViewCallCount);
+    }
+
+    [StaFact]
     public void Focused_column_is_scrolled_into_the_horizontal_viewport()
     {
         // 8 columns * 240 width > 1200 window width; last column is focused.

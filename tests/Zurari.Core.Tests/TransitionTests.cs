@@ -1345,6 +1345,31 @@ public class TransitionTests
     }
 
     [Fact]
+    public void JobCompleted_without_skips_removes_the_job_so_the_strip_auto_clears()
+    {
+        var job = new Job(1, JobKind.Copy, [@"C:\src\a.txt"], @"C:\dest", Status: JobStatus.Running, TotalFiles: 3, CurrentFile: "a.txt");
+        var state = AppState.Initial with { Jobs = [job] };
+
+        var (next, effects) = Transition.Apply(state, new Msg.JobCompleted(1, SkippedFiles: 0, AffectedDirs: []));
+
+        Assert.Empty(next.Jobs);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void JobCompleted_with_skips_keeps_the_job_until_dismissed()
+    {
+        var job = new Job(1, JobKind.Copy, [@"C:\src\a.txt"], @"C:\dest", Status: JobStatus.Running, TotalFiles: 3, CurrentFile: "a.txt");
+        var state = AppState.Initial with { Jobs = [job] };
+
+        var (next, _) = Transition.Apply(state, new Msg.JobCompleted(1, SkippedFiles: 1, AffectedDirs: []));
+
+        var updated = Assert.Single(next.Jobs);
+        Assert.Equal(JobStatus.Completed, updated.Status);
+        Assert.Equal(1, updated.SkippedFiles);
+    }
+
+    [Fact]
     public void JobCompleted_refreshes_columns_matching_AffectedDirs()
     {
         var job = new Job(1, JobKind.Move, [@"C:\sub\a.txt"], @"C:\dest");
