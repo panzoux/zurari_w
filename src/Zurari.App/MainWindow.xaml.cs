@@ -94,7 +94,18 @@ public sealed partial class MainWindow : Window, IDisposable
             new Msg.MarkRange(e.ColumnIndex, e.FromIndex, e.ToIndex, e.Additive));
         Browser.RubberBandStarted += OnRubberBandStarted;
 
-        Closed += (_, _) => Dispose();
+        // Restore the persisted preview-pane width (clamped: the XAML Min/star sizing keeps it
+        // on-screen even if the saved value is larger than the current window).
+        if (UserSettingsStore.Load().PreviewWidth is { } previewWidth && previewWidth >= 150)
+        {
+            PreviewColumn.Width = new GridLength(Math.Min(previewWidth, 2000));
+        }
+
+        Closed += (_, _) =>
+        {
+            UserSettingsStore.Save(new UserSettings(PreviewWidth: PreviewColumn.ActualWidth));
+            Dispose();
+        };
         Loaded += (_, _) => Browser.Focus();
         KeyDown += OnWindowKeyDown;
 
