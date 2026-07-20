@@ -24,6 +24,14 @@ public sealed class JobEngine : IDisposable
     private readonly ConcurrentDictionary<int, CancellationTokenSource> _jobCancellations = new();
 
     /// <summary>
+    /// One pending conflict decision per job currently blocked in <see cref="ExecuteRunFileJob"/>
+    /// waiting on <see cref="Msg.JobConflictsFound"/>'s prompt. <see cref="Submit"/> completes the
+    /// entry synchronously for <see cref="Effect.ResolveJobConflict"/> - same pattern as
+    /// <see cref="_jobCancellations"/>/<see cref="Effect.CancelJob"/>.
+    /// </summary>
+    private readonly ConcurrentDictionary<int, TaskCompletionSource<ConflictDecision>> _pendingConflicts = new();
+
+    /// <summary>
     /// Starts the dedicated job worker. <paramref name="post"/> may be invoked from the worker
     /// thread; the caller is responsible for marshalling results onto whatever thread owns
     /// application state (the UI thread in the real app).
@@ -58,6 +66,17 @@ public sealed class JobEngine : IDisposable
                 if (_jobCancellations.TryGetValue(cancelJob.JobId, out var cts))
                 {
                     TryCancel(cts);
+                }
+
+                break;
+
+            case Effect.ResolveJobConflict resolveJobConflict:
+                // Handled synchronously, like CancelJob above: the worker thread is blocked inside
+                // ExecuteRunFileJob waiting on this exact TaskCompletionSource, so completing it
+                // here (whatever thread Submit is called from) is what wakes it back up.
+                if (_pendingConflicts.TryGetValue(resolveJobConflict.JobId, out var tcs))
+                {
+                    tcs.TrySetResult(resolveJobConflict.Decision);
                 }
 
                 break;
@@ -128,6 +147,21 @@ public sealed class JobEngine : IDisposable
             }
 
             var (files, totalBytes, scanSkipped) = ScanSources(effect.Sources);
+            var sameVolumeMove = effect.Kind == JobKind.Move && AllSameVolume(effect.Sources, effect.DestDir);
+            var conflicts = ComputeConflicts(effect, files, sameVolumeMove);
+
+            var decision = ConflictDecision.Skip;
+            if (conflicts.Count > 0)
+            {
+                decision = AwaitConflictDecision(effect.JobId, conflicts.Count, token);
+                if (decision == ConflictDecision.Cancel)
+                {
+                    _post(new Msg.JobCancelled(effect.JobId, affectedDirs));
+                    return;
+                }
+            }
+
+            var overwrite = decision == ConflictDecision.Overwrite;
             var progress = new JobProgressState(_post, effect.JobId)
             {
                 TotalFiles = files.Count,
@@ -136,14 +170,14 @@ public sealed class JobEngine : IDisposable
             };
             progress.PostInitial();
 
-            if (effect.Kind == JobKind.Move && AllSameVolume(effect.Sources, effect.DestDir))
+            if (sameVolumeMove)
             {
                 var topLevelStats = ComputeTopLevelStats(files);
-                MoveSameVolume(effect.Sources, effect.DestDir, progress, topLevelStats, token);
+                MoveSameVolume(effect.Sources, effect.DestDir, progress, topLevelStats, overwrite, token);
             }
             else
             {
-                CopyFiles(files, effect.DestDir, progress, token);
+                CopyFiles(files, effect.DestDir, progress, overwrite, token);
                 if (effect.Kind == JobKind.Move)
                 {
                     DeleteCopiedSources(files, progress.CopiedSourcePaths, effect.Sources);
@@ -192,6 +226,70 @@ public sealed class JobEngine : IDisposable
         return [.. dirs];
     }
 
+    /// <summary>
+    /// Destination paths that already exist and would collide with a source of the same name -
+    /// computed the same way <see cref="MoveSameVolume"/> or <see cref="CopyFiles"/> checks for a
+    /// conflict, without performing any transfer. Its count is what <see cref="Msg.JobConflictsFound"/>
+    /// reports and what drives the prompt in <see cref="AwaitConflictDecision"/>.
+    /// </summary>
+    private static HashSet<string> ComputeConflicts(
+        Effect.RunFileJob effect, List<ScannedFile> files, bool sameVolumeMove)
+    {
+        var conflicts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (sameVolumeMove)
+        {
+            foreach (var source in effect.Sources)
+            {
+                var trimmed = source.TrimEnd('\\', '/');
+                var name = Path.GetFileName(trimmed);
+                var dest = Path.Combine(effect.DestDir, name);
+                if (Directory.Exists(dest) || File.Exists(dest))
+                {
+                    conflicts.Add(dest);
+                }
+            }
+        }
+        else
+        {
+            foreach (var file in files)
+            {
+                var destPath = Path.Combine(effect.DestDir, file.RelativePath);
+                if (File.Exists(destPath))
+                {
+                    conflicts.Add(destPath);
+                }
+            }
+        }
+
+        return conflicts;
+    }
+
+    /// <summary>
+    /// Posts <see cref="Msg.JobConflictsFound"/> for <paramref name="jobId"/>/<paramref name="conflictCount"/>
+    /// and blocks the calling (worker) thread until <see cref="Effect.ResolveJobConflict"/> completes
+    /// the matching entry in <see cref="_pendingConflicts"/> via <see cref="Submit"/>, or
+    /// <paramref name="token"/> is cancelled - which throws <see cref="OperationCanceledException"/>,
+    /// left to the caller's existing cancellation handling (reported as <see cref="Msg.JobCancelled"/>
+    /// just like any other cancellation during the job).
+    /// </summary>
+    private ConflictDecision AwaitConflictDecision(int jobId, int conflictCount, CancellationToken token)
+    {
+        _post(new Msg.JobConflictsFound(jobId, conflictCount));
+
+        var tcs = new TaskCompletionSource<ConflictDecision>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingConflicts[jobId] = tcs;
+        try
+        {
+            tcs.Task.Wait(token);
+            return tcs.Task.Result;
+        }
+        finally
+        {
+            _pendingConflicts.TryRemove(jobId, out _);
+        }
+    }
+
     private static bool AllSameVolume(ImmutableArray<string> sources, string destDir)
     {
         var destRoot = Path.GetPathRoot(destDir);
@@ -211,6 +309,7 @@ public sealed class JobEngine : IDisposable
         string destDir,
         JobProgressState progress,
         Dictionary<string, (long Size, int Count)> topLevelStats,
+        bool overwrite,
         CancellationToken token)
     {
         foreach (var source in sources)
@@ -223,17 +322,36 @@ public sealed class JobEngine : IDisposable
             progress.CurrentFile = name;
 
             var dest = Path.Combine(destDir, name);
-            if (Directory.Exists(dest) || File.Exists(dest))
+            var destExists = Directory.Exists(dest) || File.Exists(dest);
+            if (destExists && !overwrite)
             {
                 progress.Skipped += stat.Count;
             }
-            else if (Directory.Exists(trimmed))
+            else
             {
-                Directory.Move(trimmed, dest);
-            }
-            else if (File.Exists(trimmed))
-            {
-                File.Move(trimmed, dest);
+                if (destExists)
+                {
+                    // Overwrite: clear out whatever is already there so Directory.Move/File.Move
+                    // (neither of which can replace an existing entry) can land the source in its
+                    // place.
+                    if (Directory.Exists(dest))
+                    {
+                        Directory.Delete(dest, recursive: true);
+                    }
+                    else
+                    {
+                        File.Delete(dest);
+                    }
+                }
+
+                if (Directory.Exists(trimmed))
+                {
+                    Directory.Move(trimmed, dest);
+                }
+                else if (File.Exists(trimmed))
+                {
+                    File.Move(trimmed, dest);
+                }
             }
 
             progress.CompleteTopLevel(stat.Count, stat.Size);
@@ -256,7 +374,7 @@ public sealed class JobEngine : IDisposable
     }
 
     private static void CopyFiles(
-        List<ScannedFile> files, string destDir, JobProgressState progress, CancellationToken token)
+        List<ScannedFile> files, string destDir, JobProgressState progress, bool overwrite, CancellationToken token)
     {
         foreach (var file in files)
         {
@@ -269,7 +387,7 @@ public sealed class JobEngine : IDisposable
                 Directory.CreateDirectory(destParent);
             }
 
-            if (File.Exists(destPath))
+            if (File.Exists(destPath) && !overwrite)
             {
                 progress.Skipped++;
                 progress.AddBytes(file.Size);
@@ -286,21 +404,54 @@ public sealed class JobEngine : IDisposable
         }
     }
 
+    /// <summary>
+    /// Copies <paramref name="sourcePath"/> to <paramref name="destPath"/> (overwriting whatever is
+    /// there, via <see cref="FileMode.Create"/>). If the copy is aborted - by cancellation or any
+    /// other failure mid-write - the destination is left with only a partial file; rather than leave
+    /// that half-written file behind, it is deleted (best-effort - see <see cref="TryDeleteIncompleteFile"/>)
+    /// before the exception propagates. Completed files are never touched by this cleanup, since it
+    /// only runs when this call itself did not finish.
+    /// </summary>
     private static void CopyOneFile(
         string sourcePath, string destPath, JobProgressState progress, CancellationToken token)
     {
         using var source = new FileStream(
             sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, BufferSize, FileOptions.SequentialScan);
-        using var dest = new FileStream(destPath, FileMode.Create, FileAccess.Write, FileShare.None, BufferSize);
 
-        var buffer = new byte[BufferSize];
-        int read;
-        while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
+        try
         {
-            token.ThrowIfCancellationRequested();
-            dest.Write(buffer, 0, read);
-            progress.AddBytes(read);
-            progress.MaybePost(force: false);
+            using (var dest = new FileStream(destPath, FileMode.Create, FileAccess.Write, FileShare.None, BufferSize))
+            {
+                var buffer = new byte[BufferSize];
+                int read;
+                while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    token.ThrowIfCancellationRequested();
+                    dest.Write(buffer, 0, read);
+                    progress.AddBytes(read);
+                    progress.MaybePost(force: false);
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // The inner `using` above has already closed the handle by the time we get here (its
+            // Dispose runs during unwind, before this catch), so the delete below is not blocked by
+            // FileShare.None.
+            TryDeleteIncompleteFile(destPath);
+            throw;
+        }
+    }
+
+    private static void TryDeleteIncompleteFile(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Best-effort: leave the partial file rather than let cleanup itself fail the job.
         }
     }
 

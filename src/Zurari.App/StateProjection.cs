@@ -149,7 +149,11 @@ public static class StateProjection
     /// <param name="IsIndeterminate">True while running but the total size is not yet known.</param>
     /// <param name="IsRunning">True while Queued or Running (cancel button should show).</param>
     /// <param name="IsFinished">True once Completed/Failed/Cancelled (dismiss button should show).</param>
-    /// <param name="StatusLabel">Short status word for the row (待機中/実行中/完了/失敗/キャンセル済み).</param>
+    /// <param name="StatusLabel">Short status word for the row (待機中/実行中/完了/失敗/キャンセル済み/確認中).</param>
+    /// <param name="IsWaitingConflict">
+    /// True while <see cref="JobStatus.WaitingConflict"/> - the row should show the 上書き/スキップ/
+    /// 中止 conflict-resolution buttons instead of (or alongside) the ordinary cancel button.
+    /// </param>
     public sealed record JobVm(
         int JobId,
         string Description,
@@ -158,7 +162,8 @@ public static class StateProjection
         bool IsIndeterminate,
         bool IsRunning,
         bool IsFinished,
-        string StatusLabel);
+        string StatusLabel,
+        bool IsWaitingConflict = false);
 
     /// <summary>
     /// Projects every job in <paramref name="state"/> into a <see cref="JobVm"/>, in the order they
@@ -196,6 +201,7 @@ public static class StateProjection
                 "完了"),
             JobStatus.Failed => ($"失敗: {job.Error}", "失敗"),
             JobStatus.Cancelled => ("キャンセル済み", "キャンセル済み"),
+            JobStatus.WaitingConflict => ($"同名のファイルが {job.ConflictCount} 件あります", "確認中"),
             _ => (string.Empty, string.Empty),
         };
 
@@ -203,8 +209,11 @@ public static class StateProjection
         var isIndeterminate = job.Status == JobStatus.Running && job.TotalBytes == 0;
         var isRunning = job.Status is JobStatus.Queued or JobStatus.Running;
         var isFinished = job.Status is JobStatus.Completed or JobStatus.Failed or JobStatus.Cancelled;
+        var isWaitingConflict = job.Status == JobStatus.WaitingConflict;
 
-        return new JobVm(job.JobId, description, detail, progressFraction, isIndeterminate, isRunning, isFinished, statusLabel);
+        return new JobVm(
+            job.JobId, description, detail, progressFraction, isIndeterminate, isRunning, isFinished, statusLabel,
+            isWaitingConflict);
     }
 
     /// <summary>

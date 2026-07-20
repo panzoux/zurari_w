@@ -100,6 +100,10 @@ public class JobEngineTests
     [Fact]
     public void RunFileJob_skips_a_conflicting_file_but_still_copies_the_rest()
     {
+        // Phase 5: a conflict now pauses the job and waits for Msg.JobConflictResolved instead of
+        // silently skipping - see JobEngineTests' RunFileJob_posts_JobConflictsFound_* tests for the
+        // conflict-prompt flow itself. This test resolves with ConflictDecision.Skip, which
+        // reproduces the exact old skip-by-default behavior it used to exercise unprompted.
         var dir = CreateTempDir();
         try
         {
@@ -116,6 +120,9 @@ public class JobEngineTests
             var queue = new ConcurrentQueue<Msg>();
             using var engine = new JobEngine(queue.Enqueue);
             engine.Submit(new Effect.RunFileJob(3, JobKind.Copy, [srcA, srcB], destDir));
+
+            WaitForMsg<Msg.JobConflictsFound>(queue, TimeSpan.FromSeconds(10));
+            engine.Submit(new Effect.ResolveJobConflict(3, ConflictDecision.Skip));
 
             var completed = (Msg.JobCompleted)WaitForMsg<Msg.JobCompleted>(queue, TimeSpan.FromSeconds(10));
             Assert.Equal(1, completed.SkippedFiles);
@@ -338,6 +345,218 @@ public class JobEngineTests
 
             Assert.True(sawJob10Cancelled, "Expected job 10 to be cancelled while still queued.");
             Assert.False(File.Exists(Path.Combine(destDir, "queued.txt")));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void RunFileJob_posts_JobConflictsFound_then_overwrites_when_resolved_Overwrite()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var srcDir = Path.Combine(dir, "src");
+            var destDir = Path.Combine(dir, "dest");
+            Directory.CreateDirectory(srcDir);
+            Directory.CreateDirectory(destDir);
+            var srcFile = Path.Combine(srcDir, "a.txt");
+            File.WriteAllText(srcFile, "new-content");
+            File.WriteAllText(Path.Combine(destDir, "a.txt"), "old-content");
+
+            var queue = new ConcurrentQueue<Msg>();
+            using var engine = new JobEngine(queue.Enqueue);
+            engine.Submit(new Effect.RunFileJob(20, JobKind.Copy, [srcFile], destDir));
+
+            var found = (Msg.JobConflictsFound)WaitForMsg<Msg.JobConflictsFound>(queue, TimeSpan.FromSeconds(10));
+            Assert.Equal(20, found.JobId);
+            Assert.Equal(1, found.ConflictCount);
+
+            engine.Submit(new Effect.ResolveJobConflict(20, ConflictDecision.Overwrite));
+
+            var completed = (Msg.JobCompleted)WaitForMsg<Msg.JobCompleted>(queue, TimeSpan.FromSeconds(10));
+            Assert.Equal(0, completed.SkippedFiles);
+            Assert.Equal("new-content", File.ReadAllText(Path.Combine(destDir, "a.txt")));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void RunFileJob_posts_JobConflictsFound_then_skips_when_resolved_Skip()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var srcDir = Path.Combine(dir, "src");
+            var destDir = Path.Combine(dir, "dest");
+            Directory.CreateDirectory(srcDir);
+            Directory.CreateDirectory(destDir);
+            var srcFile = Path.Combine(srcDir, "a.txt");
+            File.WriteAllText(srcFile, "new-content");
+            File.WriteAllText(Path.Combine(destDir, "a.txt"), "old-content");
+
+            var queue = new ConcurrentQueue<Msg>();
+            using var engine = new JobEngine(queue.Enqueue);
+            engine.Submit(new Effect.RunFileJob(21, JobKind.Copy, [srcFile], destDir));
+
+            var found = (Msg.JobConflictsFound)WaitForMsg<Msg.JobConflictsFound>(queue, TimeSpan.FromSeconds(10));
+            Assert.Equal(1, found.ConflictCount);
+
+            engine.Submit(new Effect.ResolveJobConflict(21, ConflictDecision.Skip));
+
+            var completed = (Msg.JobCompleted)WaitForMsg<Msg.JobCompleted>(queue, TimeSpan.FromSeconds(10));
+            Assert.Equal(1, completed.SkippedFiles);
+            Assert.Equal("old-content", File.ReadAllText(Path.Combine(destDir, "a.txt")));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void RunFileJob_posts_JobConflictsFound_then_cancels_when_resolved_Cancel()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var srcDir = Path.Combine(dir, "src");
+            var destDir = Path.Combine(dir, "dest");
+            Directory.CreateDirectory(srcDir);
+            Directory.CreateDirectory(destDir);
+            var srcFile = Path.Combine(srcDir, "a.txt");
+            File.WriteAllText(srcFile, "new-content");
+            File.WriteAllText(Path.Combine(destDir, "a.txt"), "old-content");
+
+            var queue = new ConcurrentQueue<Msg>();
+            using var engine = new JobEngine(queue.Enqueue);
+            engine.Submit(new Effect.RunFileJob(22, JobKind.Copy, [srcFile], destDir));
+
+            WaitForMsg<Msg.JobConflictsFound>(queue, TimeSpan.FromSeconds(10));
+            engine.Submit(new Effect.ResolveJobConflict(22, ConflictDecision.Cancel));
+
+            var cancelled = (Msg.JobCancelled)WaitForMsg<Msg.JobCancelled>(queue, TimeSpan.FromSeconds(10));
+            Assert.Equal(22, cancelled.JobId);
+            Assert.Equal("old-content", File.ReadAllText(Path.Combine(destDir, "a.txt")));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void RunFileJob_with_no_conflicts_never_posts_JobConflictsFound()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var srcDir = Path.Combine(dir, "src");
+            var destDir = Path.Combine(dir, "dest");
+            Directory.CreateDirectory(srcDir);
+            Directory.CreateDirectory(destDir);
+            var srcFile = Path.Combine(srcDir, "a.txt");
+            File.WriteAllText(srcFile, "content");
+
+            var queue = new ConcurrentQueue<Msg>();
+            using var engine = new JobEngine(queue.Enqueue);
+            engine.Submit(new Effect.RunFileJob(23, JobKind.Copy, [srcFile], destDir));
+
+            var seen = new List<Msg>();
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+            var completed = false;
+            while (DateTime.UtcNow < deadline && !completed)
+            {
+                if (queue.TryDequeue(out var msg))
+                {
+                    seen.Add(msg);
+                    completed = msg is Msg.JobCompleted;
+                }
+                else
+                {
+                    Thread.Sleep(5);
+                }
+            }
+
+            Assert.True(completed, "Expected JobCompleted within the timeout.");
+            Assert.DoesNotContain(seen, m => m is Msg.JobConflictsFound);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void CancelJob_while_waiting_on_a_conflict_decision_reports_JobCancelled()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var srcDir = Path.Combine(dir, "src");
+            var destDir = Path.Combine(dir, "dest");
+            Directory.CreateDirectory(srcDir);
+            Directory.CreateDirectory(destDir);
+            var srcFile = Path.Combine(srcDir, "a.txt");
+            File.WriteAllText(srcFile, "new-content");
+            File.WriteAllText(Path.Combine(destDir, "a.txt"), "old-content");
+
+            var queue = new ConcurrentQueue<Msg>();
+            using var engine = new JobEngine(queue.Enqueue);
+            engine.Submit(new Effect.RunFileJob(24, JobKind.Copy, [srcFile], destDir));
+
+            WaitForMsg<Msg.JobConflictsFound>(queue, TimeSpan.FromSeconds(10));
+            // Cancelled via the ordinary CancelJob effect (not a conflict-prompt decision) while
+            // the worker is still blocked waiting for one - the cancellation token must abort that
+            // wait, not just a running transfer.
+            engine.Submit(new Effect.CancelJob(24));
+
+            var cancelled = (Msg.JobCancelled)WaitForMsg<Msg.JobCancelled>(queue, TimeSpan.FromSeconds(10));
+            Assert.Equal(24, cancelled.JobId);
+            Assert.Equal("old-content", File.ReadAllText(Path.Combine(destDir, "a.txt")));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void CancelJob_mid_copy_deletes_the_incomplete_destination_file()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var srcDir = Path.Combine(dir, "src");
+            var destDir = Path.Combine(dir, "dest");
+            Directory.CreateDirectory(srcDir);
+            Directory.CreateDirectory(destDir);
+            var srcFile = Path.Combine(srcDir, "huge.bin");
+            File.WriteAllBytes(srcFile, new byte[50 * 1024 * 1024]);
+
+            var queue = new ConcurrentQueue<Msg>();
+            using var engine = new JobEngine(queue.Enqueue);
+            engine.Submit(new Effect.RunFileJob(25, JobKind.Copy, [srcFile], destDir));
+
+            WaitForMsg<Msg.JobProgress>(queue, TimeSpan.FromSeconds(10));
+            engine.Submit(new Effect.CancelJob(25));
+            WaitForMsg<Msg.JobCancelled>(queue, TimeSpan.FromSeconds(15));
+
+            var destFile = Path.Combine(destDir, "huge.bin");
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+            var exists = File.Exists(destFile);
+            while (exists && DateTime.UtcNow < deadline)
+            {
+                Thread.Sleep(20);
+                exists = File.Exists(destFile);
+            }
+
+            Assert.False(exists, "Expected the partially-written destination file to be deleted after cancellation.");
         }
         finally
         {

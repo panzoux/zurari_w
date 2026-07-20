@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
@@ -25,6 +26,7 @@ public sealed partial class MainWindow : Window, IDisposable
     private readonly WorkerRuntime runtime;
     private readonly ShellEffectExecutor shellExecutor;
     private readonly JobEngine jobEngine;
+    private readonly DirectoryWatcher directoryWatcher;
     private readonly MessageLoop loop;
     private readonly ShellIconCache iconCache = new();
 
@@ -76,6 +78,7 @@ public sealed partial class MainWindow : Window, IDisposable
         runtime = new WorkerRuntime(post: PostToLoop);
         shellExecutor = new ShellEffectExecutor(post: PostToLoop);
         jobEngine = new JobEngine(post: PostToLoop);
+        directoryWatcher = new DirectoryWatcher(post: PostToLoop);
         loop = new MessageLoop(AppState.Initial, RunEffect, Render);
 
         Browser.CursorMoveRequested += (_, e) => Dispatch(ToCursorMsg(e));
@@ -119,8 +122,8 @@ public sealed partial class MainWindow : Window, IDisposable
     }
 
     /// <summary>
-    /// Disposes the <see cref="WorkerRuntime"/>, <see cref="ShellEffectExecutor"/>, and
-    /// <see cref="JobEngine"/> owned by this window.
+    /// Disposes the <see cref="WorkerRuntime"/>, <see cref="ShellEffectExecutor"/>,
+    /// <see cref="JobEngine"/>, and <see cref="DirectoryWatcher"/> owned by this window.
     /// </summary>
     public void Dispose()
     {
@@ -128,6 +131,7 @@ public sealed partial class MainWindow : Window, IDisposable
         runtime.Dispose();
         shellExecutor.Dispose();
         jobEngine.Dispose();
+        directoryWatcher.Dispose();
     }
 
     /// <summary>
@@ -154,6 +158,7 @@ public sealed partial class MainWindow : Window, IDisposable
                 break;
             case Effect.RunFileJob _:
             case Effect.CancelJob _:
+            case Effect.ResolveJobConflict _:
                 jobEngine.Submit(effect);
                 break;
         }
@@ -654,6 +659,26 @@ public sealed partial class MainWindow : Window, IDisposable
         }
     }
 
+    /// <summary>Job strip "上書き" button (conflict prompt): resolves with <see cref="ConflictDecision.Overwrite"/>.</summary>
+    private void OnJobOverwriteClicked(object sender, RoutedEventArgs e) =>
+        DispatchConflictDecision(sender, ConflictDecision.Overwrite);
+
+    /// <summary>Job strip "スキップ" button (conflict prompt): resolves with <see cref="ConflictDecision.Skip"/>.</summary>
+    private void OnJobSkipConflictClicked(object sender, RoutedEventArgs e) =>
+        DispatchConflictDecision(sender, ConflictDecision.Skip);
+
+    /// <summary>Job strip "中止" button (conflict prompt): resolves with <see cref="ConflictDecision.Cancel"/>.</summary>
+    private void OnJobCancelConflictClicked(object sender, RoutedEventArgs e) =>
+        DispatchConflictDecision(sender, ConflictDecision.Cancel);
+
+    private void DispatchConflictDecision(object sender, ConflictDecision decision)
+    {
+        if (((FrameworkElement)sender).DataContext is JobRowVm vm)
+        {
+            Dispatch(new Msg.JobConflictResolved(vm.JobId, decision));
+        }
+    }
+
     private void Render(AppState state)
     {
         // Reference comparison, not value comparison: Transition returns the very same
@@ -667,6 +692,13 @@ public sealed partial class MainWindow : Window, IDisposable
         {
             Browser.Columns = StateProjection.Project(state, e => iconCache.GetIcon(e.Kind, e.Name));
             lastRenderedColumns = state.Columns;
+
+            // Cheap reconcile (see DirectoryWatcher.SetWatchedPaths' remarks) - only worth doing
+            // when the columns actually changed, same guard as the Browser.Columns reassignment
+            // above, so an unrelated render (job progress, preview loads, ...) does not churn
+            // watchers.
+            directoryWatcher.SetWatchedPaths(
+                state.Columns.Select(c => c.Path).Where(p => p.Length > 0).Distinct().ToList());
         }
 
         RenderJobs(state);

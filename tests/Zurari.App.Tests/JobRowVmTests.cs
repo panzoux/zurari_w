@@ -22,8 +22,9 @@ public class JobRowVmTests
         bool isIndeterminate = false,
         bool isRunning = true,
         bool isFinished = false,
-        string statusLabel = "待機中") =>
-        new(jobId, description, detail, progressFraction, isIndeterminate, isRunning, isFinished, statusLabel);
+        string statusLabel = "待機中",
+        bool isWaitingConflict = false) =>
+        new(jobId, description, detail, progressFraction, isIndeterminate, isRunning, isFinished, statusLabel, isWaitingConflict);
 
     [Fact]
     public void JobId_is_taken_from_the_constructor_and_never_changes()
@@ -56,6 +57,17 @@ public class JobRowVmTests
         Assert.True(row.IsRunning);
         Assert.False(row.IsFinished);
         Assert.Equal("実行中", row.StatusLabel);
+    }
+
+    [Fact]
+    public void UpdateFrom_copies_IsWaitingConflict()
+    {
+        var row = new JobRowVm(MakeVm(isWaitingConflict: false));
+
+        row.UpdateFrom(MakeVm(
+            detail: "同名のファイルが 2 件あります", statusLabel: "確認中", isRunning: false, isWaitingConflict: true));
+
+        Assert.True(row.IsWaitingConflict);
     }
 
     [Fact]

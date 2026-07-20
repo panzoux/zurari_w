@@ -61,6 +61,9 @@ public static class Transition
                 (PreviewLoaded(state, m.Generation, m.Kind, m.Text, m.ImageBytes, m.BinaryLabel), NoEffects),
             Msg.PreviewFailed m => (PreviewFailed(state, m.Generation, m.Error), NoEffects),
             Msg.SetCutPending m => (state with { CutPending = m.Paths }, NoEffects),
+            Msg.JobConflictsFound m => (JobConflictsFound(state, m.JobId, m.ConflictCount), NoEffects),
+            Msg.JobConflictResolved m => JobConflictResolved(state, m.JobId, m.Decision),
+            Msg.ExternalDirectoryChanged m => ExternalDirectoryChanged(state, m.Path),
             _ => (state, NoEffects),
         };
     }
@@ -740,6 +743,69 @@ public static class Transition
         }
 
         return state with { Jobs = state.Jobs.RemoveAt(index) };
+    }
+
+    private static AppState JobConflictsFound(AppState state, int jobId, int conflictCount)
+    {
+        var index = FindJobIndex(state.Jobs, jobId);
+        if (index < 0)
+        {
+            return state;
+        }
+
+        var job = state.Jobs[index];
+        if (job.Status is not (JobStatus.Queued or JobStatus.Running))
+        {
+            return state;
+        }
+
+        var updated = job with { Status = JobStatus.WaitingConflict, ConflictCount = conflictCount };
+        return state with { Jobs = state.Jobs.SetItem(index, updated) };
+    }
+
+    private static (AppState, IReadOnlyList<Effect>) JobConflictResolved(
+        AppState state, int jobId, ConflictDecision decision)
+    {
+        var index = FindJobIndex(state.Jobs, jobId);
+        if (index < 0)
+        {
+            return (state, NoEffects);
+        }
+
+        var job = state.Jobs[index];
+        if (job.Status != JobStatus.WaitingConflict)
+        {
+            return (state, NoEffects);
+        }
+
+        var updated = job with { Status = JobStatus.Running };
+        var newState = state with { Jobs = state.Jobs.SetItem(index, updated) };
+        return (newState, [new Effect.ResolveJobConflict(jobId, decision)]);
+    }
+
+    /// <summary>
+    /// Marks every column whose path matches <paramref name="path"/> - same normalization as
+    /// <see cref="IsAffectedDirectory"/> - <see cref="LoadState.Loading"/> and re-requests it. See
+    /// <see cref="Msg.ExternalDirectoryChanged"/>'s remarks for why our own jobs/shell ops
+    /// harmlessly triggering this too is not special-cased away.
+    /// </summary>
+    private static (AppState, IReadOnlyList<Effect>) ExternalDirectoryChanged(AppState state, string path)
+    {
+        var columns = state.Columns;
+        var newColumns = columns;
+        var effects = new List<Effect>();
+        for (var i = 0; i < columns.Length; i++)
+        {
+            if (!IsAffectedDirectory(columns[i].Path, [path]))
+            {
+                continue;
+            }
+
+            newColumns = newColumns.SetItem(i, columns[i] with { Load = LoadState.Loading });
+            effects.Add(new Effect.ReadDirectory(i, columns[i].Path));
+        }
+
+        return (state with { Columns = newColumns }, effects);
     }
 
     /// <summary>

@@ -35,6 +35,15 @@
                                            TextTrimming="CharacterEllipsis" />
                             </StackPanel>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button Content="上書き" FontSize="11" Padding="4,0"
+                                        Visibility="{Binding IsWaitingConflict, Converter={StaticResource BoolToVisibility}}"
+                                        Click="OnJobOverwriteClicked" />
+                                <Button Content="スキップ" FontSize="11" Padding="4,0" Margin="4,0,0,0"
+                                        Visibility="{Binding IsWaitingConflict, Converter={StaticResource BoolToVisibility}}"
+                                        Click="OnJobSkipConflictClicked" />
+                                <Button Content="中止" FontSize="11" Padding="4,0" Margin="4,0,0,0"
+                                        Visibility="{Binding IsWaitingConflict, Converter={StaticResource BoolToVisibility}}"
+                                        Click="OnJobCancelConflictClicked" />
                                 <Button Content="キャンセル" FontSize="11" Padding="4,0"
                                         Visibility="{Binding IsRunning, Converter={StaticResource BoolToVisibility}}"
                                         Click="OnJobCancelClicked" />

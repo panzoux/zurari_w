@@ -63,6 +63,14 @@ public abstract record Effect
     public sealed record CancelJob(int JobId) : Effect;
 
     /// <summary>
+    /// Wakes the job engine worker blocked waiting on <paramref name="JobId"/>'s conflict prompt
+    /// (see <see cref="Msg.JobConflictsFound"/>) with the user's <paramref name="Decision"/>.
+    /// Handled synchronously by the engine, the same way as <see cref="CancelJob"/> - it never
+    /// itself produces a Msg; the job's own progress/completion Msgs resume once the worker wakes.
+    /// </summary>
+    public sealed record ResolveJobConflict(int JobId, ConflictDecision Decision) : Effect;
+
+    /// <summary>
     /// Loads a preview of the file at <paramref name="Path"/>: image bytes (whole file, capped),
     /// decoded text (head only), or a <see cref="FileTypeDetector"/> label for anything else.
     /// Reports back as <see cref="Msg.PreviewLoaded"/> or <see cref="Msg.PreviewFailed"/>, both

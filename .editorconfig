@@ -55,3 +55,10 @@ dotnet_diagnostic.CA1031.severity = none
 # intentional. Scoped to this file only.
 [src/Zurari.Runtime/JobEngine.cs]
 dotnet_diagnostic.CA1031.severity = none
+
+# DirectoryWatcher: FileSystemWatcher event/error/timer callbacks run on arbitrary threads with no
+# caller to observe an exception - letting one escape would crash the process, so every handler
+# swallows its own failures (worst case: that one path silently stops being watched). Scoped to
+# this file only.
+[src/Zurari.Runtime/DirectoryWatcher.cs]
+dotnet_diagnostic.CA1031.severity = none

@@ -1583,6 +1583,122 @@ public class TransitionTests
         Assert.Empty(effects);
     }
 
+    [Theory]
+    [InlineData(JobStatus.Queued)]
+    [InlineData(JobStatus.Running)]
+    public void JobConflictsFound_moves_queued_or_running_job_to_WaitingConflict(JobStatus status)
+    {
+        var job = new Job(1, JobKind.Copy, [@"C:\src\a.txt"], @"C:\dest", Status: status);
+        var state = AppState.Initial with { Jobs = [job] };
+
+        var (next, effects) = Transition.Apply(state, new Msg.JobConflictsFound(1, 3));
+
+        var updated = Assert.Single(next.Jobs);
+        Assert.Equal(JobStatus.WaitingConflict, updated.Status);
+        Assert.Equal(3, updated.ConflictCount);
+        Assert.Empty(effects);
+    }
+
+    [Theory]
+    [InlineData(JobStatus.WaitingConflict)]
+    [InlineData(JobStatus.Completed)]
+    [InlineData(JobStatus.Failed)]
+    [InlineData(JobStatus.Cancelled)]
+    public void JobConflictsFound_is_a_no_op_for_jobs_not_queued_or_running(JobStatus status)
+    {
+        var job = new Job(1, JobKind.Copy, [@"C:\src\a.txt"], @"C:\dest", Status: status);
+        var state = AppState.Initial with { Jobs = [job] };
+
+        var (next, effects) = Transition.Apply(state, new Msg.JobConflictsFound(1, 3));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void JobConflictsFound_with_unknown_JobId_is_ignored()
+    {
+        var state = AppState.Initial;
+
+        var (next, effects) = Transition.Apply(state, new Msg.JobConflictsFound(1, 3));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Theory]
+    [InlineData(ConflictDecision.Overwrite)]
+    [InlineData(ConflictDecision.Skip)]
+    [InlineData(ConflictDecision.Cancel)]
+    public void JobConflictResolved_moves_WaitingConflict_job_back_to_Running_and_emits_ResolveJobConflict(
+        ConflictDecision decision)
+    {
+        var job = new Job(1, JobKind.Copy, [@"C:\src\a.txt"], @"C:\dest", Status: JobStatus.WaitingConflict, ConflictCount: 2);
+        var state = AppState.Initial with { Jobs = [job] };
+
+        var (next, effects) = Transition.Apply(state, new Msg.JobConflictResolved(1, decision));
+
+        var updated = Assert.Single(next.Jobs);
+        Assert.Equal(JobStatus.Running, updated.Status);
+        var effect = Assert.IsType<Effect.ResolveJobConflict>(Assert.Single(effects));
+        Assert.Equal(1, effect.JobId);
+        Assert.Equal(decision, effect.Decision);
+    }
+
+    [Theory]
+    [InlineData(JobStatus.Queued)]
+    [InlineData(JobStatus.Running)]
+    [InlineData(JobStatus.Completed)]
+    [InlineData(JobStatus.Failed)]
+    [InlineData(JobStatus.Cancelled)]
+    public void JobConflictResolved_is_a_no_op_when_not_WaitingConflict(JobStatus status)
+    {
+        var job = new Job(1, JobKind.Copy, [@"C:\src\a.txt"], @"C:\dest", Status: status);
+        var state = AppState.Initial with { Jobs = [job] };
+
+        var (next, effects) = Transition.Apply(state, new Msg.JobConflictResolved(1, ConflictDecision.Overwrite));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void JobConflictResolved_with_unknown_JobId_is_ignored()
+    {
+        var state = AppState.Initial;
+
+        var (next, effects) = Transition.Apply(state, new Msg.JobConflictResolved(1, ConflictDecision.Overwrite));
+
+        Assert.Equal(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void ExternalDirectoryChanged_refreshes_matching_columns()
+    {
+        var state = StateWithColumns(
+            new Column(@"C:\dest", [Dir], Cursor: 0, Load: LoadState.Loaded),
+            new Column(@"D:\unrelated", [], Cursor: 0, Load: LoadState.Loaded));
+
+        var (next, effects) = Transition.Apply(state, new Msg.ExternalDirectoryChanged(@"C:\dest"));
+
+        Assert.Equal(LoadState.Loading, next.Columns[0].Load);
+        Assert.Equal(LoadState.Loaded, next.Columns[1].Load);
+        var effect = Assert.IsType<Effect.ReadDirectory>(Assert.Single(effects));
+        Assert.Equal(0, effect.ColumnIndex);
+    }
+
+    [Fact]
+    public void ExternalDirectoryChanged_with_no_matching_column_is_a_no_op()
+    {
+        var state = StateWithColumns(new Column(@"C:\dest", [Dir], Cursor: 0, Load: LoadState.Loaded));
+
+        var (next, effects) = Transition.Apply(state, new Msg.ExternalDirectoryChanged(@"D:\elsewhere"));
+
+        Assert.Equal(LoadState.Loaded, next.Columns[0].Load);
+        Assert.Empty(effects);
+    }
+
     [Fact]
     public void CursorMove_onto_a_file_emits_LoadPreview_with_incremented_generation()
     {
@@ -1838,6 +1954,9 @@ public class TransitionProperties
 
     private static Gen<int> GenJobId => Gen.Int[-2, 4];
 
+    private static Gen<ConflictDecision> GenConflictDecision => Gen.OneOfConst(
+        ConflictDecision.Overwrite, ConflictDecision.Skip, ConflictDecision.Cancel);
+
     private static Gen<PreviewKind> GenPreviewKind => Gen.OneOfConst(
         PreviewKind.None, PreviewKind.Loading, PreviewKind.Image, PreviewKind.Text, PreviewKind.Binary);
 
@@ -1901,7 +2020,10 @@ public class TransitionProperties
         Gen.Select(GenJobId, GenPreviewKind, GenImageBytes)
             .Select(t => (Msg)new Msg.PreviewLoaded(t.Item1, t.Item2, "text", t.Item3, "label")),
         GenJobId.Select(i => (Msg)new Msg.PreviewFailed(i, "error")),
-        GenPaths.Select(paths => (Msg)new Msg.SetCutPending(paths)));
+        GenPaths.Select(paths => (Msg)new Msg.SetCutPending(paths)),
+        Gen.Select(GenJobId, Gen.Int[0, 5]).Select(t => (Msg)new Msg.JobConflictsFound(t.Item1, t.Item2)),
+        Gen.Select(GenJobId, GenConflictDecision).Select(t => (Msg)new Msg.JobConflictResolved(t.Item1, t.Item2)),
+        GenPath.Select(p => (Msg)new Msg.ExternalDirectoryChanged(p)));
 
     [Fact]
     public void Any_msg_sequence_yields_valid_state_and_effects()

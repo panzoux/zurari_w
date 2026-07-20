@@ -24,7 +24,8 @@ public class JobProjectionTests
         long totalBytes = 0,
         string? currentFile = null,
         string? error = null,
-        int skippedFiles = 0) =>
+        int skippedFiles = 0,
+        int conflictCount = 0) =>
         new(
             JobId: 1,
             Kind: kind,
@@ -37,7 +38,8 @@ public class JobProjectionTests
             TotalBytes: totalBytes,
             CurrentFile: currentFile,
             Error: error,
-            SkippedFiles: skippedFiles);
+            SkippedFiles: skippedFiles,
+            ConflictCount: conflictCount);
 
     [Fact]
     public void ProjectJobs_rejects_null_state()
@@ -204,6 +206,37 @@ public class JobProjectionTests
         var vms = StateProjection.ProjectJobs(state);
 
         Assert.False(vms[0].IsIndeterminate);
+    }
+
+    [Fact]
+    public void WaitingConflict_status_shows_conflict_count_detail_and_flags_the_row()
+    {
+        var job = MakeJob(status: JobStatus.WaitingConflict, conflictCount: 3);
+        var state = StateWithJobs(job);
+
+        var vms = StateProjection.ProjectJobs(state);
+
+        Assert.Equal("同名のファイルが 3 件あります", vms[0].Detail);
+        Assert.Equal("確認中", vms[0].StatusLabel);
+        Assert.True(vms[0].IsWaitingConflict);
+        Assert.False(vms[0].IsRunning);
+        Assert.False(vms[0].IsFinished);
+    }
+
+    [Theory]
+    [InlineData(JobStatus.Queued)]
+    [InlineData(JobStatus.Running)]
+    [InlineData(JobStatus.Completed)]
+    [InlineData(JobStatus.Failed)]
+    [InlineData(JobStatus.Cancelled)]
+    public void Only_WaitingConflict_status_sets_IsWaitingConflict(JobStatus status)
+    {
+        var job = MakeJob(status: status);
+        var state = StateWithJobs(job);
+
+        var vms = StateProjection.ProjectJobs(state);
+
+        Assert.False(vms[0].IsWaitingConflict);
     }
 
     [Fact]

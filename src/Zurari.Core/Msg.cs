@@ -253,4 +253,37 @@ public abstract record Msg
     /// clears any pending-cut look). Also cleared automatically by <see cref="PasteRequested"/>.
     /// </summary>
     public sealed record SetCutPending(ImmutableArray<string> Paths) : Msg;
+
+    /// <summary>
+    /// The job engine's pre-scan for <paramref name="JobId"/> found <paramref name="ConflictCount"/>
+    /// destination entries with the same name as a source. A job tracked as
+    /// <see cref="JobStatus.Queued"/> or <see cref="JobStatus.Running"/> moves to
+    /// <see cref="JobStatus.WaitingConflict"/> with <see cref="Job.ConflictCount"/> set; the engine
+    /// is blocked waiting for <see cref="Msg.JobConflictResolved"/>. Ignored if the job is unknown
+    /// or already in some other state.
+    /// </summary>
+    public sealed record JobConflictsFound(int JobId, int ConflictCount) : Msg;
+
+    /// <summary>
+    /// The user resolved the conflict prompt for <paramref name="JobId"/> (see
+    /// <see cref="JobConflictsFound"/>) with <paramref name="Decision"/>. A job tracked as
+    /// <see cref="JobStatus.WaitingConflict"/> moves back to <see cref="JobStatus.Running"/>
+    /// immediately (the engine's next progress report will confirm it, but flipping the status here
+    /// keeps the strip from looking stuck) and emits <see cref="Effect.ResolveJobConflict"/> to wake
+    /// the blocked worker. Ignored if the job is unknown or not currently
+    /// <see cref="JobStatus.WaitingConflict"/>.
+    /// </summary>
+    public sealed record JobConflictResolved(int JobId, ConflictDecision Decision) : Msg;
+
+    /// <summary>
+    /// A <see cref="Zurari.Runtime.DirectoryWatcher"/> observed a filesystem change under
+    /// <paramref name="Path"/> made outside zurari (e.g. a file pasted via Explorer). Marks
+    /// <see cref="LoadState.Loading"/> and emits <see cref="Effect.ReadDirectory"/> for every column
+    /// whose path matches <paramref name="Path"/> (same normalization as
+    /// <see cref="ShellOpCompleted"/>'s <c>AffectedDirs</c> matching); no matching column is a no-op.
+    /// Note: our own jobs and shell operations also trigger watcher events for directories they just
+    /// touched - harmless, since re-reading an already-fresh column is a no-op in effect, so this is
+    /// not special-cased away.
+    /// </summary>
+    public sealed record ExternalDirectoryChanged(string Path) : Msg;
 }

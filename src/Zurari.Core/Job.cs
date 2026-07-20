@@ -29,6 +29,29 @@ public enum JobStatus
 
     /// <summary>Finished because <see cref="Msg.JobCancelRequested"/> was honored.</summary>
     Cancelled,
+
+    /// <summary>
+    /// The engine's pre-scan found same-named entries already at the destination and is blocked
+    /// waiting for the user's decision (see <see cref="Msg.JobConflictsFound"/>); resumes as
+    /// <see cref="Running"/> once <see cref="Msg.JobConflictResolved"/> arrives.
+    /// </summary>
+    WaitingConflict,
+}
+
+/// <summary>
+/// The user's choice for how to proceed when a job's pre-scan finds conflicting destination
+/// files - see <see cref="Msg.JobConflictsFound"/> / <see cref="Msg.JobConflictResolved"/>.
+/// </summary>
+public enum ConflictDecision
+{
+    /// <summary>Proceed, replacing every conflicting destination file with the source's.</summary>
+    Overwrite,
+
+    /// <summary>Proceed, leaving every conflicting destination file untouched (the old default behavior).</summary>
+    Skip,
+
+    /// <summary>Abort the job entirely without transferring anything further.</summary>
+    Cancel,
 }
 
 /// <summary>
@@ -48,6 +71,11 @@ public enum JobStatus
 /// <param name="CurrentFile">Name of the file currently being transferred, or <c>null</c> when idle/finished.</param>
 /// <param name="Error">Set only when <see cref="Status"/> is <see cref="JobStatus.Failed"/>.</param>
 /// <param name="SkippedFiles">Number of files skipped because a same-named entry already existed at the destination.</param>
+/// <param name="ConflictCount">
+/// Number of same-named destination entries the pre-scan found, set by
+/// <see cref="Msg.JobConflictsFound"/> while <see cref="Status"/> is
+/// <see cref="JobStatus.WaitingConflict"/>.
+/// </param>
 public sealed record Job(
     int JobId,
     JobKind Kind,
@@ -60,4 +88,5 @@ public sealed record Job(
     long TotalBytes = 0,
     string? CurrentFile = null,
     string? Error = null,
-    int SkippedFiles = 0);
+    int SkippedFiles = 0,
+    int ConflictCount = 0);

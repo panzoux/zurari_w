@@ -36,6 +36,7 @@ public sealed class JobRowVm : INotifyPropertyChanged
     private bool isRunning;
     private bool isFinished;
     private string statusLabel = string.Empty;
+    private bool isWaitingConflict;
 
     public JobRowVm(StateProjection.JobVm vm)
     {
@@ -91,6 +92,14 @@ public sealed class JobRowVm : INotifyPropertyChanged
         private set => SetField(ref statusLabel, value);
     }
 
+    /// <summary>True while the underlying job is <see cref="Zurari.Core.JobStatus.WaitingConflict"/>
+    /// - the row's 上書き/スキップ/中止 buttons should show only then.</summary>
+    public bool IsWaitingConflict
+    {
+        get => isWaitingConflict;
+        private set => SetField(ref isWaitingConflict, value);
+    }
+
     /// <summary>
     /// Copies every display field from <paramref name="vm"/> onto this instance (the caller
     /// guarantees <paramref name="vm"/>.JobId matches <see cref="JobId"/>; not checked here),
@@ -108,6 +117,7 @@ public sealed class JobRowVm : INotifyPropertyChanged
         IsRunning = vm.IsRunning;
         IsFinished = vm.IsFinished;
         StatusLabel = vm.StatusLabel;
+        IsWaitingConflict = vm.IsWaitingConflict;
     }
 
     private void SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
