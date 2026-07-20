@@ -66,6 +66,7 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <TextBlock x:Name="PreviewFileName" Grid.Row="0" Margin="0,0,0,4" FontWeight="Bold"
                            TextTrimming="CharacterEllipsis" />
@@ -80,6 +81,11 @@
                                    TextWrapping="Wrap" TextAlignment="Center"
                                    HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
                     </Grid>
+                </Border>
+                <Border Grid.Row="2" BorderBrush="#FFB0B0B0" BorderThickness="1,0,1,1" Background="#FFF0F0F0"
+                        Padding="6,4">
+                    <TextBlock x:Name="PreviewMetadataBlock" FontSize="11" TextWrapping="Wrap"
+                               Foreground="#FF404040" Visibility="Collapsed" />
                 </Border>
             </Grid>
         </Grid>

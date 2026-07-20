@@ -115,18 +115,47 @@ public enum PreviewKind
 /// otherwise.
 /// </param>
 /// <param name="Error">Set only when a <see cref="Msg.PreviewFailed"/> was the most recent result for the current generation.</param>
+/// <param name="Metadata">
+/// Finder-style file metadata (size/dates, plus pixel dimensions and bit depth for images) from
+/// the most recent <see cref="Msg.PreviewLoaded"/> for this generation, or <c>null</c> before any
+/// result has arrived (or after a <see cref="Msg.PreviewFailed"/>, which does not carry one).
+/// </param>
 public sealed record PreviewState(
     int Generation,
     string? Path,
     PreviewKind Kind,
     string? Text,
     ImmutableArray<byte> ImageBytes,
-    string? Error)
+    string? Error,
+    PreviewMetadata? Metadata = null)
 {
     /// <summary>Starting state: no file selected, generation 0.</summary>
     public static PreviewState Initial { get; } = new(
-        Generation: 0, Path: null, Kind: PreviewKind.None, Text: null, ImageBytes: [], Error: null);
+        Generation: 0, Path: null, Kind: PreviewKind.None, Text: null, ImageBytes: [], Error: null, Metadata: null);
 }
+
+/// <summary>
+/// Finder-style inspector metadata for the file the preview pane currently shows - see
+/// <see cref="PreviewState.Metadata"/> and <see cref="Msg.PreviewLoaded"/>. Gathered by
+/// <c>Zurari.Runtime.WorkerRuntime.ExecuteLoadPreview</c> (I/O); <see cref="PixelWidth"/>,
+/// <see cref="PixelHeight"/> and <see cref="BitsPerPixel"/> are only set for image kinds (parsed
+/// by <see cref="ImageHeaderParser"/>) and stay <c>null</c> otherwise.
+/// </summary>
+/// <param name="FileName">The file's own name (no directory), e.g. <c>"photo.png"</c>.</param>
+/// <param name="SizeBytes">File size in bytes.</param>
+/// <param name="Created">File creation time.</param>
+/// <param name="Modified">File last-write time.</param>
+/// <param name="PixelWidth">Image width in pixels, when known.</param>
+/// <param name="PixelHeight">Image height in pixels, when known.</param>
+/// <param name="BitsPerPixel">Image bit depth (bits per pixel), when known.</param>
+public sealed record PreviewMetadata(
+    string FileName,
+    long SizeBytes,
+    DateTime Created,
+    DateTime Modified,
+    int? PixelWidth = null,
+    int? PixelHeight = null,
+    int? BitsPerPixel = null);
 
 /// <summary>
 /// Immutable snapshot of the entire application. The UI is a projection of this

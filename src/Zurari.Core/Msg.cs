@@ -231,14 +231,17 @@ public abstract record Msg
     /// rather than add a dedicated field, it carries the file's head (up to a few KB - the Runtime's
     /// job to cap) so the App layer's hex-dump view (<see cref="HexDump.Format"/>) has bytes to
     /// format; for <see cref="PreviewKind.Image"/> it is the whole file, and for every other kind
-    /// it is empty.
+    /// it is empty. <paramref name="Metadata"/> carries Finder-style inspector data (size/dates,
+    /// plus pixel dimensions/depth for images) gathered alongside the load - present for every
+    /// kind, not just images; see <see cref="PreviewState.Metadata"/>.
     /// </summary>
     public sealed record PreviewLoaded(
         int Generation,
         PreviewKind Kind,
         string? Text,
         ImmutableArray<byte> ImageBytes,
-        string? BinaryLabel) : Msg;
+        string? BinaryLabel,
+        PreviewMetadata? Metadata = null) : Msg;
 
     /// <summary>
     /// An <see cref="Effect.LoadPreview"/> failed. Subject to the same staleness check as

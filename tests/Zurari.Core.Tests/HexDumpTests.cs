@@ -4,23 +4,54 @@ namespace Zurari.Core.Tests;
 
 public class HexDumpTests
 {
+    private const string DefaultHeader =
+        "address   +0 +1 +2 +3 +4 +5 +6 +7  +8 +9 +A +B +C +D +E +F  ASCII";
+
+    private const string DefaultSeparator =
+        "--------  -- -- -- -- -- -- -- --  -- -- -- -- -- -- -- --  ----------------";
+
     [Fact]
-    public void Empty_input_formats_as_empty_string()
+    public void Header_and_separator_precede_the_data_lines()
     {
-        Assert.Equal(string.Empty, HexDump.Format([]));
+        byte[] bytes = [0x41];
+
+        var result = HexDump.Format(bytes);
+        var lines = result.Split('\n');
+
+        Assert.Equal(DefaultHeader, lines[0]);
+        Assert.Equal(DefaultSeparator, lines[1]);
+        Assert.Equal("00000000  41                                                A", lines[2]);
+        Assert.Equal(3, lines.Length);
     }
 
     [Fact]
-    public void An_exact_line_formats_as_a_single_line_with_no_trailing_newline()
+    public void Header_adapts_to_a_custom_bytesPerLine()
+    {
+        var result = HexDump.Format([0x01, 0x02], bytesPerLine: 4);
+        var lines = result.Split('\n');
+
+        Assert.Equal("address   +0 +1 +2 +3  ASCII", lines[0]);
+        Assert.Equal("--------  -- -- -- --  ----", lines[1]);
+    }
+
+    [Fact]
+    public void Empty_input_formats_as_just_the_header_and_separator()
+    {
+        Assert.Equal(DefaultHeader + "\n" + DefaultSeparator, HexDump.Format([]));
+    }
+
+    [Fact]
+    public void An_exact_line_formats_as_a_single_line_after_the_header()
     {
         byte[] bytes = [0x4D, 0x5A, 0x90, 0x00, 0x03, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00];
 
         var result = HexDump.Format(bytes);
+        var lines = result.Split('\n');
 
+        Assert.Equal(3, lines.Length);
         Assert.Equal(
             "00000000  4D 5A 90 00 03 00 00 00  04 00 00 00 FF FF 00 00  MZ..............",
-            result);
-        Assert.DoesNotContain('\n', result);
+            lines[2]);
     }
 
     [Fact]
@@ -29,10 +60,11 @@ public class HexDumpTests
         byte[] bytes = [0x41, 0x42, 0x43];
 
         var result = HexDump.Format(bytes);
+        var lines = result.Split('\n');
 
         Assert.Equal(
             "00000000  41 42 43                                          ABC",
-            result);
+            lines[2]);
     }
 
     [Fact]
@@ -53,9 +85,9 @@ public class HexDumpTests
         var result = HexDump.Format(bytes);
         var lines = result.Split('\n');
 
-        Assert.Equal(2, lines.Length);
-        Assert.StartsWith("00000000  ", lines[0]);
-        Assert.StartsWith("00000010  ", lines[1]);
+        Assert.Equal(4, lines.Length); // header + separator + 2 data lines
+        Assert.StartsWith("00000000  ", lines[2]);
+        Assert.StartsWith("00000010  ", lines[3]);
     }
 
     [Fact]
@@ -66,9 +98,9 @@ public class HexDumpTests
         var result = HexDump.Format(bytes, bytesPerLine: 4);
         var lines = result.Split('\n');
 
-        Assert.Equal(2, lines.Length);
-        Assert.StartsWith("00000000  ", lines[0]);
-        Assert.StartsWith("00000004  ", lines[1]);
+        Assert.Equal(4, lines.Length); // header + separator + 2 data lines
+        Assert.StartsWith("00000000  ", lines[2]);
+        Assert.StartsWith("00000004  ", lines[3]);
     }
 
     [Fact]

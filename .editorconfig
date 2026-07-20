@@ -62,3 +62,10 @@ dotnet_diagnostic.CA1031.severity = none
 # this file only.
 [src/Zurari.Runtime/DirectoryWatcher.cs]
 dotnet_diagnostic.CA1031.severity = none
+
+# VideoThumbnailer: shelling out to an optional external tool (ffmpegthumbnailer/ffmpeg) that may
+# be missing, misconfigured, or fail on a particular file - any failure must degrade to "no
+# thumbnail" (null, falling back to the plain Binary preview) rather than take down a worker, so a
+# broad catch around the whole attempt is intentional. Scoped to this file only.
+[src/Zurari.Runtime/VideoThumbnailer.cs]
+dotnet_diagnostic.CA1031.severity = none

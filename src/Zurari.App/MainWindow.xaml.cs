@@ -796,19 +796,25 @@ public sealed partial class MainWindow : Window, IDisposable
 
     /// <summary>
     /// Wires <see cref="StateProjection.ProjectPreview"/> onto the preview pane's three
-    /// mutually-exclusive views (image / text-or-hex / metadata), toggling visibility by
-    /// <see cref="PreviewKind"/>. <see cref="PreviewKind.Binary"/> shares the same monospace text
-    /// box as <see cref="PreviewKind.Text"/> - its <c>vm.Text</c> is already the label header plus
-    /// hex dump, composed in the projection. The only decision made here rather than in the
-    /// projection is the <c>ImageBytes</c> -&gt; <c>BitmapImage</c> decode, which is wiring
-    /// (WPF-specific, not a display-formatting choice) - cached by
-    /// <see cref="lastDecodedImageGeneration"/> so it only runs once per distinct preview, not on
-    /// every unrelated re-render.
+    /// mutually-exclusive content views (image / text-or-hex / status message), toggling
+    /// visibility by <see cref="PreviewKind"/>, plus the Finder-style metadata block underneath
+    /// (<see cref="PreviewMetadataBlock"/>, shown whenever <c>vm.MetadataText</c> is non-empty -
+    /// independent of <see cref="PreviewKind"/>, since it applies to every kind alike).
+    /// <see cref="PreviewKind.Binary"/> shares the same monospace text box as
+    /// <see cref="PreviewKind.Text"/> - its <c>vm.Text</c> is already the label header plus hex
+    /// dump, composed in the projection. The only decision made here rather than in the projection
+    /// is the <c>ImageBytes</c> -&gt; <c>BitmapImage</c> decode, which is wiring (WPF-specific, not
+    /// a display-formatting choice) - cached by <see cref="lastDecodedImageGeneration"/> so it only
+    /// runs once per distinct preview, not on every unrelated re-render.
     /// </summary>
     private void RenderPreview(AppState state)
     {
         var vm = StateProjection.ProjectPreview(state);
         PreviewFileName.Text = vm.FileName ?? string.Empty;
+
+        PreviewMetadataBlock.Text = vm.MetadataText;
+        PreviewMetadataBlock.Visibility =
+            string.IsNullOrEmpty(vm.MetadataText) ? Visibility.Collapsed : Visibility.Visible;
 
         PreviewImage.Visibility = Visibility.Collapsed;
         PreviewTextBox.Visibility = Visibility.Collapsed;

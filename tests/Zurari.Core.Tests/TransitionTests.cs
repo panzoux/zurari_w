@@ -1838,6 +1838,32 @@ public class TransitionTests
     }
 
     [Fact]
+    public void PreviewLoaded_stores_the_carried_metadata()
+    {
+        var afterCursor = StateWithLoadingPreview();
+        var generation = afterCursor.Preview.Generation;
+        var metadata = new PreviewMetadata(
+            "file1", 1234, new DateTime(2024, 1, 1), new DateTime(2024, 1, 2), PixelWidth: 640, PixelHeight: 480, BitsPerPixel: 24);
+
+        var (next, _) = Transition.Apply(
+            afterCursor, new Msg.PreviewLoaded(generation, PreviewKind.Image, null, [1, 2], null, metadata));
+
+        Assert.Equal(metadata, next.Preview.Metadata);
+    }
+
+    [Fact]
+    public void PreviewLoaded_without_metadata_defaults_to_null()
+    {
+        var afterCursor = StateWithLoadingPreview();
+        var generation = afterCursor.Preview.Generation;
+
+        var (next, _) = Transition.Apply(
+            afterCursor, new Msg.PreviewLoaded(generation, PreviewKind.Text, "hi", [], null));
+
+        Assert.Null(next.Preview.Metadata);
+    }
+
+    [Fact]
     public void PreviewFailed_with_matching_generation_sets_error_and_clears_kind()
     {
         var afterCursor = StateWithLoadingPreview();
@@ -1963,6 +1989,12 @@ public class TransitionProperties
     private static Gen<ImmutableArray<byte>> GenImageBytes => Gen.OneOfConst(
         ImmutableArray<byte>.Empty, ImmutableArray.Create<byte>(1, 2, 3));
 
+    private static Gen<PreviewMetadata?> GenPreviewMetadata => Gen.OneOfConst<PreviewMetadata?>(
+        null,
+        new PreviewMetadata("file.txt", 1024, new DateTime(2024, 1, 1), new DateTime(2024, 1, 2)),
+        new PreviewMetadata(
+            "pic.png", 2048, new DateTime(2024, 1, 1), new DateTime(2024, 1, 2), PixelWidth: 100, PixelHeight: 50, BitsPerPixel: 24));
+
     private static Gen<EntryKind> GenEntryKind => Gen.OneOfConst(
         EntryKind.Drive,
         EntryKind.Directory,
@@ -2017,8 +2049,8 @@ public class TransitionProperties
         Gen.Select(GenJobId, GenPaths).Select(t => (Msg)new Msg.JobCancelled(t.Item1, t.Item2)),
         GenJobId.Select(i => (Msg)new Msg.JobCancelRequested(i)),
         GenJobId.Select(i => (Msg)new Msg.JobDismissed(i)),
-        Gen.Select(GenJobId, GenPreviewKind, GenImageBytes)
-            .Select(t => (Msg)new Msg.PreviewLoaded(t.Item1, t.Item2, "text", t.Item3, "label")),
+        Gen.Select(Gen.Select(GenJobId, GenPreviewKind), Gen.Select(GenImageBytes, GenPreviewMetadata))
+            .Select(t => (Msg)new Msg.PreviewLoaded(t.Item1.Item1, t.Item1.Item2, "text", t.Item2.Item1, "label", t.Item2.Item2)),
         GenJobId.Select(i => (Msg)new Msg.PreviewFailed(i, "error")),
         GenPaths.Select(paths => (Msg)new Msg.SetCutPending(paths)),
         Gen.Select(GenJobId, Gen.Int[0, 5]).Select(t => (Msg)new Msg.JobConflictsFound(t.Item1, t.Item2)),

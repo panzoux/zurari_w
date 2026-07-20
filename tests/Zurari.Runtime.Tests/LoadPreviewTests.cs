@@ -248,4 +248,127 @@ public class LoadPreviewTests
             Directory.Delete(dir, recursive: true);
         }
     }
+
+    [Fact]
+    public void LoadPreview_attaches_file_metadata_to_a_text_result()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var path = Path.Combine(dir, "note.txt");
+            File.WriteAllText(path, "hello");
+
+            var queue = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(queue.Enqueue);
+            runtime.Submit(new Effect.LoadPreview(10, path));
+
+            var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
+            Assert.NotNull(loaded.Metadata);
+            Assert.Equal("note.txt", loaded.Metadata!.FileName);
+            Assert.Equal(5, loaded.Metadata.SizeBytes);
+            Assert.Null(loaded.Metadata.PixelWidth);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadPreview_attaches_file_metadata_to_a_binary_result()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var path = Path.Combine(dir, "data.bin");
+            File.WriteAllBytes(path, [0x10, 0x00, 0x20]);
+
+            var queue = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(queue.Enqueue);
+            runtime.Submit(new Effect.LoadPreview(11, path));
+
+            var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
+            Assert.NotNull(loaded.Metadata);
+            Assert.Equal("data.bin", loaded.Metadata!.FileName);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadPreview_of_a_PNG_reports_metadata_with_parsed_pixel_dimensions()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var path = Path.Combine(dir, "pic.png");
+            byte[] content =
+            [
+                .. PngSignature,
+                0x00, 0x00, 0x00, 0x0D,
+                (byte)'I', (byte)'H', (byte)'D', (byte)'R',
+                0x00, 0x00, 0x00, 0x64, // width = 100
+                0x00, 0x00, 0x00, 0x32, // height = 50
+                0x08, // bit depth
+                0x02, // color type = RGB
+                0x00, 0x00, 0x00,
+            ];
+            File.WriteAllBytes(path, content);
+
+            var queue = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(queue.Enqueue);
+            runtime.Submit(new Effect.LoadPreview(12, path));
+
+            var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
+            Assert.Equal(PreviewKind.Image, loaded.Kind);
+            Assert.NotNull(loaded.Metadata);
+            Assert.Equal(100, loaded.Metadata!.PixelWidth);
+            Assert.Equal(50, loaded.Metadata.PixelHeight);
+            Assert.Equal(24, loaded.Metadata.BitsPerPixel);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// A file with a video extension but no recognizable magic number (e.g. WMV's ASF container is
+    /// not in <see cref="FileTypeDetector"/>'s signature table) must still be routed through the
+    /// video preview path rather than falling into the generic Binary/Text branches. Since this
+    /// test machine's ffmpeg/ffmpegthumbnailer availability is unknown, only the shape that must
+    /// hold either way is asserted: either an Image (thumbnail succeeded) or a Binary result whose
+    /// label says the tool is missing.
+    /// </summary>
+    [Fact]
+    public void LoadPreview_of_a_video_extension_with_no_magic_match_is_routed_as_video()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var path = Path.Combine(dir, "clip.wmv");
+            File.WriteAllBytes(path, [0x00, 0x01, 0x02, 0x00, 0x03]); // not a real WMV - no tool can decode it
+
+            var queue = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(queue.Enqueue);
+            runtime.Submit(new Effect.LoadPreview(13, path));
+
+            var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(20)));
+            Assert.NotNull(loaded.Metadata);
+            if (loaded.Kind == PreviewKind.Binary)
+            {
+                Assert.Contains("Video", loaded.BinaryLabel);
+            }
+            else
+            {
+                Assert.Equal(PreviewKind.Image, loaded.Kind);
+            }
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }

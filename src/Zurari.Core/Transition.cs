@@ -58,7 +58,7 @@ public static class Transition
             Msg.JobCancelRequested m => JobCancelRequested(state, m.JobId),
             Msg.JobDismissed m => (JobDismissed(state, m.JobId), NoEffects),
             Msg.PreviewLoaded m =>
-                (PreviewLoaded(state, m.Generation, m.Kind, m.Text, m.ImageBytes, m.BinaryLabel), NoEffects),
+                (PreviewLoaded(state, m.Generation, m.Kind, m.Text, m.ImageBytes, m.BinaryLabel, m.Metadata), NoEffects),
             Msg.PreviewFailed m => (PreviewFailed(state, m.Generation, m.Error), NoEffects),
             Msg.SetCutPending m => (state with { CutPending = m.Paths }, NoEffects),
             Msg.JobConflictsFound m => (JobConflictsFound(state, m.JobId, m.ConflictCount), NoEffects),
@@ -877,7 +877,13 @@ public static class Transition
     }
 
     private static AppState PreviewLoaded(
-        AppState state, int generation, PreviewKind kind, string? text, ImmutableArray<byte> imageBytes, string? binaryLabel)
+        AppState state,
+        int generation,
+        PreviewKind kind,
+        string? text,
+        ImmutableArray<byte> imageBytes,
+        string? binaryLabel,
+        PreviewMetadata? metadata)
     {
         if (generation != state.Preview.Generation)
         {
@@ -889,7 +895,14 @@ public static class Transition
         var displayText = kind == PreviewKind.Binary ? binaryLabel : text;
         return state with
         {
-            Preview = state.Preview with { Kind = kind, Text = displayText, ImageBytes = imageBytes, Error = null },
+            Preview = state.Preview with
+            {
+                Kind = kind,
+                Text = displayText,
+                ImageBytes = imageBytes,
+                Error = null,
+                Metadata = metadata,
+            },
         };
     }
 

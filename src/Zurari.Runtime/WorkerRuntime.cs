@@ -30,6 +30,18 @@ public sealed class WorkerRuntime : IDisposable
     /// </summary>
     private const int PreviewHexHeadBytes = 4096;
 
+    /// <summary>How long <see cref="ExecuteLoadPreview"/> waits for an external thumbnailer (see
+    /// <see cref="VideoThumbnailer"/>) before giving up and falling back to the plain Binary
+    /// preview.</summary>
+    private static readonly TimeSpan VideoThumbnailTimeout = TimeSpan.FromSeconds(4);
+
+    /// <summary>
+    /// Extensions treated as video even when <see cref="FileTypeDetector"/>'s magic-number sniff
+    /// is inconclusive (e.g. ASF-based WMV, or any container the signature table does not cover) -
+    /// see <see cref="ExecuteLoadPreview"/>.
+    /// </summary>
+    private static readonly string[] VideoExtensions = [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".webm"];
+
     private readonly Channel<Effect> _channel;
     private readonly Action<Msg> _post;
     private readonly CancellationTokenSource _cts;
@@ -219,31 +231,89 @@ public sealed class WorkerRuntime : IDisposable
             using var stream = new FileStream(
                 effect.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
 
+            var fileInfo = new FileInfo(effect.Path);
+            var baseMetadata = new PreviewMetadata(fileInfo.Name, fileInfo.Length, fileInfo.CreationTime, fileInfo.LastWriteTime);
+
             var headLength = (int)Math.Min(stream.Length, PreviewHeadBytes);
             var head = new byte[headLength];
             stream.ReadExactly(head);
 
             var detected = FileTypeDetector.Detect(head);
 
+            if (detected.Category == FileCategory.Video || IsVideoExtension(effect.Path))
+            {
+                ExecuteVideoPreview(effect, detected, effect.Path, head, baseMetadata);
+                return;
+            }
+
             if (detected.Category == FileCategory.Image)
             {
-                PostImagePreview(effect, stream, detected, head);
+                PostImagePreview(effect, stream, detected, head, baseMetadata);
                 return;
             }
 
             if (TryDecodeAsText(head, out var text))
             {
-                _post(new Msg.PreviewLoaded(effect.Generation, PreviewKind.Text, text, ImmutableArray<byte>.Empty, null));
+                _post(new Msg.PreviewLoaded(
+                    effect.Generation, PreviewKind.Text, text, ImmutableArray<byte>.Empty, null, baseMetadata));
                 return;
             }
 
             _post(new Msg.PreviewLoaded(
-                effect.Generation, PreviewKind.Binary, null, HexHead(head), detected.Label));
+                effect.Generation, PreviewKind.Binary, null, HexHead(head), detected.Label, baseMetadata));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _post(new Msg.PreviewFailed(effect.Generation, ex.Message));
         }
+    }
+
+    private static bool IsVideoExtension(string path)
+    {
+        var ext = Path.GetExtension(path);
+        foreach (var candidate in VideoExtensions)
+        {
+            if (string.Equals(ext, candidate, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string VideoLabel(DetectedType detected, string path)
+    {
+        if (detected.Category == FileCategory.Video)
+        {
+            return detected.Label;
+        }
+
+        var ext = Path.GetExtension(path).TrimStart('.').ToUpperInvariant();
+        return ext.Length == 0 ? "Video" : $"{ext} Video";
+    }
+
+    /// <summary>
+    /// Tries an external thumbnailer (see <see cref="VideoThumbnailer"/>) for a video file: on
+    /// success, reports it as a normal <see cref="PreviewKind.Image"/> preview (pixel dimensions
+    /// parsed cheaply from the generated PNG via <see cref="ImageHeaderParser"/> - it is a PNG we
+    /// just made, no external decoder needed); on failure (no tool installed, or the tool could not
+    /// produce a frame for this file), falls back to the same Binary preview as any other
+    /// non-renderable file, with a label noting the missing tool.
+    /// </summary>
+    private void ExecuteVideoPreview(
+        Effect.LoadPreview effect, DetectedType detected, string path, byte[] head, PreviewMetadata baseMetadata)
+    {
+        var thumbnail = VideoThumbnailer.TryCreateThumbnail(path, VideoThumbnailTimeout);
+        if (thumbnail is not null)
+        {
+            var metadata = WithPixelInfo(baseMetadata, thumbnail);
+            _post(new Msg.PreviewLoaded(effect.Generation, PreviewKind.Image, null, [.. thumbnail], null, metadata));
+            return;
+        }
+
+        var label = $"{VideoLabel(detected, path)} (サムネイル生成ツールなし)";
+        _post(new Msg.PreviewLoaded(effect.Generation, PreviewKind.Binary, null, HexHead(head), label, baseMetadata));
     }
 
     /// <summary>
@@ -256,19 +326,33 @@ public sealed class WorkerRuntime : IDisposable
         return ImmutableArray.Create(head, 0, length);
     }
 
-    private void PostImagePreview(Effect.LoadPreview effect, FileStream stream, DetectedType detected, byte[] head)
+    private void PostImagePreview(
+        Effect.LoadPreview effect, FileStream stream, DetectedType detected, byte[] head, PreviewMetadata baseMetadata)
     {
+        var metadata = WithPixelInfo(baseMetadata, head);
+
         if (stream.Length > _previewImageSizeLimitBytes)
         {
             _post(new Msg.PreviewLoaded(
-                effect.Generation, PreviewKind.Binary, null, HexHead(head), $"{detected.Label} (サイズ超過)"));
+                effect.Generation, PreviewKind.Binary, null, HexHead(head), $"{detected.Label} (サイズ超過)", metadata));
             return;
         }
 
         stream.Position = 0;
         var allBytes = new byte[stream.Length];
         stream.ReadExactly(allBytes);
-        _post(new Msg.PreviewLoaded(effect.Generation, PreviewKind.Image, null, [.. allBytes], null));
+        _post(new Msg.PreviewLoaded(effect.Generation, PreviewKind.Image, null, [.. allBytes], null, metadata));
+    }
+
+    /// <summary>Attaches pixel width/height/bit-depth to <paramref name="baseMetadata"/> when
+    /// <see cref="ImageHeaderParser"/> can parse them out of <paramref name="imageHead"/>; returns
+    /// <paramref name="baseMetadata"/> unchanged otherwise.</summary>
+    private static PreviewMetadata WithPixelInfo(PreviewMetadata baseMetadata, byte[] imageHead)
+    {
+        var dims = ImageHeaderParser.Parse(imageHead);
+        return dims is { } d
+            ? baseMetadata with { PixelWidth = d.Width, PixelHeight = d.Height, BitsPerPixel = d.BitsPerPixel }
+            : baseMetadata;
     }
 
     /// <summary>

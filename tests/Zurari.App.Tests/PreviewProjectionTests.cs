@@ -107,4 +107,63 @@ public class PreviewProjectionTests
 
         Assert.Equal("access denied", vm.Error);
     }
+
+    [Fact]
+    public void No_metadata_projects_an_empty_metadata_text()
+    {
+        var preview = new PreviewState(1, @"C:\notes.txt", PreviewKind.Text, "hello", [], null, Metadata: null);
+        var state = StateWithPreview(preview);
+
+        var vm = StateProjection.ProjectPreview(state);
+
+        Assert.Equal(string.Empty, vm.MetadataText);
+    }
+
+    [Fact]
+    public void Text_kind_metadata_projects_name_kind_size_and_dates_without_a_resolution_line()
+    {
+        var metadata = new PreviewMetadata(
+            "notes.txt", 1536, new DateTime(2024, 3, 1, 9, 0, 0), new DateTime(2024, 3, 2, 10, 30, 0));
+        var preview = new PreviewState(1, @"C:\notes.txt", PreviewKind.Text, "hello", [], null, metadata);
+        var state = StateWithPreview(preview);
+
+        var vm = StateProjection.ProjectPreview(state);
+
+        Assert.Contains("ファイル名: notes.txt", vm.MetadataText);
+        Assert.Contains("種類: テキストファイル", vm.MetadataText);
+        Assert.Contains("サイズ: 1.5 KB (1,536 バイト)", vm.MetadataText);
+        Assert.Contains("作成日時: 2024-03-01 09:00:00", vm.MetadataText);
+        Assert.Contains("更新日時: 2024-03-02 10:30:00", vm.MetadataText);
+        Assert.DoesNotContain("解像度", vm.MetadataText);
+        Assert.DoesNotContain("色深度", vm.MetadataText);
+    }
+
+    [Fact]
+    public void Image_kind_metadata_projects_resolution_and_bit_depth()
+    {
+        var metadata = new PreviewMetadata(
+            "pic.png", 204800, new DateTime(2024, 1, 1), new DateTime(2024, 1, 2),
+            PixelWidth: 1754, PixelHeight: 804, BitsPerPixel: 24);
+        var preview = new PreviewState(1, @"C:\pic.png", PreviewKind.Image, null, [1, 2, 3], null, metadata);
+        var state = StateWithPreview(preview);
+
+        var vm = StateProjection.ProjectPreview(state);
+
+        Assert.Contains("種類: 画像ファイル", vm.MetadataText);
+        Assert.Contains("解像度: 1754 × 804", vm.MetadataText);
+        Assert.Contains("色深度: 24 bit", vm.MetadataText);
+    }
+
+    [Fact]
+    public void Binary_kind_metadata_reuses_the_detected_type_label_as_the_kind_line()
+    {
+        var metadata = new PreviewMetadata("app.exe", 2048, new DateTime(2024, 1, 1), new DateTime(2024, 1, 2));
+        var preview = new PreviewState(1, @"C:\app.exe", PreviewKind.Binary, "PE Executable", [], null, metadata);
+        var state = StateWithPreview(preview);
+
+        var vm = StateProjection.ProjectPreview(state);
+
+        Assert.Contains("種類: PE Executable", vm.MetadataText);
+        Assert.DoesNotContain("解像度", vm.MetadataText);
+    }
 }

@@ -237,17 +237,24 @@ public static class StateProjection
     /// </param>
     /// <param name="ImageBytes">Whole-file bytes when <see cref="Kind"/> is <see cref="PreviewKind.Image"/>.</param>
     /// <param name="Error">Set when the most recent load for this generation failed.</param>
+    /// <param name="MetadataText">
+    /// Finder-inspector-style metadata block (file name, size, dates, and - for images - pixel
+    /// resolution and bit depth), one line per fact, already formatted for display - see
+    /// <see cref="FormatMetadata"/>. Empty string when <see cref="PreviewState.Metadata"/> is
+    /// <c>null</c> (nothing loaded yet, or the load failed before any metadata arrived).
+    /// </param>
     public sealed record PreviewVm(
         int Generation,
         string? FileName,
         PreviewKind Kind,
         string? Text,
         ImmutableArray<byte> ImageBytes,
-        string? Error);
+        string? Error,
+        string MetadataText);
 
     /// <summary>
     /// Projects <see cref="AppState.Preview"/> into a <see cref="PreviewVm"/>. Pure - no I/O, no
-    /// decisions beyond display formatting (the file name).
+    /// decisions beyond display formatting (the file name, the metadata block).
     /// </summary>
     public static PreviewVm ProjectPreview(AppState state)
     {
@@ -256,8 +263,61 @@ public static class StateProjection
         var preview = state.Preview;
         var fileName = preview.Path is null ? null : LastPathSegment(preview.Path);
         var text = preview.Kind == PreviewKind.Binary ? FormatBinaryText(preview) : preview.Text;
-        return new PreviewVm(preview.Generation, fileName, preview.Kind, text, preview.ImageBytes, preview.Error);
+        var metadataText = FormatMetadata(preview);
+        return new PreviewVm(preview.Generation, fileName, preview.Kind, text, preview.ImageBytes, preview.Error, metadataText);
     }
+
+    /// <summary>
+    /// Builds the metadata-block lines (see <see cref="PreviewVm.MetadataText"/>), Finder-inspector
+    /// style: file name, a kind label, human-readable size (plus the exact byte count),
+    /// created/modified timestamps, and - only when <see cref="PreviewMetadata.PixelWidth"/>/
+    /// <see cref="PreviewMetadata.PixelHeight"/>/<see cref="PreviewMetadata.BitsPerPixel"/> are
+    /// present - resolution and bit depth. Empty string when there is no metadata to show.
+    /// </summary>
+    private static string FormatMetadata(PreviewState preview)
+    {
+        var metadata = preview.Metadata;
+        if (metadata is null)
+        {
+            return string.Empty;
+        }
+
+        var lines = new List<string>
+        {
+            $"ファイル名: {metadata.FileName}",
+            $"種類: {PreviewKindLabel(preview)}",
+            $"サイズ: {FormatBytes(metadata.SizeBytes)} ({metadata.SizeBytes.ToString("N0", CultureInfo.InvariantCulture)} バイト)",
+            $"作成日時: {metadata.Created.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)}",
+            $"更新日時: {metadata.Modified.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)}",
+        };
+
+        if (metadata.PixelWidth is int width && metadata.PixelHeight is int height)
+        {
+            lines.Add($"解像度: {width} × {height}");
+        }
+
+        if (metadata.BitsPerPixel is int bitsPerPixel)
+        {
+            lines.Add($"色深度: {bitsPerPixel} bit");
+        }
+
+        return string.Join("\n", lines);
+    }
+
+    /// <summary>
+    /// Short "種類" (kind) label for the metadata block. Binary reuses the
+    /// <see cref="FileTypeDetector"/> label already carried in <see cref="PreviewState.Text"/> for
+    /// that kind (e.g. "PE Executable") since it is more informative than a generic word; Image
+    /// and Text kinds get a plain Japanese label since there is no equivalent per-kind detail to
+    /// surface for them.
+    /// </summary>
+    private static string PreviewKindLabel(PreviewState preview) => preview.Kind switch
+    {
+        PreviewKind.Image => "画像ファイル",
+        PreviewKind.Text => "テキストファイル",
+        PreviewKind.Binary => preview.Text ?? "バイナリファイル",
+        _ => "",
+    };
 
     /// <summary>
     /// Builds the Binary-kind display text: the type label (<see cref="PreviewState.Text"/>) as a
