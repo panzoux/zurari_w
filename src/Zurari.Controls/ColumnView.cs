@@ -424,6 +424,13 @@ public sealed class ColumnView : Control
             suppressSelectionChanged = false;
         }
 
+        if (ColumnBrowser.InputTraceEnabled)
+        {
+            Trace.WriteLine(
+                $"[input] col={column?.Title} SyncFromColumn cursorIndex={cursorIndex} "
+                + $"lastSyncedCursorIndex={lastSyncedCursorIndex} entries={column?.Entries.Count}");
+        }
+
         if (lastSyncedCursorIndex == cursorIndex)
         {
             return;
@@ -433,6 +440,11 @@ public sealed class ColumnView : Control
 
         if (column is not null && cursorIndex >= 0 && cursorIndex < column.Entries.Count)
         {
+            if (ColumnBrowser.InputTraceEnabled)
+            {
+                Trace.WriteLine($"[input] col={column.Title} ScrollIntoView cursorIndex={cursorIndex}");
+            }
+
             ScrollIntoViewInvoked?.Invoke(this, EventArgs.Empty);
             List.ScrollIntoView(column.Entries[cursorIndex]);
         }
