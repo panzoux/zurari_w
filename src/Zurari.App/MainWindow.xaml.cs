@@ -50,6 +50,15 @@ public sealed partial class MainWindow : Window, IDisposable
     private ImmutableArray<Column> lastRenderedColumns;
 
     /// <summary>
+    /// The <see cref="AppState.FocusedColumn"/> most recently pushed into <see cref="Browser"/>.
+    /// Focus-only changes (<see cref="Msg.GoToParent"/>, <see cref="Msg.FocusColumn"/>) leave
+    /// <see cref="AppState.Columns"/>'s array reference untouched, so the guard above alone would
+    /// never re-project them - the strong-cursor highlight silently stopped following focus (Left/
+    /// Backspace looked like a no-op) until this was tracked alongside it.
+    /// </summary>
+    private int lastRenderedFocusedColumn = -1;
+
+    /// <summary>
     /// The <see cref="StateProjection.PreviewVm.Generation"/> of the image most recently decoded
     /// into <see cref="PreviewImage"/>'s source - lets <see cref="RenderPreview"/> skip re-decoding
     /// the same <c>BitmapImage</c> on every unrelated re-render (e.g. a job progress tick) and only
@@ -699,10 +708,11 @@ public sealed partial class MainWindow : Window, IDisposable
         // reassignment in that case is what stops Controls.ColumnBrowser.RebuildColumns and
         // ColumnView.SyncFromColumn from running - and yanking back user scroll/hover state - on
         // renders that have nothing to do with the browsed columns (Phase 5 bug B3).
-        if (state.Columns != lastRenderedColumns)
+        if (state.Columns != lastRenderedColumns || state.FocusedColumn != lastRenderedFocusedColumn)
         {
             Browser.Columns = StateProjection.Project(state, e => iconCache.GetIcon(e.Kind, e.Name));
             lastRenderedColumns = state.Columns;
+            lastRenderedFocusedColumn = state.FocusedColumn;
 
             // Cheap reconcile (see DirectoryWatcher.SetWatchedPaths' remarks) - only worth doing
             // when the columns actually changed, same guard as the Browser.Columns reassignment
