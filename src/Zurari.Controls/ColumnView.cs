@@ -446,7 +446,22 @@ public sealed class ColumnView : Control
             }
 
             ScrollIntoViewInvoked?.Invoke(this, EventArgs.Empty);
-            List.ScrollIntoView(column.Entries[cursorIndex]);
+            var target = column.Entries[cursorIndex];
+            List.ScrollIntoView(target);
+
+            // WPF/VirtualizingStackPanel quirk (confirmed live: ScrollIntoView fired on every
+            // single cursor move, yet the viewport visibly stopped following it right at the
+            // edge): a ScrollIntoView issued before this layout pass has generated/measured the
+            // target row's container can be silently dropped. Re-issuing it once the layout pass
+            // that (re)generates containers has actually run reliably fixes it. Re-checks List/
+            // Column/cursorIndex because several more moves can land before this callback fires.
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+            {
+                if (List is not null && Column == column && lastSyncedCursorIndex == cursorIndex)
+                {
+                    List.ScrollIntoView(target);
+                }
+            }));
         }
     }
 
