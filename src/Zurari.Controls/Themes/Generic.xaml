@@ -67,7 +67,8 @@
                                      ItemsSource="{Binding Column.Entries, RelativeSource={RelativeSource TemplatedParent}}"
                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                      VirtualizingPanel.IsVirtualizing="True"
-                                     VirtualizingPanel.VirtualizationMode="Recycling">
+                                     VirtualizingPanel.VirtualizationMode="Recycling"
+                                     VirtualizingPanel.ScrollUnit="Item">
                                 <ListBox.ItemContainerStyle>
                                     <Style TargetType="{x:Type ListBoxItem}">
                                         <!-- Keyboard focus must stay on ColumnBrowser (the only element that
