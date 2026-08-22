@@ -15,9 +15,9 @@
 
 ---
 
-## 進捗サマリ
+## フェーズ一覧
 
-| Phase | 内容 | 状態 | 主要成果物 |
+| Phase | 内容 | 状態 | 成果物 / 計画 |
 |---|---|---|---|
 | 0 | ソリューション骨格 + 品質ゲート | `[x]` | 4層構成、BannedApiAnalyzers、Arch.Tests、check.ps1 + pre-commit |
 | 1 | Core 状態マシン + Runtime Worker Pool | `[x]` | `Transition.Apply`、`WorkerRuntime`、`MessageLoop` |
@@ -25,7 +25,13 @@
 | 3 | 実ファイルシステム接続 | `[x]` | `StateProjection`、composition root、ヘッドレス E2E |
 | 4 | Windows シェル統合 | `[x]` | アイコン、ゴミ箱、IContextMenu、Explorer DnD、複数選択 |
 | 5 | 内製ジョブエンジン + プレビュー | `[x]` | JobEngine(進捗/キャンセル/競合確認)、Ctrl+C/X/V、プレビュー(メタ/HEX/動画) |
-| 6+ | 未確定(zrr 機能差・アーカイブ・仮想ディレクトリ) | `[ ]` | 本ドキュメント末尾の「今後の候補」参照 |
+| 6 | 基本操作の穴埋め + プレビュー刷新 | `[ ]` | [phase6-basic-operations.md](phase6-basic-operations.md) |
+| 7 | 二画面分割 + 検索・ジャンプ系 | `[ ]` | [phase7-dual-pane-and-search.md](phase7-dual-pane-and-search.md) |
+| 8 | 仮想ロケーション基盤 | `[ ]` | [phase8-virtual-locations.md](phase8-virtual-locations.md) |
+| 9 | アーカイブ操作 | `[ ]` | [phase9-archives.md](phase9-archives.md) |
+
+Phase 0〜5 の元プラン全文は「[完了フェーズの元プラン](#完了フェーズの元プラン全文)」に、
+Phase 6 以降の背景・判断は「[今後の候補](#今後の候補)」に置く。
 
 ### Phase 5 完了時点の実装済み機能(実機確認済み)
 
@@ -607,18 +613,10 @@ ZurariApp.OnStartup:
 
 # 今後の候補
 
-**棚卸し日**: 2026-07-20(Phase 5 完了直後)
+**棚卸し日**: 2026-07-20(Phase 5 完了直後)/ 動画サムネイルの項は 2026-08-22 更新
 
-## フェーズ計画
-
-各フェーズの詳細は個別ファイルに置く。着手時にそのファイルへタスクを書き下してから実装する。
-
-| Phase | 内容 | 計画ファイル | 状態 |
-|---|---|---|---|
-| 6 | 基本操作の穴埋め(開く/新規フォルダ/リネーム/ソート/リンク/プレビュー拡充) | [phase6-basic-operations.md](phase6-basic-operations.md) | `[ ]` |
-| 7 | 二画面分割 + 検索・ジャンプ系 | [phase7-dual-pane-and-search.md](phase7-dual-pane-and-search.md) | `[ ]` |
-| 8 | 仮想ロケーション基盤(`Column.Path` → `Location` 抽象化) | [phase8-virtual-locations.md](phase8-virtual-locations.md) | `[ ]` |
-| 9 | アーカイブ操作(zip 標準 + 7-Zip 検出) | [phase9-archives.md](phase9-archives.md) | `[ ]` |
+フェーズ一覧と各計画へのリンクは冒頭の「[フェーズ一覧](#フェーズ一覧)」を参照。
+以下はその判断根拠と、着手前に確定させた事項。
 
 ## 決定事項(2026-07-20 確認済み)
 
@@ -662,13 +660,30 @@ zurari_w に未実装のもの。影響度は日常操作への効き方。
 ステータスバー拡充(選択サイズ・空き容量)、キーヒント/ヘルプ表示、戻る/進む履歴、
 キーバインドのカスタマイズ、ウィンドウ位置の永続化。
 
-## 検証済みの事実(2026-07-20)
+## 動画サムネイルの現況(2026-08-22 更新)
 
-**動画サムネイルは正常に動作する**。`where.exe ffmpeg` による検出 OK(WinGet 版を検出)、
-正常な動画で 26KB の PNG サムネイル生成に成功。動作しないと報告された `.mp4` は
-`moov atom not found`(MP4 のインデックス欠落 = ファイル自体の破損)であり、ffmpeg 側が正しく
-拒否していた。**ただし失敗理由が UI に出ない**ため「ツールが無い」のか「ファイルが壊れている」のか
-区別できない。Phase 6 で失敗理由の表示を行う。
+別セッション「MP4 サムネイル生成ツール動作確認」で方針が確定し、**一部は実装済み(未コミット)**。
+
+**確定した方針 = zrr 方式**: 依存を **ffmpeg 一本**に絞り、指定時刻のフレームを画像として抽出して
+**サムネイルキャッシュへ保存**する構成を基本とする。ffmpegthumbnailer は不採用
+(Windows の Unicode パス対応を持つ有力な fork が無く、ffmpeg 本体と重複した対応を抱える
+合理性が低いため)。ffmpeg の Windows CLI は `GetCommandLineW` / `CommandLineToArgvW` を使うので
+日本語パスをそのまま扱える。
+
+| 項目 | 状態 |
+|---|---|
+| ffmpeg 一本化(ffmpegthumbnailer 廃止) | `[x]` 実装済み(未コミット) |
+| 失敗理由の表示(`ThumbnailOutcome` で理由を返す) | `[x]` 実装済み(未コミット) |
+| タイムアウト見直し(4秒 → 20秒、4秒間隔のポーリング) | `[x]` 実装済み(未コミット) |
+| **ffmpeg の非同期起動**(現在は同期ブロッキング) | `[ ]` Phase 6 |
+| **サムネイルキャッシュ**(現在は毎回再生成) | `[ ]` Phase 6 |
+| 動画メタ(再生時間・解像度)の自前パース | `[ ]` Phase 6(zrr は MP4 box を直接読む) |
+
+**動作確認の結果**: `where.exe ffmpeg` による検出 OK、正常な動画で PNG サムネイル生成に成功。
+「動作しない」と報告された `.mp4` は `moov atom not found`(MP4 のインデックス欠落 = ファイル自体の
+破損)で、ffmpeg 側が正しく拒否していた。失敗理由が UI に出ない問題は上表のとおり対応済み。
+
+## 検証済みの事実(2026-07-20)
 
 **WPF は自己完結ビルドを 68MB より小さくできない**。`PublishTrimmed` は WPF 非対応
 (`error NETSDK1168`)、NativeAOT も非対応。framework-dependent なら 419KB。
