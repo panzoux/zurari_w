@@ -64,9 +64,11 @@ dotnet test Zurari.sln
 --------------------------------------------------
 いずれも「あれば使う、無ければ機能が縮退する」方式。同梱しない。
 
-ffmpeg または ffmpegthumbnailer
+ffmpeg
     動画ファイルのサムネイルプレビューに使用。PATH 上にあれば自動検出する。
     無い場合は動画も HEX ダンプ表示になる。
+    ffmpegthumbnailer は不採用 (Windows日本語パスのUnicode対応で有力forkが無く、
+    ffmpeg本体と重複対応を抱える合理性が低いため)。
       winget install Gyan.FFmpeg
 
 7-Zip (将来 / Phase 9 予定)

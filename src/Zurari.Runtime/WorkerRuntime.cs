@@ -30,10 +30,11 @@ public sealed class WorkerRuntime : IDisposable
     /// </summary>
     private const int PreviewHexHeadBytes = 4096;
 
-    /// <summary>How long <see cref="ExecuteLoadPreview"/> waits for an external thumbnailer (see
-    /// <see cref="VideoThumbnailer"/>) before giving up and falling back to the plain Binary
-    /// preview.</summary>
-    private static readonly TimeSpan VideoThumbnailTimeout = TimeSpan.FromSeconds(4);
+    /// <summary>How long <see cref="ExecuteLoadPreview"/> waits for each external thumbnailer
+    /// attempt (see <see cref="VideoThumbnailer"/>) before giving up on that attempt - re-checked
+    /// every few seconds rather than as one hard wait, so a slow decode of a large/slow-disk file
+    /// is not killed the instant a single check expires.</summary>
+    private static readonly TimeSpan VideoThumbnailTimeout = TimeSpan.FromSeconds(20);
 
     /// <summary>
     /// Extensions treated as video even when <see cref="FileTypeDetector"/>'s magic-number sniff
@@ -304,15 +305,15 @@ public sealed class WorkerRuntime : IDisposable
     private void ExecuteVideoPreview(
         Effect.LoadPreview effect, DetectedType detected, string path, byte[] head, PreviewMetadata baseMetadata)
     {
-        var thumbnail = VideoThumbnailer.TryCreateThumbnail(path, VideoThumbnailTimeout);
-        if (thumbnail is not null)
+        var outcome = VideoThumbnailer.TryCreateThumbnail(path, VideoThumbnailTimeout);
+        if (outcome.Bytes is not null)
         {
-            var metadata = WithPixelInfo(baseMetadata, thumbnail);
-            _post(new Msg.PreviewLoaded(effect.Generation, PreviewKind.Image, null, [.. thumbnail], null, metadata));
+            var metadata = WithPixelInfo(baseMetadata, outcome.Bytes);
+            _post(new Msg.PreviewLoaded(effect.Generation, PreviewKind.Image, null, [.. outcome.Bytes], null, metadata));
             return;
         }
 
-        var label = $"{VideoLabel(detected, path)} (サムネイル生成ツールなし)";
+        var label = $"{VideoLabel(detected, path)} ({outcome.FailureDetail})";
         _post(new Msg.PreviewLoaded(effect.Generation, PreviewKind.Binary, null, HexHead(head), label, baseMetadata));
     }
 

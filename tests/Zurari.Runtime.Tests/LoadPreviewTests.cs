@@ -338,9 +338,9 @@ public class LoadPreviewTests
     /// A file with a video extension but no recognizable magic number (e.g. WMV's ASF container is
     /// not in <see cref="FileTypeDetector"/>'s signature table) must still be routed through the
     /// video preview path rather than falling into the generic Binary/Text branches. Since this
-    /// test machine's ffmpeg/ffmpegthumbnailer availability is unknown, only the shape that must
-    /// hold either way is asserted: either an Image (thumbnail succeeded) or a Binary result whose
-    /// label says the tool is missing.
+    /// test machine's ffmpeg availability is unknown, only the shape that must hold either way is
+    /// asserted: either an Image (thumbnail succeeded) or a Binary result whose label says why it
+    /// did not.
     /// </summary>
     [Fact]
     public void LoadPreview_of_a_video_extension_with_no_magic_match_is_routed_as_video()

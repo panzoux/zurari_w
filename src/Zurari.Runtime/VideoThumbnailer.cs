@@ -3,60 +3,51 @@ using System.Diagnostics;
 namespace Zurari.Runtime;
 
 /// <summary>
-/// Best-effort video thumbnail generation via an external tool (<c>ffmpegthumbnailer</c>,
-/// preferred, or <c>ffmpeg</c>) found on <c>PATH</c>. Used by
+/// Best-effort video thumbnail generation via <c>ffmpeg</c> found on <c>PATH</c>. <c>ffmpeg</c> is
+/// used exclusively (not <c>ffmpegthumbnailer</c>) because its Windows CLI already handles Unicode
+/// paths correctly (<c>GetCommandLineW</c>/<c>CommandLineToArgvW</c>), whereas ffmpegthumbnailer
+/// has no well-maintained fork with the same Windows Unicode-path handling - keeping a second tool
+/// around would mean carrying that gap ourselves for no real benefit. Used by
 /// <see cref="WorkerRuntime.ExecuteLoadPreview"/> to turn a video file into a
-/// <see cref="Zurari.Core.PreviewKind.Image"/> preview; when neither tool is installed (or the
-/// tool fails on this particular file), every method here returns <c>null</c> so the caller can
-/// fall back to the plain Binary preview - never throws.
+/// <see cref="Zurari.Core.PreviewKind.Image"/> preview; when ffmpeg can't produce a frame, methods
+/// here return a <see cref="ThumbnailOutcome"/> carrying a human-readable reason (rather than
+/// silently returning <c>null</c>) so the caller can show *why* it fell back to the plain Binary
+/// preview - never throws.
 /// </summary>
 internal static class VideoThumbnailer
 {
-    private static readonly Lazy<string?> ToolPath = new(ProbeForTool);
+    /// <summary>
+    /// How often <see cref="RunProcess"/> re-checks whether ffmpeg has exited, instead of blocking
+    /// for the whole per-attempt timeout in one <c>WaitForExit</c> call. A slow decode (large file,
+    /// slow disk) keeps running across polls instead of being killed the instant one wait expires;
+    /// the process is only killed once the *overall* timeout elapses.
+    /// </summary>
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(4);
+
+    private static readonly Lazy<string?> FfmpegPath = new(() => FindOnPath("ffmpeg"));
 
     /// <summary>
-    /// Tries to render a PNG thumbnail of <paramref name="videoPath"/>, waiting up to
-    /// <paramref name="timeout"/> for the external tool to finish (killed and treated as failure
-    /// if it does not). Returns the PNG bytes on success, or <c>null</c> if no tool is installed,
-    /// the tool fails, times out, or the file cannot be read - any exception is swallowed.
+    /// Tries to render a PNG thumbnail of <paramref name="videoPath"/> via ffmpeg, if it is on
+    /// PATH. Each attempt gets up to <paramref name="timeout"/>, polled in
+    /// <see cref="PollInterval"/> slices (see <see cref="RunProcess"/>) rather than a single hard
+    /// wait.
     /// </summary>
-    public static byte[]? TryCreateThumbnail(string videoPath, TimeSpan timeout)
+    public static ThumbnailOutcome TryCreateThumbnail(string videoPath, TimeSpan timeout)
     {
-        var tool = ToolPath.Value;
-        if (tool is null)
+        var ffmpeg = FfmpegPath.Value;
+        if (ffmpeg is null)
         {
-            return null;
+            return ThumbnailOutcome.Failure("ffmpeg が見つかりません(PATH未登録)");
         }
 
         var tmpPng = Path.Combine(Path.GetTempPath(), "zurari-thumb-" + Guid.NewGuid().ToString("N") + ".png");
         try
         {
-            var isFfmpegThumbnailer = IsFfmpegThumbnailer(tool);
-
-            if (isFfmpegThumbnailer)
-            {
-                if (!RunProcess(tool, BuildFfmpegThumbnailerArgs(videoPath, tmpPng), timeout) || !HasContent(tmpPng))
-                {
-                    return null;
-                }
-            }
-            else
-            {
-                if (!RunProcess(tool, BuildFfmpegArgs(videoPath, tmpPng, seekSeconds: 3), timeout) || !HasContent(tmpPng))
-                {
-                    // Very short clips can have nothing at 3s in - retry from the very first frame.
-                    if (!RunProcess(tool, BuildFfmpegArgs(videoPath, tmpPng, seekSeconds: 0), timeout) || !HasContent(tmpPng))
-                    {
-                        return null;
-                    }
-                }
-            }
-
-            return File.ReadAllBytes(tmpPng);
+            return TryFfmpeg(ffmpeg, videoPath, tmpPng, timeout);
         }
-        catch
+        catch (Exception ex)
         {
-            return null;
+            return ThumbnailOutcome.Failure($"予期しないエラー: {ex.GetType().Name}");
         }
         finally
         {
@@ -64,11 +55,50 @@ internal static class VideoThumbnailer
         }
     }
 
-    private static bool IsFfmpegThumbnailer(string tool) =>
-        Path.GetFileNameWithoutExtension(tool).Equals("ffmpegthumbnailer", StringComparison.OrdinalIgnoreCase);
+    private static ThumbnailOutcome TryFfmpeg(string tool, string videoPath, string tmpPng, TimeSpan timeout)
+    {
+        var atThreeSeconds = RunProcess(tool, BuildFfmpegArgs(videoPath, tmpPng, seekSeconds: 3), timeout);
+        if (atThreeSeconds.Success && HasContent(tmpPng))
+        {
+            return ThumbnailOutcome.Success(File.ReadAllBytes(tmpPng));
+        }
 
-    private static string BuildFfmpegThumbnailerArgs(string videoPath, string outPng) =>
-        $"-i \"{videoPath}\" -o \"{outPng}\" -s 512 -q 8";
+        // Very short clips can have nothing at 3s in - retry from the very first frame.
+        var atFirstFrame = RunProcess(tool, BuildFfmpegArgs(videoPath, tmpPng, seekSeconds: 0), timeout);
+        return atFirstFrame.Success && HasContent(tmpPng)
+            ? ThumbnailOutcome.Success(File.ReadAllBytes(tmpPng))
+            : ThumbnailOutcome.Failure(DescribeFailure("ffmpeg", atFirstFrame));
+    }
+
+    private static string DescribeFailure(string tool, ProcessOutcome result)
+    {
+        if (result.TimedOut)
+        {
+            return $"{tool}: タイムアウト";
+        }
+
+        if (result.ExitCode is null)
+        {
+            return result.StartError is null
+                ? $"{tool}: 起動できませんでした"
+                : $"{tool}: 起動できませんでした ({Truncate(result.StartError)})";
+        }
+
+        if (result.ExitCode != 0)
+        {
+            return string.IsNullOrWhiteSpace(result.StdErr)
+                ? $"{tool}: exit {result.ExitCode}"
+                : $"{tool}: exit {result.ExitCode} - {Truncate(result.StdErr)}";
+        }
+
+        return $"{tool}: 出力ファイルが空でした";
+    }
+
+    private static string Truncate(string text)
+    {
+        var oneLine = text.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        return oneLine.Length > 120 ? oneLine[..120] + "…" : oneLine;
+    }
 
     private static string BuildFfmpegArgs(string videoPath, string outPng, int seekSeconds) =>
         $"-ss {seekSeconds} -i \"{videoPath}\" -frames:v 1 -vf scale=512:-1 -y \"{outPng}\"";
@@ -94,11 +124,24 @@ internal static class VideoThumbnailer
         }
     }
 
-    private static bool RunProcess(string exe, string arguments, TimeSpan timeout)
+    /// <summary>Result of running one external tool invocation to completion (or not).</summary>
+    private readonly record struct ProcessOutcome(bool TimedOut, int? ExitCode, string? StdErr, string? StartError)
     {
+        public bool Success => !TimedOut && ExitCode == 0;
+    }
+
+    /// <summary>
+    /// Runs <paramref name="exe"/> and waits up to <paramref name="timeout"/> total, re-checking
+    /// every <see cref="PollInterval"/> instead of a single blocking wait - so a process that is
+    /// still alive and working keeps getting more time, in <see cref="PollInterval"/>-sized slices,
+    /// until the overall budget is exhausted (then it is killed and reported as timed out).
+    /// </summary>
+    private static ProcessOutcome RunProcess(string exe, string arguments, TimeSpan timeout)
+    {
+        Process? process = null;
         try
         {
-            using var process = new Process
+            process = new Process
             {
                 StartInfo = new ProcessStartInfo
                 {
@@ -112,21 +155,37 @@ internal static class VideoThumbnailer
             };
 
             process.Start();
-            // Drain output so the process cannot block on a full pipe buffer; content is unused.
-            _ = process.StandardOutput.ReadToEndAsync();
-            _ = process.StandardError.ReadToEndAsync();
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
 
-            if (!process.WaitForExit((int)timeout.TotalMilliseconds))
+            var remaining = timeout;
+            while (true)
             {
-                TryKill(process);
-                return false;
+                var slice = remaining < PollInterval ? remaining : PollInterval;
+                if (process.WaitForExit((int)Math.Max(slice.TotalMilliseconds, 0)))
+                {
+                    break;
+                }
+
+                remaining -= slice;
+                if (remaining <= TimeSpan.Zero)
+                {
+                    TryKill(process);
+                    return new ProcessOutcome(TimedOut: true, ExitCode: null, StdErr: null, StartError: null);
+                }
             }
 
-            return process.ExitCode == 0;
+            var stdErr = stderrTask.IsCompletedSuccessfully ? stderrTask.Result : null;
+            _ = stdoutTask;
+            return new ProcessOutcome(TimedOut: false, ExitCode: process.ExitCode, StdErr: stdErr, StartError: null);
         }
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
         {
-            return false;
+            return new ProcessOutcome(TimedOut: false, ExitCode: null, StdErr: null, StartError: ex.Message);
+        }
+        finally
+        {
+            process?.Dispose();
         }
     }
 
@@ -141,9 +200,6 @@ internal static class VideoThumbnailer
             // Already exited between the timeout check and here - fine.
         }
     }
-
-    /// <summary>Looks for ffmpegthumbnailer first (purpose-built, faster), then ffmpeg, on PATH.</summary>
-    private static string? ProbeForTool() => FindOnPath("ffmpegthumbnailer") ?? FindOnPath("ffmpeg");
 
     /// <summary>
     /// Resolves <paramref name="name"/> to a full path via <c>where.exe</c> (Windows-only, matching
@@ -191,4 +247,17 @@ internal static class VideoThumbnailer
             return null;
         }
     }
+}
+
+/// <summary>
+/// Result of <see cref="VideoThumbnailer.TryCreateThumbnail"/>: either the PNG bytes on success, or
+/// a human-readable <see cref="FailureDetail"/> (which tool(s) were tried and why each failed) on
+/// failure - shown directly in the Binary preview's label so the cause is visible without needing
+/// to dig through logs.
+/// </summary>
+internal readonly record struct ThumbnailOutcome(byte[]? Bytes, string? FailureDetail)
+{
+    public static ThumbnailOutcome Success(byte[] bytes) => new(bytes, null);
+
+    public static ThumbnailOutcome Failure(string detail) => new(null, detail);
 }
