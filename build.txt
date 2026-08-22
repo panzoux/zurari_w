@@ -1,0 +1,85 @@
+zurari_w ビルド / 配布手順
+==========================
+
+計測日: 2026-07-20 (HEAD a4c190f, .NET SDK 8.0.423)
+
+
+■ 最小サイズの配布 (推奨) — 419 KB
+--------------------------------------------------
+利用者の環境に .NET Desktop Runtime 8 が必要。単一 exe。
+
+  dotnet publish src/Zurari.App -c Release -r win-x64 --no-self-contained -p:PublishSingleFile=true -o publish
+
+  → publish/Zurari.App.exe   419 KB  (他に必要なファイルなし。*.pdb は配布不要)
+
+利用者側の前提:
+  winget install Microsoft.DotNet.DesktopRuntime.8
+  もしくは https://dotnet.microsoft.com/download/dotnet/8.0 の
+  ".NET Desktop Runtime 8.x — Windows x64" インストーラ
+
+
+■ ランタイム不要の配布 — 68.4 MB (単一ファイル)
+--------------------------------------------------
+.NET 本体を同梱するため巨大になるが、インストール不要で動く。
+
+  dotnet publish src/Zurari.App -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish-sc
+
+  → publish-sc/Zurari.App.exe   68.4 MB  (ファイル1個のみ)
+
+  ※ IncludeNativeLibrariesForSelfExtract を外すと exe は 64.8 MB になるが、
+     WPF のネイティブ DLL 5 個 (計 7.9 MB) が別ファイルとして残り、合計 72.7 MB。
+     単一ファイルにしたい場合は上記のとおり指定する。
+     初回起動時にネイティブ DLL を一時フォルダへ展開するため、起動が僅かに遅い。
+
+
+■ 試したが使えない / 効果がない指定
+--------------------------------------------------
+-p:PublishTrimmed=true
+    使用不可。WPF はトリミング非対応 (error NETSDK1168)。
+    → 自己完結ビルドを 68 MB より小さくする方法は現状ない。
+
+-p:PublishAot=true
+    使用不可。WPF は NativeAOT 非対応。
+
+-p:PublishReadyToRun=true
+    サイズが増える (起動は速くなる)。最小化目的では指定しない。
+
+-p:EnableCompressionInSingleFile=true
+    framework-dependent ビルドではほぼ効果なし (圧縮対象の .NET 本体が含まれないため)。
+    自己完結ビルドでのみ意味がある。
+
+
+■ 開発時のコマンド
+--------------------------------------------------
+scripts/check.ps1          format検証 + build + 全テスト。完了の定義 = これが green
+dotnet format Zurari.sln   フォーマット自動修正
+dotnet build Zurari.sln
+dotnet test Zurari.sln
+
+  ※ pre-commit フックが check.ps1 を実行する (core.hooksPath = scripts/hooks)。
+     --no-verify で回避しないこと。
+
+
+■ 実行時に必要な外部ツール (任意)
+--------------------------------------------------
+いずれも「あれば使う、無ければ機能が縮退する」方式。同梱しない。
+
+ffmpeg または ffmpegthumbnailer
+    動画ファイルのサムネイルプレビューに使用。PATH 上にあれば自動検出する。
+    無い場合は動画も HEX ダンプ表示になる。
+      winget install Gyan.FFmpeg
+
+7-Zip (将来 / Phase 9 予定)
+    zip 以外の書庫 (7z/rar/tar 等) の閲覧・展開に使用予定。
+    標準では zip のみ .NET 標準ライブラリで対応する。
+
+
+■ 診断モード
+--------------------------------------------------
+入力パイプラインのトレースログを出力する:
+
+  Zurari.App.exe --debug-input
+  → %TEMP%\zurari-input.log
+
+マウス/キー入力から Msg 発行までの流れが記録される。
+通常起動時は計測コードは一切動作しない。
