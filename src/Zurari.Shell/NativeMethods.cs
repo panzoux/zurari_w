@@ -43,4 +43,18 @@ internal static class NativeMethods
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool DestroyIcon(IntPtr hIcon);
+
+    /// <summary>
+    /// Resolves a known folder to a path. The only way to reach Downloads: unlike Desktop and
+    /// Documents it has no <see cref="Environment.SpecialFolder"/> member, so the shell API is not
+    /// a stylistic preference here but the only route.
+    /// </summary>
+    /// <remarks>
+    /// The returned buffer is allocated by the shell and must be released with
+    /// <see cref="CoTaskMemFree"/>.
+    /// </remarks>
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    public static extern int SHGetKnownFolderPath(
+        in Guid rfid, uint dwFlags, IntPtr hToken, out IntPtr ppszPath);
 }

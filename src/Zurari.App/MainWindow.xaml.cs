@@ -90,7 +90,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
         JobStrip.ItemsSource = jobRows;
 
-        runtime = new WorkerRuntime(post: PostToLoop);
+        runtime = new WorkerRuntime(post: PostToLoop, places: RootPlaces);
         shellExecutor = new ShellEffectExecutor(post: PostToLoop);
         jobEngine = new JobEngine(post: PostToLoop);
         directoryWatcher = new DirectoryWatcher(post: PostToLoop);
@@ -136,6 +136,15 @@ public sealed partial class MainWindow : Window, IDisposable
 
         Dispatch(new Msg.Refresh());
     }
+
+    /// <summary>
+    /// The places the drive pane lists above the drives. Resolved here because it needs both layers:
+    /// <see cref="Zurari.Shell.KnownFolders"/> to find them (Downloads has no
+    /// <c>Environment.SpecialFolder</c> member, so the shell API is the only route) and
+    /// <see cref="WorkerRuntime"/> to consume them — and Runtime is not allowed to depend on Shell.
+    /// </summary>
+    private static IReadOnlyList<RootPlace> RootPlaces() =>
+        [.. Zurari.Shell.KnownFolders.UserPlaces().Select(f => new RootPlace(f.Path, f.Label))];
 
     /// <summary>Diagnostic-only: logs a window-level mouse transition (see ctor wiring).</summary>
     private void TraceWindowMouse(string kind, MouseButtonEventArgs e)

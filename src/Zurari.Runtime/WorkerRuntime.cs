@@ -72,6 +72,12 @@ public sealed class WorkerRuntime : IDisposable
     private readonly ThumbnailCache _thumbnailCache;
 
     /// <summary>
+    /// Supplies the places shown above the drives - favorites now, pinned shares next. Queried on
+    /// every read rather than captured once, so pinning something shows up on the next refresh.
+    /// </summary>
+    private readonly Func<IReadOnlyList<RootPlace>>? _places;
+
+    /// <summary>
     /// Guards every <c>_preview*</c> field below. All four move together and are only ever read or
     /// written under it.
     /// </summary>
@@ -127,7 +133,8 @@ public sealed class WorkerRuntime : IDisposable
         int workerCount = 2,
         CancellationToken? external = null,
         long? previewImageSizeLimitBytes = null,
-        ThumbnailCache? thumbnailCache = null)
+        ThumbnailCache? thumbnailCache = null,
+        Func<IReadOnlyList<RootPlace>>? places = null)
     {
         ArgumentNullException.ThrowIfNull(post);
         if (workerCount < 1)
@@ -142,6 +149,7 @@ public sealed class WorkerRuntime : IDisposable
             : new CancellationTokenSource();
         _previewImageSizeLimitBytes = previewImageSizeLimitBytes ?? DefaultPreviewImageSizeLimitBytes;
         _thumbnailCache = thumbnailCache ?? new ThumbnailCache();
+        _places = places;
 
         _workers = new Task[workerCount];
         for (var i = 0; i < workerCount; i++)
@@ -349,6 +357,7 @@ public sealed class WorkerRuntime : IDisposable
     }
 
     /// <summary>Section identifiers for the drive pane. Stable keys; the labels are the header rows.</summary>
+    private const string FavoritesGroup = "favorites";
     private const string DrivesGroup = "drives";
 
     /// <summary>
@@ -359,9 +368,11 @@ public sealed class WorkerRuntime : IDisposable
     /// cursor lands on a header and <c>Space</c> collapses it - see <see cref="EntryKind.Header"/>.
     /// A section with nothing in it contributes no header.
     /// </remarks>
-    private static ImmutableArray<Entry> ReadDrives()
+    private ImmutableArray<Entry> ReadDrives()
     {
         var builder = ImmutableArray.CreateBuilder<Entry>();
+
+        AppendSection(builder, FavoritesGroup, "お気に入り", ReadFavorites());
 
         var drives = new List<Entry>();
         foreach (var drive in DriveInfo.GetDrives())
@@ -379,6 +390,71 @@ public sealed class WorkerRuntime : IDisposable
 
         AppendSection(builder, DrivesGroup, "ドライブ", drives);
         return builder.ToImmutable();
+    }
+
+    /// <summary>
+    /// The favorites section: the places <see cref="_places"/> offers that actually exist.
+    /// </summary>
+    /// <remarks>
+    /// The list is supplied rather than resolved here because resolving it needs the shell - there
+    /// is no <c>Environment.SpecialFolder.Downloads</c> - and this layer is not allowed to depend on
+    /// <c>Zurari.Shell</c>. The composition root, which sees both, does the resolving; checking that
+    /// a folder is really there is filesystem work and belongs here.
+    /// </remarks>
+    private List<Entry> ReadFavorites()
+    {
+        var favorites = new List<Entry>();
+        if (_places is null)
+        {
+            return favorites;
+        }
+
+        foreach (var place in _places())
+        {
+            if (!Directory.Exists(place.Path))
+            {
+                continue;
+            }
+
+            favorites.Add(new Entry(
+                // The path, not the label: two favorites can legitimately read the same, and the
+                // cursor follows entries by Name. See DisambiguateLabels.
+                place.Path,
+                EntryKind.Directory,
+                SizeBytes: -1,
+                Group: FavoritesGroup,
+                Target: new Location.RealDirectory(place.Path),
+                DisplayName: place.Label));
+        }
+
+        DisambiguateLabels(favorites);
+        return favorites;
+    }
+
+    /// <summary>
+    /// Qualifies any label that appears more than once with its path, so two rows never read alike.
+    /// </summary>
+    /// <remarks>
+    /// Only the ambiguous ones are qualified. A lone "ダウンロード" needs no address after it; two
+    /// pinned folders both called <c>fol1</c> do, and become <c>fol1 (D:\test\fol1)</c> and
+    /// <c>fol1 (\\testsv\test\fol1)</c>. This is the one pane where duplicates are possible at all -
+    /// a directory listing cannot contain two entries with the same name.
+    /// </remarks>
+    private static void DisambiguateLabels(List<Entry> rows)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var row in rows)
+        {
+            counts[row.Label] = counts.TryGetValue(row.Label, out var n) ? n + 1 : 1;
+        }
+
+        for (var i = 0; i < rows.Count; i++)
+        {
+            if (counts[rows[i].Label] > 1)
+            {
+                rows[i] = rows[i] with { DisplayName = $"{rows[i].Label} ({rows[i].Name})" };
+            }
+        }
     }
 
     /// <summary>Adds a header row and its contents, or nothing at all when the section is empty.</summary>
