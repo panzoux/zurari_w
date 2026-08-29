@@ -1,7 +1,7 @@
 # zurari_w 開発ロードマップ
 
 **作成**: 2026-07-20
-**現状**: Phase 0〜5 完了、main マージ済み(HEAD `16f2283`、全471テスト green)
+**現状**: Phase 0〜5 完了、main マージ済み(HEAD `b561d45`、全471テスト green)
 **コンセプト**: zurari(TUI版, 別名 zrr)の multi-column UX を Windows GUI へ。
 アーキテクチャは rwf(Rust版)の純粋 Transition パターンの C# 移植。
 
@@ -25,9 +25,9 @@
 | 3 | 実ファイルシステム接続 | `[x]` | [phase3-real-filesystem.md](phase3-real-filesystem.md) | `StateProjection`、composition root、ヘッドレス E2E |
 | 4 | Windows シェル統合 | `[x]` | [phase4-shell-integration.md](phase4-shell-integration.md) | アイコン、ゴミ箱、IContextMenu、Explorer DnD、複数選択 |
 | 5 | 内製ジョブエンジン + プレビュー | `[x]` | [phase5-jobs-and-preview.md](phase5-jobs-and-preview.md) | JobEngine(進捗/キャンセル/競合確認)、Ctrl+C/X/V、プレビュー(メタ/HEX/動画) |
-| 6 | 基本操作の穴埋め + プレビュー刷新 | `[ ]` | [phase6-basic-operations.md](phase6-basic-operations.md) | — |
+| 6 | 基本操作の穴埋め + プレビュー刷新 | `[~]` | [phase6-basic-operations.md](phase6-basic-operations.md) | 6a: `Location` 基盤(Phase 8 を前倒し統合、`2b74c1a`) |
 | 7 | 二画面分割 + 検索・ジャンプ系 | `[ ]` | [phase7-dual-pane-and-search.md](phase7-dual-pane-and-search.md) | — |
-| 8 | 仮想ロケーション基盤 | `[ ]` | [phase8-virtual-locations.md](phase8-virtual-locations.md) | — |
+| 8 | 仮想ロケーション基盤 | `[x]` | [phase8-virtual-locations.md](phase8-virtual-locations.md) | **Phase 6a として実施済み**(`2b74c1a`)。`Location` 型、`Entry.Target`、包含不変条件の削除 |
 | 9 | アーカイブ操作 | `[ ]` | [phase9-archives.md](phase9-archives.md) | — |
 
 完了フェーズの計画ファイルは**着手時に確定させたプランの原文**であり、実装との差異がある。
@@ -115,7 +115,7 @@ zurari_w に未実装のもの。影響度は日常操作への効き方。
 
 ## 動画サムネイルの現況(2026-08-22 更新)
 
-別セッション「MP4 サムネイル生成ツール動作確認」で方針が確定し、**一部は実装済み(未コミット)**。
+別セッション「MP4 サムネイル生成ツール動作確認」で方針が確定し、**一部はコミット済み**(`b561d45`)。
 
 **確定した方針 = zrr 方式**: 依存を **ffmpeg 一本**に絞り、指定時刻のフレームを画像として抽出して
 **サムネイルキャッシュへ保存**する構成を基本とする。ffmpegthumbnailer は不採用
@@ -125,9 +125,9 @@ zurari_w に未実装のもの。影響度は日常操作への効き方。
 
 | 項目 | 状態 |
 |---|---|
-| ffmpeg 一本化(ffmpegthumbnailer 廃止) | `[x]` 実装済み(未コミット) |
-| 失敗理由の表示(`ThumbnailOutcome` で理由を返す) | `[x]` 実装済み(未コミット) |
-| タイムアウト見直し(4秒 → 20秒、4秒間隔のポーリング) | `[x]` 実装済み(未コミット) |
+| ffmpeg 一本化(ffmpegthumbnailer 廃止) | `[x]` コミット済み (`b561d45`) |
+| 失敗理由の表示(`ThumbnailOutcome` で理由を返す) | `[x]` コミット済み (`b561d45`) |
+| タイムアウト見直し(4秒 → 20秒、4秒間隔のポーリング) | `[x]` コミット済み (`b561d45`) |
 | **ffmpeg の非同期起動**(現在は同期ブロッキング) | `[ ]` Phase 6 |
 | **サムネイルキャッシュ**(現在は毎回再生成) | `[ ]` Phase 6 |
 | 動画メタ(再生時間・解像度)の自前パース | `[ ]` Phase 6(zrr は MP4 box を直接読む) |

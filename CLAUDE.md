@@ -53,6 +53,7 @@ pre-commit フックが check.ps1 を実行する(`git config core.hooksPath scr
 
 ## 進め方
 
-- 設計: docs/superpowers/specs/ / フェーズ計画: docs/superpowers/plans/(1フェーズ=1ファイル)
+- 設計: docs/superpowers/specs/ / **フェーズ計画: plan/(1フェーズ=1ファイル)+ plan/roadmap.md**
+  docs/superpowers/plans/ は着手時の原文(日付付きファイル名)で、更新されない。現行の計画は plan/ を見ること
 - タスク完了の条件: planの項目を満たす AND `scripts/check.ps1` green。証跡(テスト出力)を残す
 - コミットは小さく。コミット前に check.ps1(フックが強制)
