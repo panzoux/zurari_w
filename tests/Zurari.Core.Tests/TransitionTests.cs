@@ -1736,6 +1736,56 @@ public class TransitionTests
     }
 
     [Fact]
+    public void CursorMove_off_a_still_loading_preview_cancels_the_abandoned_generation()
+    {
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 1, Load: LoadState.Loaded);
+        var state = StateWithColumns(column) with
+        {
+            Preview = new PreviewState(3, @"C:\a.txt", PreviewKind.Loading, null, [], null),
+        };
+
+        var (next, effects) = Transition.Apply(state, new Msg.CursorDown(0)); // File1 -> File2
+
+        Assert.Equal(4, next.Preview.Generation);
+        var cancel = Assert.IsType<Effect.CancelPreview>(effects[0]);
+        Assert.Equal(3, cancel.Generation);
+        var load = Assert.IsType<Effect.LoadPreview>(effects[1]);
+        Assert.Equal(4, load.Generation);
+        Assert.Equal(2, effects.Count);
+    }
+
+    [Fact]
+    public void CursorMove_off_a_completed_preview_does_not_cancel_anything()
+    {
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 1, Load: LoadState.Loaded);
+        var state = StateWithColumns(column) with
+        {
+            // Already delivered - there is no outstanding work to call off.
+            Preview = new PreviewState(3, @"C:\a.txt", PreviewKind.Text, "hi", [], null),
+        };
+
+        var (_, effects) = Transition.Apply(state, new Msg.CursorDown(0));
+
+        Assert.IsType<Effect.LoadPreview>(Assert.Single(effects));
+    }
+
+    [Fact]
+    public void CursorMove_from_a_loading_preview_onto_a_directory_cancels_without_reloading()
+    {
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 1, Load: LoadState.Loaded);
+        var state = StateWithColumns(column) with
+        {
+            Preview = new PreviewState(3, @"C:\a.txt", PreviewKind.Loading, null, [], null),
+        };
+
+        var (next, effects) = Transition.Apply(state, new Msg.CursorUp(0)); // File1 -> Dir
+
+        Assert.Equal(PreviewKind.None, next.Preview.Kind);
+        var cancel = Assert.IsType<Effect.CancelPreview>(Assert.Single(effects));
+        Assert.Equal(3, cancel.Generation);
+    }
+
+    [Fact]
     public void Repeated_Apply_with_the_same_cursor_target_does_not_re_emit_LoadPreview()
     {
         var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);

@@ -862,10 +862,16 @@ public static class Transition
 
         var nextGeneration = newState.Preview.Generation + 1;
 
+        // The target moved, so whatever was loading for the previous generation is now destined to
+        // be discarded on arrival. Say so, rather than letting it run to completion unnoticed.
+        var abandoned = oldState.Preview.Kind == PreviewKind.Loading
+            ? new Effect.CancelPreview(oldState.Preview.Generation)
+            : null;
+
         if (newTarget is null)
         {
             var cleared = newState with { Preview = PreviewState.Initial with { Generation = nextGeneration } };
-            return (cleared, effects);
+            return (cleared, Append(effects, abandoned));
         }
 
         var loading = newState with
@@ -874,8 +880,28 @@ public static class Transition
                 nextGeneration, newTarget, PreviewKind.Loading, Text: null, ImageBytes: [], Error: null),
         };
 
-        var withPreviewEffect = new List<Effect>(effects) { new Effect.LoadPreview(nextGeneration, newTarget) };
+        var withPreviewEffect = Append(effects, abandoned, new Effect.LoadPreview(nextGeneration, newTarget));
         return (loading, withPreviewEffect);
+    }
+
+    /// <summary>Returns <paramref name="effects"/> with any non-null <paramref name="extra"/> appended.</summary>
+    private static IReadOnlyList<Effect> Append(IReadOnlyList<Effect> effects, params Effect?[] extra)
+    {
+        if (Array.TrueForAll(extra, e => e is null))
+        {
+            return effects;
+        }
+
+        var combined = new List<Effect>(effects);
+        foreach (var effect in extra)
+        {
+            if (effect is not null)
+            {
+                combined.Add(effect);
+            }
+        }
+
+        return combined;
     }
 
     /// <summary>

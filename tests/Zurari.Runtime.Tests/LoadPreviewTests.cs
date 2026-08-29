@@ -371,4 +371,90 @@ public class LoadPreviewTests
             Directory.Delete(dir, recursive: true);
         }
     }
+
+    [Fact]
+    public void CancelPreview_with_nothing_in_flight_is_a_no_op()
+    {
+        var queue = new ConcurrentQueue<Msg>();
+        using var runtime = new WorkerRuntime(queue.Enqueue);
+
+        runtime.Submit(new Effect.CancelPreview(42));
+
+        // Cancelling produces no Msg of its own (see Effect.CancelPreview), and cancelling when
+        // nothing is running must not throw or wedge the slot for later previews.
+        Thread.Sleep(200);
+        Assert.Empty(queue);
+    }
+
+    [Fact]
+    public void A_preview_still_loads_after_a_cancel()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var path = Path.Combine(dir, "note.txt");
+            File.WriteAllText(path, "hello");
+
+            var queue = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(queue.Enqueue);
+
+            // The cancel slot must be reusable: a cancelled preview leaves no state behind that
+            // would stop the next one from running.
+            runtime.Submit(new Effect.CancelPreview(1));
+            runtime.Submit(new Effect.LoadPreview(2, path));
+
+            var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
+            Assert.Equal(2, loaded.Generation);
+            Assert.Equal(PreviewKind.Text, loaded.Kind);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Guards the wiring, not the stall. Preview used to execute on the worker pool, so a slow one
+    /// (a cloud placeholder hydrating, or ffmpeg taking its full 20s) could occupy every worker and
+    /// leave navigation queued behind it; it now runs on its own slot.
+    /// </summary>
+    /// <remarks>
+    /// This does not reproduce that stall and would have passed before the fix: a text preview
+    /// completes in microseconds, so the read was never really waiting. Reproducing it needs a
+    /// preview that genuinely blocks, which needs either ffmpeg present (not guaranteed) or a
+    /// seam for injecting a slow preview. What this does catch is preview being routed back onto
+    /// the pool *and* blocking - the combination that caused the bug. The stall itself was
+    /// verified by hand.
+    /// </remarks>
+    [Fact]
+    public void ReadDirectory_completes_while_a_preview_is_outstanding()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "a.txt"), "a");
+
+            var queue = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(queue.Enqueue, workerCount: 1);
+            runtime.Submit(new Effect.LoadPreview(1, Path.Combine(dir, "a.txt")));
+            runtime.Submit(new Effect.ReadDirectory(0, new Location.RealDirectory(dir)));
+
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+            while (DateTime.UtcNow < deadline)
+            {
+                if (queue.Any(m => m is Msg.DirectoryLoaded))
+                {
+                    return;
+                }
+
+                Thread.Sleep(20);
+            }
+
+            Assert.Fail("ReadDirectory never completed while a preview was outstanding.");
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }

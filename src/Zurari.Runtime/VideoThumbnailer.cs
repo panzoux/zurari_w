@@ -22,7 +22,12 @@ internal static class VideoThumbnailer
     /// slow disk) keeps running across polls instead of being killed the instant one wait expires;
     /// the process is only killed once the *overall* timeout elapses.
     /// </summary>
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(4);
+    /// <remarks>
+    /// This is granularity, not budget - the overall timeout is measured independently - so it is
+    /// short. It bounds how long a cancelled thumbnail keeps ffmpeg alive after the cursor has
+    /// moved on, and at four seconds that wait was longer than the interaction it was blocking.
+    /// </remarks>
+    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(250);
 
     private static readonly Lazy<string?> FfmpegPath = new(() => FindOnPath("ffmpeg"));
 
@@ -32,7 +37,7 @@ internal static class VideoThumbnailer
     /// <see cref="PollInterval"/> slices (see <see cref="RunProcess"/>) rather than a single hard
     /// wait.
     /// </summary>
-    public static ThumbnailOutcome TryCreateThumbnail(string videoPath, TimeSpan timeout)
+    public static ThumbnailOutcome TryCreateThumbnail(string videoPath, TimeSpan timeout, CancellationToken token = default)
     {
         var ffmpeg = FfmpegPath.Value;
         if (ffmpeg is null)
@@ -43,10 +48,13 @@ internal static class VideoThumbnailer
         var tmpPng = Path.Combine(Path.GetTempPath(), "zurari-thumb-" + Guid.NewGuid().ToString("N") + ".png");
         try
         {
-            return TryFfmpeg(ffmpeg, videoPath, tmpPng, timeout);
+            return TryFfmpeg(ffmpeg, videoPath, tmpPng, timeout, token);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // Cancellation is not a failure to report - the caller no longer wants this thumbnail.
+            // It propagates so ExecuteLoadPreview can stay silent rather than posting a
+            // PreviewFailed that would race the result which superseded it.
             return ThumbnailOutcome.Failure($"予期しないエラー: {ex.GetType().Name}");
         }
         finally
@@ -55,16 +63,17 @@ internal static class VideoThumbnailer
         }
     }
 
-    private static ThumbnailOutcome TryFfmpeg(string tool, string videoPath, string tmpPng, TimeSpan timeout)
+    private static ThumbnailOutcome TryFfmpeg(
+        string tool, string videoPath, string tmpPng, TimeSpan timeout, CancellationToken token)
     {
-        var atThreeSeconds = RunProcess(tool, BuildFfmpegArgs(videoPath, tmpPng, seekSeconds: 3), timeout);
+        var atThreeSeconds = RunProcess(tool, BuildFfmpegArgs(videoPath, tmpPng, seekSeconds: 3), timeout, token);
         if (atThreeSeconds.Success && HasContent(tmpPng))
         {
             return ThumbnailOutcome.Success(File.ReadAllBytes(tmpPng));
         }
 
         // Very short clips can have nothing at 3s in - retry from the very first frame.
-        var atFirstFrame = RunProcess(tool, BuildFfmpegArgs(videoPath, tmpPng, seekSeconds: 0), timeout);
+        var atFirstFrame = RunProcess(tool, BuildFfmpegArgs(videoPath, tmpPng, seekSeconds: 0), timeout, token);
         return atFirstFrame.Success && HasContent(tmpPng)
             ? ThumbnailOutcome.Success(File.ReadAllBytes(tmpPng))
             : ThumbnailOutcome.Failure(DescribeFailure("ffmpeg", atFirstFrame));
@@ -136,7 +145,7 @@ internal static class VideoThumbnailer
     /// still alive and working keeps getting more time, in <see cref="PollInterval"/>-sized slices,
     /// until the overall budget is exhausted (then it is killed and reported as timed out).
     /// </summary>
-    private static ProcessOutcome RunProcess(string exe, string arguments, TimeSpan timeout)
+    private static ProcessOutcome RunProcess(string exe, string arguments, TimeSpan timeout, CancellationToken token)
     {
         Process? process = null;
         try
@@ -155,20 +164,25 @@ internal static class VideoThumbnailer
             };
 
             process.Start();
-            var stdoutTask = process.StandardOutput.ReadToEndAsync();
-            var stderrTask = process.StandardError.ReadToEndAsync();
+            // CancellationToken.None on purpose: stderr is what DescribeFailure reports, and
+            // cancelling these reads would discard the diagnostics for a process we are about to
+            // kill anyway. The reads end on their own when the process exits or is killed.
+            var stdoutTask = process.StandardOutput.ReadToEndAsync(CancellationToken.None);
+            var stderrTask = process.StandardError.ReadToEndAsync(CancellationToken.None);
 
-            var remaining = timeout;
-            while (true)
+            var started = Stopwatch.StartNew();
+            while (!process.WaitForExit((int)PollInterval.TotalMilliseconds))
             {
-                var slice = remaining < PollInterval ? remaining : PollInterval;
-                if (process.WaitForExit((int)Math.Max(slice.TotalMilliseconds, 0)))
+                // Checked between slices rather than by waiting out the whole budget: the cursor
+                // has moved off this file, so the frame is not wanted any more. Without this, a
+                // superseded thumbnail kept ffmpeg running for the full timeout.
+                if (token.IsCancellationRequested)
                 {
-                    break;
+                    TryKill(process);
+                    throw new OperationCanceledException(token);
                 }
 
-                remaining -= slice;
-                if (remaining <= TimeSpan.Zero)
+                if (started.Elapsed >= timeout)
                 {
                     TryKill(process);
                     return new ProcessOutcome(TimedOut: true, ExitCode: null, StdErr: null, StartError: null);

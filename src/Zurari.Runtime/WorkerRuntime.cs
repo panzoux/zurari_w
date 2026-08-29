@@ -10,6 +10,11 @@ namespace Zurari.Runtime;
 /// resulting <see cref="Msg"/>s back through the <c>post</c> delegate supplied at construction.
 /// This is the only layer allowed to perform file I/O; Core stays pure and describes I/O as data.
 /// </summary>
+/// <remarks>
+/// <see cref="Effect.LoadPreview"/> is the exception: it runs on its own single cancellable slot
+/// rather than on the pool - see <see cref="StartPreview"/> for why sharing the pool starved
+/// navigation.
+/// </remarks>
 public sealed class WorkerRuntime : IDisposable
 {
     /// <summary>
@@ -48,6 +53,15 @@ public sealed class WorkerRuntime : IDisposable
     private readonly CancellationTokenSource _cts;
     private readonly Task[] _workers;
     private readonly long _previewImageSizeLimitBytes;
+
+    /// <summary>Guards <see cref="_previewCts"/> and <see cref="_previewTask"/>.</summary>
+    private readonly object _previewGate = new();
+
+    /// <summary>Cancels the one in-flight preview, if any. Replaced each time a new one starts.</summary>
+    private CancellationTokenSource? _previewCts;
+
+    /// <summary>The in-flight preview, kept only so <see cref="Dispose"/> can wait for it to unwind.</summary>
+    private Task? _previewTask;
 
     static WorkerRuntime()
     {
@@ -132,9 +146,80 @@ public sealed class WorkerRuntime : IDisposable
                 ExecuteReadDirectory(readDirectory);
                 break;
             case Effect.LoadPreview loadPreview:
-                ExecuteLoadPreview(loadPreview);
+                StartPreview(loadPreview);
+                break;
+            case Effect.CancelPreview:
+                CancelInFlightPreview();
                 break;
         }
+    }
+
+    /// <summary>
+    /// Begins <paramref name="effect"/> on its own task and returns immediately, cancelling whatever
+    /// preview was already running.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Preview deliberately does not execute on the worker pool. A preview can block for a long time
+    /// - opening a handle on a cloud placeholder hydrates the file, and a video thumbnail shells out
+    /// to ffmpeg for up to <see cref="VideoThumbnailTimeout"/> - and the pool is small (two workers
+    /// by default). Running previews there meant two slow videos under the cursor could occupy every
+    /// worker at once, leaving <see cref="Effect.ReadDirectory"/> queued behind them: navigation
+    /// stopped until a thumbnail timed out.
+    /// </para>
+    /// <para>
+    /// Only one preview is ever in flight, matching what the UI can show. Starting a new one cancels
+    /// the old rather than waiting for it, so cancellation is not itself blocked by the work it is
+    /// cancelling; a superseded result would be discarded by the generation check anyway.
+    /// </para>
+    /// </remarks>
+    private void StartPreview(Effect.LoadPreview effect)
+    {
+        CancellationToken token;
+        CancellationTokenSource cts;
+        lock (_previewGate)
+        {
+            if (_cts.IsCancellationRequested)
+            {
+                return;
+            }
+
+            CancelPreviewCtsUnderLock();
+            cts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+            _previewCts = cts;
+            token = cts.Token;
+            _previewTask = Task.Run(() => ExecuteLoadPreview(effect, token), CancellationToken.None);
+        }
+    }
+
+    /// <summary>Cancels the in-flight preview, if there is one. Safe to call when there is not.</summary>
+    private void CancelInFlightPreview()
+    {
+        lock (_previewGate)
+        {
+            CancelPreviewCtsUnderLock();
+        }
+    }
+
+    private void CancelPreviewCtsUnderLock()
+    {
+        var previous = _previewCts;
+        _previewCts = null;
+        if (previous is null)
+        {
+            return;
+        }
+
+        try
+        {
+            previous.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Already torn down by Dispose; nothing left to cancel.
+        }
+
+        previous.Dispose();
     }
 
     private void ExecuteReadDirectory(Effect.ReadDirectory effect)
@@ -229,12 +314,14 @@ public sealed class WorkerRuntime : IDisposable
     /// <see cref="Msg.PreviewFailed"/> instead of propagating - a bad preview request must never
     /// take down a worker.
     /// </summary>
-    private void ExecuteLoadPreview(Effect.LoadPreview effect)
+    private void ExecuteLoadPreview(Effect.LoadPreview effect, CancellationToken token)
     {
         try
         {
             using var stream = new FileStream(
                 effect.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+
+            token.ThrowIfCancellationRequested();
 
             var fileInfo = new FileInfo(effect.Path);
             var baseMetadata = new PreviewMetadata(fileInfo.Name, fileInfo.Length, fileInfo.CreationTime, fileInfo.LastWriteTime);
@@ -243,11 +330,13 @@ public sealed class WorkerRuntime : IDisposable
             var head = new byte[headLength];
             stream.ReadExactly(head);
 
+            token.ThrowIfCancellationRequested();
+
             var detected = FileTypeDetector.Detect(head);
 
             if (detected.Category == FileCategory.Video || IsVideoExtension(effect.Path))
             {
-                ExecuteVideoPreview(effect, detected, effect.Path, head, baseMetadata);
+                ExecuteVideoPreview(effect, detected, effect.Path, head, baseMetadata, token);
                 return;
             }
 
@@ -266,6 +355,11 @@ public sealed class WorkerRuntime : IDisposable
 
             _post(new Msg.PreviewLoaded(
                 effect.Generation, PreviewKind.Binary, null, HexHead(head), detected.Label, baseMetadata));
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer preview (or shutting down). The caller already moved on, so
+            // there is deliberately no Msg: reporting a failure here would race the new result.
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -307,9 +401,14 @@ public sealed class WorkerRuntime : IDisposable
     /// non-renderable file, with a label noting the missing tool.
     /// </summary>
     private void ExecuteVideoPreview(
-        Effect.LoadPreview effect, DetectedType detected, string path, byte[] head, PreviewMetadata baseMetadata)
+        Effect.LoadPreview effect,
+        DetectedType detected,
+        string path,
+        byte[] head,
+        PreviewMetadata baseMetadata,
+        CancellationToken token)
     {
-        var outcome = VideoThumbnailer.TryCreateThumbnail(path, VideoThumbnailTimeout);
+        var outcome = VideoThumbnailer.TryCreateThumbnail(path, VideoThumbnailTimeout, token);
         if (outcome.Bytes is not null)
         {
             var metadata = WithPixelInfo(baseMetadata, outcome.Bytes);
@@ -434,9 +533,23 @@ public sealed class WorkerRuntime : IDisposable
     {
         _channel.Writer.TryComplete();
         _cts.Cancel();
+
+        Task? previewTask;
+        lock (_previewGate)
+        {
+            CancelPreviewCtsUnderLock();
+            previewTask = _previewTask;
+            _previewTask = null;
+        }
+
         try
         {
             Task.WaitAll(_workers, TimeSpan.FromSeconds(5));
+
+            // The in-flight preview runs off the pool, so waiting on the workers does not cover it.
+            // It is given its own budget to unwind: cancellation kills any ffmpeg it started, but
+            // that still takes a moment.
+            previewTask?.Wait(TimeSpan.FromSeconds(5));
         }
         catch (AggregateException)
         {

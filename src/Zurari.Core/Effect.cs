@@ -79,4 +79,24 @@ public abstract record Effect
     /// told apart from the current one and discarded.
     /// </summary>
     public sealed record LoadPreview(int Generation, string Path) : Effect;
+
+    /// <summary>
+    /// Abandons the in-flight <see cref="LoadPreview"/> for <paramref name="Generation"/>: the
+    /// cursor has moved off that file, so its result is already destined to be discarded by the
+    /// generation check.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Discarding the result was never the expensive part. A preview can be arbitrarily slow -
+    /// opening a handle on a cloud placeholder hydrates it, and a video thumbnail shells out to
+    /// ffmpeg for up to twenty seconds - and without this the work ran to completion regardless,
+    /// holding a worker the whole time. Fast cursor movement through a directory of videos could
+    /// therefore queue up minutes of work whose results were all thrown away.
+    /// </para>
+    /// <para>
+    /// Like <see cref="CancelJob"/>, this produces no <see cref="Msg"/> of its own: the abandoned
+    /// load simply stops, and the request that superseded it reports normally.
+    /// </para>
+    /// </remarks>
+    public sealed record CancelPreview(int Generation) : Effect;
 }
