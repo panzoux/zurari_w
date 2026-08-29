@@ -39,9 +39,8 @@ public sealed class ThumbnailCache
     /// <c>%LOCALAPPDATA%\zurari\thumbs</c>.
     /// </summary>
     /// <remarks>
-    /// The directory is injectable so tests do not write to the real per-user cache. That is the
-    /// same lesson <c>UserSettingsStore</c> is missing: because its path is a static property, its
-    /// tests write to the live <c>%APPDATA%</c> and cannot cover the corrupt or missing cases at all.
+    /// The directory is injectable so tests do not write to the real per-user cache - the same
+    /// reason <see cref="UserSettingsStore"/> takes one.
     /// </remarks>
     public ThumbnailCache(string? directory = null)
     {

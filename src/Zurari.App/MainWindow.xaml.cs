@@ -30,6 +30,9 @@ public sealed partial class MainWindow : Window, IDisposable
     private readonly MessageLoop loop;
     private readonly ShellIconCache iconCache = new();
 
+    /// <summary>Persisted preferences, at the default per-user location.</summary>
+    private readonly UserSettingsStore settingsStore = new();
+
     /// <summary>Lets a render reuse the row arrays it built last time - see <see cref="ProjectionCache"/>.</summary>
     private readonly ProjectionCache projectionCache = new();
 
@@ -108,14 +111,14 @@ public sealed partial class MainWindow : Window, IDisposable
 
         // Restore the persisted preview-pane width (clamped: the XAML Min/star sizing keeps it
         // on-screen even if the saved value is larger than the current window).
-        if (UserSettingsStore.Load().PreviewWidth is { } previewWidth && previewWidth >= 150)
+        if (settingsStore.Load().PreviewWidth is { } previewWidth && previewWidth >= 150)
         {
             PreviewColumn.Width = new GridLength(Math.Min(previewWidth, 2000));
         }
 
         Closed += (_, _) =>
         {
-            UserSettingsStore.Save(new UserSettings(PreviewWidth: PreviewColumn.ActualWidth));
+            settingsStore.Save(new UserSettings(PreviewWidth: PreviewColumn.ActualWidth));
             Dispose();
         };
         Loaded += (_, _) => Browser.Focus();
