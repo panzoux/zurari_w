@@ -41,12 +41,12 @@ public class ShellEffectExecutorTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var executor = new ShellEffectExecutor(queue.Enqueue);
-            executor.Submit(new Effect.DeleteToRecycleBin(0, dir, [filePath]));
+            executor.Submit(new Effect.DeleteToRecycleBin(0, new Location.RealDirectory(dir), [filePath]));
 
             var msg = WaitForMsg(queue, TimeSpan.FromSeconds(15));
             var completed = Assert.IsType<Msg.ShellOpCompleted>(msg);
             Assert.Equal(0, completed.ColumnIndex);
-            Assert.Equal(dir, completed.Path);
+            Assert.Equal(new Location.RealDirectory(dir), completed.ColumnLocation);
             Assert.Equal([dir], completed.AffectedDirs);
             Assert.False(File.Exists(filePath));
         }
@@ -71,12 +71,12 @@ public class ShellEffectExecutorTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var executor = new ShellEffectExecutor(queue.Enqueue);
-            executor.Submit(new Effect.DeleteToRecycleBin(0, dir, [filePath], Permanent: true));
+            executor.Submit(new Effect.DeleteToRecycleBin(0, new Location.RealDirectory(dir), [filePath], Permanent: true));
 
             var msg = WaitForMsg(queue, TimeSpan.FromSeconds(15));
             var completed = Assert.IsType<Msg.ShellOpCompleted>(msg);
             Assert.Equal(0, completed.ColumnIndex);
-            Assert.Equal(dir, completed.Path);
+            Assert.Equal(new Location.RealDirectory(dir), completed.ColumnLocation);
             Assert.Equal([dir], completed.AffectedDirs);
             Assert.False(File.Exists(filePath));
         }
@@ -98,12 +98,12 @@ public class ShellEffectExecutorTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var executor = new ShellEffectExecutor(queue.Enqueue);
-            executor.Submit(new Effect.DeleteToRecycleBin(0, dir, [subDir]));
+            executor.Submit(new Effect.DeleteToRecycleBin(0, new Location.RealDirectory(dir), [subDir]));
 
             var msg = WaitForMsg(queue, TimeSpan.FromSeconds(15));
             var completed = Assert.IsType<Msg.ShellOpCompleted>(msg);
             Assert.Equal(0, completed.ColumnIndex);
-            Assert.Equal(dir, completed.Path);
+            Assert.Equal(new Location.RealDirectory(dir), completed.ColumnLocation);
             Assert.Equal([dir], completed.AffectedDirs);
             Assert.False(Directory.Exists(subDir));
         }
@@ -123,12 +123,12 @@ public class ShellEffectExecutorTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var executor = new ShellEffectExecutor(queue.Enqueue);
-            executor.Submit(new Effect.DeleteToRecycleBin(2, dir, [missing]));
+            executor.Submit(new Effect.DeleteToRecycleBin(2, new Location.RealDirectory(dir), [missing]));
 
             var msg = WaitForMsg(queue, TimeSpan.FromSeconds(15));
             var failed = Assert.IsType<Msg.ShellOpFailed>(msg);
             Assert.Equal(2, failed.ColumnIndex);
-            Assert.Equal(dir, failed.Path);
+            Assert.Equal(new Location.RealDirectory(dir), failed.ColumnLocation);
             Assert.False(string.IsNullOrEmpty(failed.Error));
         }
         finally
@@ -150,12 +150,12 @@ public class ShellEffectExecutorTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var executor = new ShellEffectExecutor(queue.Enqueue);
-            executor.Submit(new Effect.DeleteToRecycleBin(0, dir, [filePath1, filePath2]));
+            executor.Submit(new Effect.DeleteToRecycleBin(0, new Location.RealDirectory(dir), [filePath1, filePath2]));
 
             var msg = WaitForMsg(queue, TimeSpan.FromSeconds(15));
             var completed = Assert.IsType<Msg.ShellOpCompleted>(msg);
             Assert.Equal(0, completed.ColumnIndex);
-            Assert.Equal(dir, completed.Path);
+            Assert.Equal(new Location.RealDirectory(dir), completed.ColumnLocation);
             Assert.Equal([dir], completed.AffectedDirs);
             Assert.False(File.Exists(filePath1));
             Assert.False(File.Exists(filePath2));
@@ -177,7 +177,7 @@ public class ShellEffectExecutorTests
             var executor = new ShellEffectExecutor(queue.Enqueue);
             for (var i = 0; i < 50; i++)
             {
-                executor.Submit(new Effect.DeleteToRecycleBin(i, dir, [Path.Combine(dir, $"missing-{i}.txt")]));
+                executor.Submit(new Effect.DeleteToRecycleBin(i, new Location.RealDirectory(dir), [Path.Combine(dir, $"missing-{i}.txt")]));
             }
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -204,12 +204,12 @@ public class ShellEffectExecutorTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var executor = new ShellEffectExecutor(queue.Enqueue, suppressUi: true);
-            executor.Submit(new Effect.ShellCopyOrMove(0, destDir, destDir, [srcFile], IsMove: false));
+            executor.Submit(new Effect.ShellCopyOrMove(0, new Location.RealDirectory(destDir), destDir, [srcFile], IsMove: false));
 
             var msg = WaitForMsg(queue, TimeSpan.FromSeconds(15));
             var completed = Assert.IsType<Msg.ShellOpCompleted>(msg);
             Assert.Equal(0, completed.ColumnIndex);
-            Assert.Equal(destDir, completed.Path);
+            Assert.Equal(new Location.RealDirectory(destDir), completed.ColumnLocation);
             // A copy leaves the source untouched, so only the destination is affected.
             Assert.Equal([destDir], completed.AffectedDirs);
             Assert.True(File.Exists(srcFile));
@@ -239,12 +239,12 @@ public class ShellEffectExecutorTests
             using var executor = new ShellEffectExecutor(queue.Enqueue, suppressUi: true);
             // ColumnPath (columnDir) differs from DestPath (subDir): a row-granular drop onto a
             // directory row within the column, not the column's own background.
-            executor.Submit(new Effect.ShellCopyOrMove(0, columnDir, subDir, [srcFile], IsMove: false));
+            executor.Submit(new Effect.ShellCopyOrMove(0, new Location.RealDirectory(columnDir), subDir, [srcFile], IsMove: false));
 
             var msg = WaitForMsg(queue, TimeSpan.FromSeconds(15));
             var completed = Assert.IsType<Msg.ShellOpCompleted>(msg);
             Assert.Equal(0, completed.ColumnIndex);
-            Assert.Equal(columnDir, completed.Path);
+            Assert.Equal(new Location.RealDirectory(columnDir), completed.ColumnLocation);
             // AffectedDirs is keyed by DestPath (the row that was actually dropped onto), not
             // ColumnPath - the row-target subdirectory is what changed, not the column background.
             Assert.Equal([subDir], completed.AffectedDirs);
@@ -270,11 +270,11 @@ public class ShellEffectExecutorTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var executor = new ShellEffectExecutor(queue.Enqueue, suppressUi: true);
-            executor.Submit(new Effect.ShellCopyOrMove(0, destDir, destDir, [srcFile], IsMove: true));
+            executor.Submit(new Effect.ShellCopyOrMove(0, new Location.RealDirectory(destDir), destDir, [srcFile], IsMove: true));
 
             var msg = WaitForMsg(queue, TimeSpan.FromSeconds(15));
             var completed = Assert.IsType<Msg.ShellOpCompleted>(msg);
-            Assert.Equal(destDir, completed.Path);
+            Assert.Equal(new Location.RealDirectory(destDir), completed.ColumnLocation);
             // A move also changes the source directory, so its parent is affected too.
             Assert.Equal([destDir, srcDir], completed.AffectedDirs);
             Assert.False(File.Exists(srcFile));
@@ -297,12 +297,12 @@ public class ShellEffectExecutorTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var executor = new ShellEffectExecutor(queue.Enqueue, suppressUi: true);
-            executor.Submit(new Effect.ShellCopyOrMove(3, destDir, destDir, [missing], IsMove: false));
+            executor.Submit(new Effect.ShellCopyOrMove(3, new Location.RealDirectory(destDir), destDir, [missing], IsMove: false));
 
             var msg = WaitForMsg(queue, TimeSpan.FromSeconds(15));
             var failed = Assert.IsType<Msg.ShellOpFailed>(msg);
             Assert.Equal(3, failed.ColumnIndex);
-            Assert.Equal(destDir, failed.Path);
+            Assert.Equal(new Location.RealDirectory(destDir), failed.ColumnLocation);
             Assert.False(string.IsNullOrEmpty(failed.Error));
         }
         finally

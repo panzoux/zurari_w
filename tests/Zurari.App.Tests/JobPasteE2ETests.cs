@@ -76,7 +76,7 @@ public class JobPasteE2ETests
 
             var initial = new AppState
             {
-                Columns = [new Column(Path: destDir, Entries: [])],
+                Columns = [new Column(new Location.RealDirectory(destDir), Entries: [])],
                 FocusedColumn = 0,
             };
             var (loop, queue, runtime, jobEngine) = BuildLoop(initial);
@@ -126,8 +126,8 @@ public class JobPasteE2ETests
             {
                 Columns =
                 [
-                    new Column(Path: sourceDir, Entries: []),
-                    new Column(Path: destDir, Entries: []),
+                    new Column(new Location.RealDirectory(sourceDir), Entries: []),
+                    new Column(new Location.RealDirectory(destDir), Entries: []),
                 ],
                 FocusedColumn = 1,
             };

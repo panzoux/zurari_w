@@ -17,7 +17,7 @@ public class StateProjectionTests
     [Fact]
     public void Root_column_title_is_drive_list_label()
     {
-        var state = StateWithColumns(new Column("", [], Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(Location.Drives.Instance, [], Load: LoadState.Loaded));
 
         var vms = StateProjection.Project(state);
 
@@ -27,7 +27,7 @@ public class StateProjectionTests
     [Fact]
     public void Normal_directory_title_is_last_path_segment()
     {
-        var state = StateWithColumns(new Column(@"C:\Users\someone", [], Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\Users\someone"), [], Load: LoadState.Loaded));
 
         var vms = StateProjection.Project(state);
 
@@ -37,7 +37,7 @@ public class StateProjectionTests
     [Fact]
     public void Drive_root_title_trims_trailing_separator()
     {
-        var state = StateWithColumns(new Column(@"C:\", [], Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [], Load: LoadState.Loaded));
 
         var vms = StateProjection.Project(state);
 
@@ -48,7 +48,7 @@ public class StateProjectionTests
     public void Error_load_state_suffixes_title()
     {
         var state = StateWithColumns(
-            new Column(@"C:\Users", [], Load: LoadState.Error, ErrorMessage: "denied"));
+            new Column(new Location.RealDirectory(@"C:\Users"), [], Load: LoadState.Error, ErrorMessage: "denied"));
 
         var vms = StateProjection.Project(state);
 
@@ -58,7 +58,7 @@ public class StateProjectionTests
     [Fact]
     public void Loading_with_no_entries_suffixes_title_with_ellipsis()
     {
-        var state = StateWithColumns(new Column(@"C:\Users", [], Load: LoadState.Loading));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\Users"), [], Load: LoadState.Loading));
 
         var vms = StateProjection.Project(state);
 
@@ -69,7 +69,7 @@ public class StateProjectionTests
     public void Loading_with_stale_entries_does_not_suffix_title()
     {
         var entry = new Entry("a.txt", EntryKind.File);
-        var state = StateWithColumns(new Column(@"C:\Users", [entry], Cursor: 0, Load: LoadState.Loading));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\Users"), [entry], Cursor: 0, Load: LoadState.Loading));
 
         var vms = StateProjection.Project(state);
 
@@ -87,7 +87,7 @@ public class StateProjectionTests
     public void File_size_is_formatted_as_human_readable(long sizeBytes, string expected)
     {
         var entry = new Entry("f.bin", EntryKind.File, SizeBytes: sizeBytes);
-        var state = StateWithColumns(new Column(@"C:\", [entry], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [entry], Cursor: 0, Load: LoadState.Loaded));
 
         var vms = StateProjection.Project(state);
 
@@ -98,7 +98,7 @@ public class StateProjectionTests
     public void Unknown_file_size_projects_to_null()
     {
         var entry = new Entry("f.bin", EntryKind.File, SizeBytes: -1);
-        var state = StateWithColumns(new Column(@"C:\", [entry], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [entry], Cursor: 0, Load: LoadState.Loaded));
 
         var vms = StateProjection.Project(state);
 
@@ -111,7 +111,7 @@ public class StateProjectionTests
     public void Directory_and_drive_size_is_always_null(Core.EntryKind kind)
     {
         var entry = new Entry("sub", kind, SizeBytes: 123);
-        var state = StateWithColumns(new Column(@"C:\", [entry], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [entry], Cursor: 0, Load: LoadState.Loaded));
 
         var vms = StateProjection.Project(state);
 
@@ -122,7 +122,7 @@ public class StateProjectionTests
     public void Unknown_modified_date_projects_to_null()
     {
         var entry = new Entry("f.bin", EntryKind.File, Modified: default);
-        var state = StateWithColumns(new Column(@"C:\", [entry], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [entry], Cursor: 0, Load: LoadState.Loaded));
 
         var vms = StateProjection.Project(state);
 
@@ -134,7 +134,7 @@ public class StateProjectionTests
     {
         var modified = new DateTime(2026, 7, 15, 9, 30, 0, DateTimeKind.Unspecified);
         var entry = new Entry("f.bin", EntryKind.File, Modified: modified);
-        var state = StateWithColumns(new Column(@"C:\", [entry], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [entry], Cursor: 0, Load: LoadState.Loaded));
 
         var vms = StateProjection.Project(state);
 
@@ -147,7 +147,7 @@ public class StateProjectionTests
         var drive = new Entry("C:\\", EntryKind.Drive);
         var dir = new Entry("sub", EntryKind.Directory);
         var file = new Entry("a.txt", EntryKind.File);
-        var state = StateWithColumns(new Column(@"C:\", [drive, dir, file], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [drive, dir, file], Cursor: 0, Load: LoadState.Loaded));
 
         var vms = StateProjection.Project(state);
 
@@ -160,7 +160,7 @@ public class StateProjectionTests
     public void Cursor_index_and_mark_are_passed_through()
     {
         var entry = new Entry("a.txt", EntryKind.File, IsMarked: true);
-        var state = StateWithColumns(new Column(@"C:\", [entry], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [entry], Cursor: 0, Load: LoadState.Loaded));
 
         var vms = StateProjection.Project(state);
 
@@ -175,8 +175,8 @@ public class StateProjectionTests
         {
             Columns =
             [
-                new Column(@"C:\", [], Load: LoadState.Loaded),
-                new Column(@"C:\sub", [], Load: LoadState.Loaded),
+                new Column(new Location.RealDirectory(@"C:\"), [], Load: LoadState.Loaded),
+                new Column(new Location.RealDirectory(@"C:\sub"), [], Load: LoadState.Loaded),
             ],
             FocusedColumn = 1,
         };
@@ -190,7 +190,7 @@ public class StateProjectionTests
     [Fact]
     public void Empty_column_has_no_entries()
     {
-        var state = StateWithColumns(new Column(@"C:\", [], Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [], Load: LoadState.Loaded));
 
         var vms = StateProjection.Project(state);
 
@@ -202,7 +202,7 @@ public class StateProjectionTests
     {
         var cut = new Entry("cut.txt", EntryKind.File);
         var plain = new Entry("plain.txt", EntryKind.File);
-        var state = StateWithColumns(new Column(@"C:\", [cut, plain], Cursor: 0, Load: LoadState.Loaded))
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [cut, plain], Cursor: 0, Load: LoadState.Loaded))
             with
         { CutPending = [@"C:\cut.txt"] };
 
@@ -216,7 +216,7 @@ public class StateProjectionTests
     public void CutPending_comparison_is_case_insensitive()
     {
         var entry = new Entry("Cut.TXT", EntryKind.File);
-        var state = StateWithColumns(new Column(@"C:\", [entry], Cursor: 0, Load: LoadState.Loaded))
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [entry], Cursor: 0, Load: LoadState.Loaded))
             with
         { CutPending = [@"c:\cut.txt"] };
 
@@ -229,7 +229,7 @@ public class StateProjectionTests
     public void Empty_CutPending_projects_every_entry_as_not_cut()
     {
         var entry = new Entry("a.txt", EntryKind.File);
-        var state = StateWithColumns(new Column(@"C:\", [entry], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [entry], Cursor: 0, Load: LoadState.Loaded));
 
         var vms = StateProjection.Project(state);
 
@@ -245,8 +245,8 @@ public class StateProjectionTests
         {
             Columns =
             [
-                new Column(@"C:\a", [entryA], Cursor: 0, Load: LoadState.Loaded),
-                new Column(@"C:\b", [entryB], Cursor: 0, Load: LoadState.Loaded),
+                new Column(new Location.RealDirectory(@"C:\a"), [entryA], Cursor: 0, Load: LoadState.Loaded),
+                new Column(new Location.RealDirectory(@"C:\b"), [entryB], Cursor: 0, Load: LoadState.Loaded),
             ],
             FocusedColumn = 0,
             CutPending = [@"C:\a\same-name.txt"],

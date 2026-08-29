@@ -62,16 +62,16 @@ public abstract record Msg
 
     /// <summary>
     /// A <c>ReadDirectory</c> effect succeeded. Race-safe: ignored unless
-    /// <paramref name="ColumnIndex"/> is still in range and that column's path still equals
-    /// <paramref name="Path"/> (otherwise it is a stale result from a superseded read).
+    /// <paramref name="ColumnIndex"/> is still in range and that column's location still equals
+    /// <paramref name="Location"/> (otherwise it is a stale result from a superseded read).
     /// </summary>
-    public sealed record DirectoryLoaded(int ColumnIndex, string Path, ImmutableArray<Entry> Entries) : Msg;
+    public sealed record DirectoryLoaded(int ColumnIndex, Location Location, ImmutableArray<Entry> Entries) : Msg;
 
     /// <summary>
     /// A <c>ReadDirectory</c> effect failed. Subject to the same staleness check as
     /// <see cref="DirectoryLoaded"/>.
     /// </summary>
-    public sealed record DirectoryLoadFailed(int ColumnIndex, string Path, string Error) : Msg;
+    public sealed record DirectoryLoadFailed(int ColumnIndex, Location Location, string Error) : Msg;
 
     /// <summary>
     /// Delete the entry at <paramref name="EntryIndex"/> in <paramref name="ColumnIndex"/> to the
@@ -104,7 +104,7 @@ public abstract record Msg
     /// A shell operation (<see cref="Effect.DeleteToRecycleBin"/> or
     /// <see cref="Effect.ShellCopyOrMove"/>) succeeded. Subject to the same staleness check as
     /// <see cref="DirectoryLoaded"/> (<paramref name="ColumnIndex"/> in range and that column's
-    /// path still equals <paramref name="Path"/>). <paramref name="AffectedDirs"/> lists every
+    /// location still equals <paramref name="ColumnLocation"/>). <paramref name="AffectedDirs"/> lists every
     /// directory whose contents actually changed (e.g. a move's destination and, for a move only,
     /// the distinct parents of its sources; a delete's targets' distinct parents) - computed by the
     /// Shell executor, which has the effect at hand. Re-emits <see cref="Effect.ReadDirectory"/> for
@@ -113,14 +113,14 @@ public abstract record Msg
     /// their read completes. Columns showing an unrelated directory are left untouched.
     /// </summary>
     public sealed record ShellOpCompleted(
-        int ColumnIndex, string Path, ImmutableArray<string> AffectedDirs) : Msg;
+        int ColumnIndex, Location ColumnLocation, ImmutableArray<string> AffectedDirs) : Msg;
 
     /// <summary>
     /// A shell operation (<see cref="Effect.DeleteToRecycleBin"/> or
     /// <see cref="Effect.ShellCopyOrMove"/>) failed. Subject to the same staleness check as
     /// <see cref="ShellOpCompleted"/>.
     /// </summary>
-    public sealed record ShellOpFailed(int ColumnIndex, string Path, string Error) : Msg;
+    public sealed record ShellOpFailed(int ColumnIndex, Location ColumnLocation, string Error) : Msg;
 
     /// <summary>
     /// Flip the mark of the entry at <paramref name="EntryIndex"/> in <paramref name="ColumnIndex"/>

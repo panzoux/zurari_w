@@ -141,14 +141,18 @@ public sealed class WorkerRuntime : IDisposable
     {
         try
         {
-            var entries = effect.Path.Length == 0
-                ? ReadDrives()
-                : ReadDirectoryEntries(effect.Path);
-            _post(new Msg.DirectoryLoaded(effect.ColumnIndex, effect.Path, entries));
+            var entries = effect.Location switch
+            {
+                Location.Drives => ReadDrives(),
+                Location.RealDirectory directory => ReadDirectoryEntries(directory.Path),
+                _ => throw new NotSupportedException(
+                    $"No reader for location kind {effect.Location.GetType().Name}."),
+            };
+            _post(new Msg.DirectoryLoaded(effect.ColumnIndex, effect.Location, entries));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _post(new Msg.DirectoryLoadFailed(effect.ColumnIndex, effect.Path, ex.Message));
+            _post(new Msg.DirectoryLoadFailed(effect.ColumnIndex, effect.Location, ex.Message));
         }
     }
 

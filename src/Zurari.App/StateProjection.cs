@@ -47,7 +47,7 @@ public static class StateProjection
         var entries = new Controls.EntryVm[column.Entries.Length];
         for (var i = 0; i < column.Entries.Length; i++)
         {
-            entries[i] = ProjectEntry(column.Entries[i], iconResolver, column.Path, cutPending);
+            entries[i] = ProjectEntry(column.Entries[i], iconResolver, column.Location, cutPending);
         }
 
         return new Controls.ColumnVm(
@@ -59,7 +59,12 @@ public static class StateProjection
 
     private static string ProjectTitle(Column column)
     {
-        var baseTitle = column.Path.Length == 0 ? "ドライブ" : LastPathSegment(column.Path);
+        var baseTitle = column.Location switch
+        {
+            Location.Drives => "ドライブ",
+            Location.RealDirectory directory => LastPathSegment(directory.Path),
+            var other => other.FilesystemPath is { } path ? LastPathSegment(path) : string.Empty,
+        };
 
         return column.Load switch
         {
@@ -83,9 +88,11 @@ public static class StateProjection
     }
 
     private static Controls.EntryVm ProjectEntry(
-        Entry entry, Func<Entry, ImageSource?>? iconResolver, string columnPath, HashSet<string>? cutPending)
+        Entry entry, Func<Entry, ImageSource?>? iconResolver, Location columnLocation, HashSet<string>? cutPending)
     {
-        var fullPath = columnPath.Length == 0 ? entry.Name : System.IO.Path.Combine(columnPath, entry.Name);
+        var fullPath = entry.Target is { } target
+            ? target.FilesystemPath
+            : columnLocation.ChildPath(entry.Name);
         return new(
             Name: entry.Name,
             Kind: ProjectKind(entry.Kind),
@@ -93,7 +100,7 @@ public static class StateProjection
             SizeText: ProjectSize(entry),
             DateText: ProjectDate(entry.Modified),
             Icon: iconResolver?.Invoke(entry),
-            IsCut: cutPending?.Contains(fullPath) ?? false);
+            IsCut: fullPath is not null && (cutPending?.Contains(fullPath) ?? false));
     }
 
     private static Controls.EntryKind ProjectKind(EntryKind kind) => kind switch

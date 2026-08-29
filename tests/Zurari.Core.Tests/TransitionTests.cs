@@ -33,7 +33,7 @@ public class TransitionTests
     [Fact]
     public void CursorDown_advances_by_one()
     {
-        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (next, effects) = Transition.Apply(state, new Msg.CursorDown(0));
@@ -47,7 +47,7 @@ public class TransitionTests
     [Fact]
     public void CursorDown_clamps_at_last_entry()
     {
-        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 2, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 2, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (next, _) = Transition.Apply(state, new Msg.CursorDown(0));
@@ -58,7 +58,7 @@ public class TransitionTests
     [Fact]
     public void CursorUp_clamps_at_first_entry()
     {
-        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (next, _) = Transition.Apply(state, new Msg.CursorUp(0));
@@ -69,7 +69,7 @@ public class TransitionTests
     [Fact]
     public void CursorUp_on_empty_column_stays_minus_one()
     {
-        var column = new Column(@"C:\", [], Cursor: -1, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [], Cursor: -1, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (next, _) = Transition.Apply(state, new Msg.CursorUp(0));
@@ -80,7 +80,7 @@ public class TransitionTests
     [Fact]
     public void CursorPageDown_treats_non_positive_page_size_as_one()
     {
-        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (next, _) = Transition.Apply(state, new Msg.CursorPageDown(0, PageSize: 0));
@@ -91,7 +91,7 @@ public class TransitionTests
     [Fact]
     public void CursorPageDown_clamps_to_last_entry()
     {
-        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (next, _) = Transition.Apply(state, new Msg.CursorPageDown(0, PageSize: 100));
@@ -102,7 +102,7 @@ public class TransitionTests
     [Fact]
     public void CursorHome_moves_to_first_entry()
     {
-        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 2, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 2, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (next, _) = Transition.Apply(state, new Msg.CursorHome(0));
@@ -113,7 +113,7 @@ public class TransitionTests
     [Fact]
     public void CursorEnd_moves_to_last_entry()
     {
-        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (next, _) = Transition.Apply(state, new Msg.CursorEnd(0));
@@ -124,7 +124,7 @@ public class TransitionTests
     [Fact]
     public void CursorTo_moves_cursor_to_given_entry()
     {
-        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (next, effects) = Transition.Apply(state, new Msg.CursorTo(0, 2));
@@ -138,7 +138,7 @@ public class TransitionTests
     [Fact]
     public void CursorTo_clamps_out_of_range_entry_index()
     {
-        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (next, _) = Transition.Apply(state, new Msg.CursorTo(0, 99));
@@ -149,7 +149,7 @@ public class TransitionTests
     [Fact]
     public void CursorTo_on_empty_column_stays_minus_one()
     {
-        var column = new Column(@"C:\", [], Cursor: -1, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [], Cursor: -1, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (next, _) = Transition.Apply(state, new Msg.CursorTo(0, 0));
@@ -160,7 +160,7 @@ public class TransitionTests
     [Fact]
     public void CursorTo_with_out_of_range_column_is_ignored()
     {
-        var column = new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (next, effects) = Transition.Apply(state, new Msg.CursorTo(9, 0));
@@ -174,7 +174,7 @@ public class TransitionTests
     [InlineData(5)]
     public void Cursor_msgs_with_out_of_range_column_are_ignored(int columnIndex)
     {
-        var column = new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (next, effects) = Transition.Apply(state, new Msg.CursorDown(columnIndex));
@@ -187,8 +187,8 @@ public class TransitionTests
     public void FocusColumn_changes_focus_when_in_range()
     {
         var state = StateWithColumns(
-            new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded),
-            new Column(@"C:\sub", [], Load: LoadState.Loading));
+            new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loaded),
+            new Column(new Location.RealDirectory(@"C:\sub"), [], Load: LoadState.Loading));
 
         var (next, effects) = Transition.Apply(state, new Msg.FocusColumn(1));
 
@@ -199,7 +199,7 @@ public class TransitionTests
     [Fact]
     public void FocusColumn_out_of_range_is_ignored()
     {
-        var state = StateWithColumns(new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, _) = Transition.Apply(state, new Msg.FocusColumn(3));
 
@@ -210,15 +210,15 @@ public class TransitionTests
     public void EnterDirectory_truncates_right_columns_and_emits_ReadDirectory()
     {
         var state = StateWithColumns(
-            new Column(@"C:\", [Dir, File1], Cursor: 0, Load: LoadState.Loaded),
-            new Column(@"C:\sub", [File1], Cursor: 0, Load: LoadState.Loaded),
-            new Column(@"C:\sub\stale", [], Load: LoadState.Loading));
+            new Column(new Location.RealDirectory(@"C:\"), [Dir, File1], Cursor: 0, Load: LoadState.Loaded),
+            new Column(new Location.RealDirectory(@"C:\sub"), [File1], Cursor: 0, Load: LoadState.Loaded),
+            new Column(new Location.RealDirectory(@"C:\sub\stale"), [], Load: LoadState.Loading));
 
         var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(0, 0));
 
         Assert.Equal(2, next.Columns.Length);
         Assert.Equal(0, next.Columns[0].Cursor);
-        Assert.Equal(@"C:\sub", next.Columns[1].Path);
+        Assert.Equal(new Location.RealDirectory(@"C:\sub"), next.Columns[1].Location);
         Assert.Equal(-1, next.Columns[1].Cursor);
         Assert.Equal(LoadState.Loading, next.Columns[1].Load);
         Assert.Equal(1, next.FocusedColumn);
@@ -226,25 +226,25 @@ public class TransitionTests
         var effect = Assert.Single(effects);
         var readDirectory = Assert.IsType<Effect.ReadDirectory>(effect);
         Assert.Equal(1, readDirectory.ColumnIndex);
-        Assert.Equal(@"C:\sub", readDirectory.Path);
+        Assert.Equal(new Location.RealDirectory(@"C:\sub"), readDirectory.Location);
     }
 
     [Fact]
     public void EnterDirectory_at_virtual_root_uses_drive_name_as_child_path()
     {
-        var state = StateWithColumns(new Column("", [Drive], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(Location.Drives.Instance, [Drive], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(0, 0));
 
-        Assert.Equal(@"C:\", next.Columns[1].Path);
+        Assert.Equal(new Location.RealDirectory(@"C:\"), next.Columns[1].Location);
         var effect = Assert.IsType<Effect.ReadDirectory>(Assert.Single(effects));
-        Assert.Equal(@"C:\", effect.Path);
+        Assert.Equal(new Location.RealDirectory(@"C:\"), effect.Location);
     }
 
     [Fact]
     public void EnterDirectory_on_file_selects_it_and_moves_focus()
     {
-        var state = StateWithColumns(new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(0, 2));
 
@@ -260,9 +260,9 @@ public class TransitionTests
     public void EnterDirectory_on_file_truncates_columns_to_its_right()
     {
         var state = StateWithColumns(
-            new Column(@"C:\", [Dir, File1], Cursor: 0, Load: LoadState.Loaded),
-            new Column(@"C:\sub", [File1], Cursor: 0, Load: LoadState.Loaded),
-            new Column(@"C:\sub\stale", [], Load: LoadState.Loading)) with
+            new Column(new Location.RealDirectory(@"C:\"), [Dir, File1], Cursor: 0, Load: LoadState.Loaded),
+            new Column(new Location.RealDirectory(@"C:\sub"), [File1], Cursor: 0, Load: LoadState.Loaded),
+            new Column(new Location.RealDirectory(@"C:\sub\stale"), [], Load: LoadState.Loading)) with
         { FocusedColumn = 2 };
 
         var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(0, 1));
@@ -278,7 +278,7 @@ public class TransitionTests
     [Fact]
     public void EnterDirectory_with_out_of_range_entry_index_is_a_no_op()
     {
-        var state = StateWithColumns(new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(0, 7));
 
@@ -289,7 +289,7 @@ public class TransitionTests
     [Fact]
     public void EnterDirectory_default_focuses_the_new_child_column()
     {
-        var state = StateWithColumns(new Column(@"C:\", [Dir, File1], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [Dir, File1], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, _) = Transition.Apply(state, new Msg.EnterDirectory(0, 0));
 
@@ -299,12 +299,12 @@ public class TransitionTests
     [Fact]
     public void EnterDirectory_with_FocusChild_false_opens_the_child_but_keeps_focus_on_the_parent()
     {
-        var state = StateWithColumns(new Column(@"C:\", [Dir, File1], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [Dir, File1], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(0, 0, FocusChild: false));
 
         Assert.Equal(2, next.Columns.Length);
-        Assert.Equal(@"C:\sub", next.Columns[1].Path);
+        Assert.Equal(new Location.RealDirectory(@"C:\sub"), next.Columns[1].Location);
         Assert.Equal(LoadState.Loading, next.Columns[1].Load);
         Assert.Equal(0, next.FocusedColumn);
         var effect = Assert.IsType<Effect.ReadDirectory>(Assert.Single(effects));
@@ -316,7 +316,7 @@ public class TransitionTests
     {
         // File selection semantics are unaffected by FocusChild - there is no child column to
         // focus either way, so FocusedColumn is always the pressed column itself.
-        var state = StateWithColumns(new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(0, 2, FocusChild: false));
 
@@ -332,8 +332,8 @@ public class TransitionTests
     public void GoToParent_moves_focus_left_and_keeps_right_columns()
     {
         var state = StateWithColumns(
-            new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded),
-            new Column(@"C:\sub", [File1], Cursor: 0, Load: LoadState.Loaded)) with
+            new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loaded),
+            new Column(new Location.RealDirectory(@"C:\sub"), [File1], Cursor: 0, Load: LoadState.Loaded)) with
         { FocusedColumn = 1 };
 
         var (next, effects) = Transition.Apply(state, new Msg.GoToParent(1));
@@ -346,7 +346,7 @@ public class TransitionTests
     [Fact]
     public void GoToParent_at_column_zero_is_a_no_op()
     {
-        var state = StateWithColumns(new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(state, new Msg.GoToParent(0));
 
@@ -358,8 +358,8 @@ public class TransitionTests
     public void Refresh_emits_one_ReadDirectory_per_column_and_marks_all_loading()
     {
         var state = StateWithColumns(
-            new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded),
-            new Column(@"C:\sub", [File1], Cursor: 0, Load: LoadState.Loaded));
+            new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loaded),
+            new Column(new Location.RealDirectory(@"C:\sub"), [File1], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(state, new Msg.Refresh());
 
@@ -371,19 +371,21 @@ public class TransitionTests
         Assert.Equal(2, effects.Count);
         var first = Assert.IsType<Effect.ReadDirectory>(effects[0]);
         var second = Assert.IsType<Effect.ReadDirectory>(effects[1]);
-        Assert.Equal((0, @"C:\"), (first.ColumnIndex, first.Path));
-        Assert.Equal((1, @"C:\sub"), (second.ColumnIndex, second.Path));
+        Assert.Equal(0, first.ColumnIndex);
+        Assert.Equal(new Location.RealDirectory(@"C:\"), first.Location);
+        Assert.Equal(1, second.ColumnIndex);
+        Assert.Equal(new Location.RealDirectory(@"C:\sub"), second.Location);
     }
 
     [Fact]
     public void DirectoryLoaded_fills_entries_and_clamps_cursor_to_shrunk_range()
     {
-        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 2, Load: LoadState.Loading);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 2, Load: LoadState.Loading);
         var state = StateWithColumns(column);
 
         var (next, effects) = Transition.Apply(
             state,
-            new Msg.DirectoryLoaded(0, @"C:\", [Dir]));
+            new Msg.DirectoryLoaded(0, new Location.RealDirectory(@"C:\"), [Dir]));
 
         Assert.Equal(LoadState.Loaded, next.Columns[0].Load);
         Assert.Single(next.Columns[0].Entries);
@@ -394,10 +396,10 @@ public class TransitionTests
     [Fact]
     public void DirectoryLoaded_with_no_entries_sets_cursor_to_minus_one()
     {
-        var column = new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loading);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loading);
         var state = StateWithColumns(column);
 
-        var (next, _) = Transition.Apply(state, new Msg.DirectoryLoaded(0, @"C:\", []));
+        var (next, _) = Transition.Apply(state, new Msg.DirectoryLoaded(0, new Location.RealDirectory(@"C:\"), []));
 
         Assert.Equal(-1, next.Columns[0].Cursor);
     }
@@ -405,12 +407,12 @@ public class TransitionTests
     [Fact]
     public void DirectoryLoaded_with_wrong_path_is_ignored_as_stale()
     {
-        var column = new Column(@"C:\", [], Load: LoadState.Loading);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [], Load: LoadState.Loading);
         var state = StateWithColumns(column);
 
         var (next, effects) = Transition.Apply(
             state,
-            new Msg.DirectoryLoaded(0, @"C:\stale", [Dir]));
+            new Msg.DirectoryLoaded(0, new Location.RealDirectory(@"C:\stale"), [Dir]));
 
         Assert.Equal(state, next);
         Assert.Empty(effects);
@@ -419,9 +421,9 @@ public class TransitionTests
     [Fact]
     public void DirectoryLoaded_with_out_of_range_column_is_ignored_as_stale()
     {
-        var state = StateWithColumns(new Column(@"C:\", [], Load: LoadState.Loading));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [], Load: LoadState.Loading));
 
-        var (next, effects) = Transition.Apply(state, new Msg.DirectoryLoaded(9, @"C:\", [Dir]));
+        var (next, effects) = Transition.Apply(state, new Msg.DirectoryLoaded(9, new Location.RealDirectory(@"C:\"), [Dir]));
 
         Assert.Equal(state, next);
         Assert.Empty(effects);
@@ -430,10 +432,10 @@ public class TransitionTests
     [Fact]
     public void DirectoryLoadFailed_sets_error_and_keeps_old_entries()
     {
-        var column = new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loading);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loading);
         var state = StateWithColumns(column);
 
-        var (next, effects) = Transition.Apply(state, new Msg.DirectoryLoadFailed(0, @"C:\", "access denied"));
+        var (next, effects) = Transition.Apply(state, new Msg.DirectoryLoadFailed(0, new Location.RealDirectory(@"C:\"), "access denied"));
 
         Assert.Equal(LoadState.Error, next.Columns[0].Load);
         Assert.Equal("access denied", next.Columns[0].ErrorMessage);
@@ -444,10 +446,10 @@ public class TransitionTests
     [Fact]
     public void DirectoryLoadFailed_with_wrong_path_is_ignored_as_stale()
     {
-        var column = new Column(@"C:\", [], Load: LoadState.Loading);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [], Load: LoadState.Loading);
         var state = StateWithColumns(column);
 
-        var (next, _) = Transition.Apply(state, new Msg.DirectoryLoadFailed(0, @"C:\stale", "oops"));
+        var (next, _) = Transition.Apply(state, new Msg.DirectoryLoadFailed(0, new Location.RealDirectory(@"C:\stale"), "oops"));
 
         Assert.Equal(state, next);
     }
@@ -455,7 +457,7 @@ public class TransitionTests
     [Fact]
     public void DeleteEntry_on_file_marks_column_loading_and_emits_DeleteToRecycleBin()
     {
-        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 1, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 1, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (next, effects) = Transition.Apply(state, new Msg.DeleteEntry(0, 1));
@@ -465,7 +467,7 @@ public class TransitionTests
 
         var effect = Assert.IsType<Effect.DeleteToRecycleBin>(Assert.Single(effects));
         Assert.Equal(0, effect.ColumnIndex);
-        Assert.Equal(@"C:\", effect.Path);
+        Assert.Equal(new Location.RealDirectory(@"C:\"), effect.ColumnLocation);
         Assert.Equal([@"C:\a.txt"], effect.Targets);
         Assert.False(effect.Permanent);
     }
@@ -473,7 +475,7 @@ public class TransitionTests
     [Fact]
     public void DeleteEntry_with_Permanent_true_carries_it_through_to_the_effect()
     {
-        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 1, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 1, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (_, effects) = Transition.Apply(state, new Msg.DeleteEntry(0, 1, Permanent: true));
@@ -485,7 +487,7 @@ public class TransitionTests
     [Fact]
     public void DeleteEntry_on_directory_marks_column_loading_and_emits_DeleteToRecycleBin()
     {
-        var column = new Column(@"C:\", [Dir, File1], Cursor: 0, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (next, effects) = Transition.Apply(state, new Msg.DeleteEntry(0, 0));
@@ -498,7 +500,7 @@ public class TransitionTests
     [Fact]
     public void DeleteEntry_on_drive_is_a_no_op()
     {
-        var state = StateWithColumns(new Column("", [Drive], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(Location.Drives.Instance, [Drive], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(state, new Msg.DeleteEntry(0, 0));
 
@@ -509,7 +511,7 @@ public class TransitionTests
     [Fact]
     public void DeleteEntry_with_out_of_range_entry_index_is_a_no_op()
     {
-        var state = StateWithColumns(new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(state, new Msg.DeleteEntry(0, 7));
 
@@ -520,7 +522,7 @@ public class TransitionTests
     [Fact]
     public void DeleteEntry_with_out_of_range_column_is_a_no_op()
     {
-        var state = StateWithColumns(new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(state, new Msg.DeleteEntry(9, 0));
 
@@ -531,7 +533,7 @@ public class TransitionTests
     [Fact]
     public void ToggleMark_flips_mark_and_moves_cursor_to_it()
     {
-        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (next, effects) = Transition.Apply(state, new Msg.ToggleMark(0, 2));
@@ -546,7 +548,7 @@ public class TransitionTests
     [Fact]
     public void ToggleMark_flips_back_off_when_applied_twice()
     {
-        var column = new Column(@"C:\", [Dir, File1], Cursor: 0, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (once, _) = Transition.Apply(state, new Msg.ToggleMark(0, 1));
@@ -558,7 +560,7 @@ public class TransitionTests
     [Fact]
     public void ToggleMark_can_mark_a_drive_entry()
     {
-        var state = StateWithColumns(new Column("", [Drive], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(Location.Drives.Instance, [Drive], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, _) = Transition.Apply(state, new Msg.ToggleMark(0, 0));
 
@@ -568,7 +570,7 @@ public class TransitionTests
     [Fact]
     public void ToggleMark_with_out_of_range_entry_index_is_a_no_op()
     {
-        var state = StateWithColumns(new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(state, new Msg.ToggleMark(0, 7));
 
@@ -579,7 +581,7 @@ public class TransitionTests
     [Fact]
     public void ToggleMark_with_out_of_range_column_is_a_no_op()
     {
-        var state = StateWithColumns(new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(state, new Msg.ToggleMark(9, 0));
 
@@ -590,7 +592,7 @@ public class TransitionTests
     [Fact]
     public void ToggleMarkAtCursor_flips_cursor_entry_and_advances_cursor()
     {
-        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (next, effects) = Transition.Apply(state, new Msg.ToggleMarkAtCursor(0));
@@ -605,7 +607,7 @@ public class TransitionTests
     [Fact]
     public void ToggleMarkAtCursor_clamps_cursor_advance_at_last_entry()
     {
-        var column = new Column(@"C:\", [Dir, File1], Cursor: 1, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1], Cursor: 1, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (next, _) = Transition.Apply(state, new Msg.ToggleMarkAtCursor(0));
@@ -617,7 +619,7 @@ public class TransitionTests
     [Fact]
     public void ToggleMarkAtCursor_on_empty_column_is_a_no_op()
     {
-        var state = StateWithColumns(new Column(@"C:\", [], Cursor: -1, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [], Cursor: -1, Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(state, new Msg.ToggleMarkAtCursor(0));
 
@@ -628,7 +630,7 @@ public class TransitionTests
     [Fact]
     public void ToggleMarkAtCursor_with_out_of_range_column_is_a_no_op()
     {
-        var state = StateWithColumns(new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(state, new Msg.ToggleMarkAtCursor(9));
 
@@ -640,7 +642,7 @@ public class TransitionTests
     public void ClearMarks_unmarks_every_entry_in_the_column()
     {
         var column = new Column(
-            @"C:\", [Dir with { IsMarked = true }, File1 with { IsMarked = true }, File2], Cursor: 0, Load: LoadState.Loaded);
+            new Location.RealDirectory(@"C:\"), [Dir with { IsMarked = true }, File1 with { IsMarked = true }, File2], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (next, effects) = Transition.Apply(state, new Msg.ClearMarks(0));
@@ -652,7 +654,7 @@ public class TransitionTests
     [Fact]
     public void ClearMarks_with_no_marks_is_a_no_op()
     {
-        var state = StateWithColumns(new Column(@"C:\", [Dir, File1], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [Dir, File1], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(state, new Msg.ClearMarks(0));
 
@@ -663,7 +665,7 @@ public class TransitionTests
     [Fact]
     public void ClearMarks_with_out_of_range_column_is_a_no_op()
     {
-        var state = StateWithColumns(new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(state, new Msg.ClearMarks(9));
 
@@ -675,7 +677,7 @@ public class TransitionTests
     public void DeleteMarked_emits_one_effect_with_all_marked_full_paths_in_entry_order()
     {
         var column = new Column(
-            @"C:\",
+            new Location.RealDirectory(@"C:\"),
             [Dir with { IsMarked = true }, File1, File2 with { IsMarked = true }],
             Cursor: 0,
             Load: LoadState.Loaded);
@@ -688,7 +690,7 @@ public class TransitionTests
 
         var effect = Assert.IsType<Effect.DeleteToRecycleBin>(Assert.Single(effects));
         Assert.Equal(0, effect.ColumnIndex);
-        Assert.Equal(@"C:\", effect.Path);
+        Assert.Equal(new Location.RealDirectory(@"C:\"), effect.ColumnLocation);
         Assert.Equal([@"C:\sub", @"C:\b.txt"], effect.Targets);
         Assert.False(effect.Permanent);
     }
@@ -696,7 +698,7 @@ public class TransitionTests
     [Fact]
     public void DeleteMarked_with_Permanent_true_carries_it_through_to_the_effect()
     {
-        var column = new Column(@"C:\", [File1 with { IsMarked = true }], Cursor: 0, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [File1 with { IsMarked = true }], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (_, effects) = Transition.Apply(state, new Msg.DeleteMarked(0, Permanent: true));
@@ -708,7 +710,7 @@ public class TransitionTests
     [Fact]
     public void DeleteMarked_ignores_marked_drives()
     {
-        var state = StateWithColumns(new Column("", [Drive with { IsMarked = true }], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(Location.Drives.Instance, [Drive with { IsMarked = true }], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(state, new Msg.DeleteMarked(0));
 
@@ -719,7 +721,7 @@ public class TransitionTests
     [Fact]
     public void DeleteMarked_with_no_marks_is_a_no_op()
     {
-        var state = StateWithColumns(new Column(@"C:\", [Dir, File1], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [Dir, File1], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(state, new Msg.DeleteMarked(0));
 
@@ -730,7 +732,7 @@ public class TransitionTests
     [Fact]
     public void DeleteMarked_with_out_of_range_column_is_a_no_op()
     {
-        var state = StateWithColumns(new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(state, new Msg.DeleteMarked(9));
 
@@ -742,7 +744,7 @@ public class TransitionTests
     public void MarkRange_marks_every_entry_in_the_range_replacing_other_marks()
     {
         var column = new Column(
-            @"C:\",
+            new Location.RealDirectory(@"C:\"),
             [Dir with { IsMarked = true }, File1, File2, File1 with { IsMarked = true }],
             Cursor: 0,
             Load: LoadState.Loaded);
@@ -763,7 +765,7 @@ public class TransitionTests
     [Fact]
     public void MarkRange_normalizes_a_reversed_from_to()
     {
-        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (next, _) = Transition.Apply(state, new Msg.MarkRange(0, FromIndex: 2, ToIndex: 0, Additive: false));
@@ -775,7 +777,7 @@ public class TransitionTests
     [Fact]
     public void MarkRange_clamps_from_and_to_into_the_entries_range()
     {
-        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (next, _) = Transition.Apply(state, new Msg.MarkRange(0, FromIndex: -5, ToIndex: 50, Additive: false));
@@ -788,7 +790,7 @@ public class TransitionTests
     public void MarkRange_additive_keeps_existing_marks_outside_the_range()
     {
         var column = new Column(
-            @"C:\", [Dir with { IsMarked = true }, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+            new Location.RealDirectory(@"C:\"), [Dir with { IsMarked = true }, File1, File2], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (next, _) = Transition.Apply(state, new Msg.MarkRange(0, 1, 2, Additive: true));
@@ -802,7 +804,7 @@ public class TransitionTests
     public void MarkRange_non_additive_unmarks_entries_outside_the_range()
     {
         var column = new Column(
-            @"C:\", [Dir with { IsMarked = true }, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+            new Location.RealDirectory(@"C:\"), [Dir with { IsMarked = true }, File1, File2], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (next, _) = Transition.Apply(state, new Msg.MarkRange(0, 1, 2, Additive: false));
@@ -815,7 +817,7 @@ public class TransitionTests
     [Fact]
     public void MarkRange_sets_cursor_to_the_clamped_to_index()
     {
-        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (next, _) = Transition.Apply(state, new Msg.MarkRange(0, 0, 1, Additive: false));
@@ -826,7 +828,7 @@ public class TransitionTests
     [Fact]
     public void MarkRange_on_empty_column_is_a_no_op()
     {
-        var state = StateWithColumns(new Column(@"C:\", [], Cursor: -1, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [], Cursor: -1, Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(state, new Msg.MarkRange(0, 0, 0, Additive: false));
 
@@ -837,7 +839,7 @@ public class TransitionTests
     [Fact]
     public void MarkRange_with_out_of_range_column_is_a_no_op()
     {
-        var state = StateWithColumns(new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(state, new Msg.MarkRange(9, 0, 0, Additive: false));
 
@@ -848,10 +850,10 @@ public class TransitionTests
     [Fact]
     public void DirectoryLoaded_carries_marks_over_by_exact_name_match()
     {
-        var column = new Column(@"C:\", [File1 with { IsMarked = true }, File2], Cursor: 0, Load: LoadState.Loading);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [File1 with { IsMarked = true }, File2], Cursor: 0, Load: LoadState.Loading);
         var state = StateWithColumns(column);
 
-        var (next, _) = Transition.Apply(state, new Msg.DirectoryLoaded(0, @"C:\", [File1, File2]));
+        var (next, _) = Transition.Apply(state, new Msg.DirectoryLoaded(0, new Location.RealDirectory(@"C:\"), [File1, File2]));
 
         Assert.True(next.Columns[0].Entries[0].IsMarked);
         Assert.False(next.Columns[0].Entries[1].IsMarked);
@@ -860,10 +862,10 @@ public class TransitionTests
     [Fact]
     public void DirectoryLoaded_drops_marks_for_names_that_vanished()
     {
-        var column = new Column(@"C:\", [File1 with { IsMarked = true }], Cursor: 0, Load: LoadState.Loading);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [File1 with { IsMarked = true }], Cursor: 0, Load: LoadState.Loading);
         var state = StateWithColumns(column);
 
-        var (next, _) = Transition.Apply(state, new Msg.DirectoryLoaded(0, @"C:\", [File2]));
+        var (next, _) = Transition.Apply(state, new Msg.DirectoryLoaded(0, new Location.RealDirectory(@"C:\"), [File2]));
 
         Assert.Single(next.Columns[0].Entries);
         Assert.False(next.Columns[0].Entries[0].IsMarked);
@@ -876,12 +878,12 @@ public class TransitionTests
         // the destination) completes against column 0. Column 2 shows an unrelated directory and
         // must be left alone.
         var state = StateWithColumns(
-            new Column(@"C:\", [Dir, File1], Cursor: 0, Load: LoadState.Loading),
-            new Column(@"C:\sub", [File2], Cursor: 0, Load: LoadState.Loaded),
-            new Column(@"D:\unrelated", [], Cursor: 0, Load: LoadState.Loaded));
+            new Column(new Location.RealDirectory(@"C:\"), [Dir, File1], Cursor: 0, Load: LoadState.Loading),
+            new Column(new Location.RealDirectory(@"C:\sub"), [File2], Cursor: 0, Load: LoadState.Loaded),
+            new Column(new Location.RealDirectory(@"D:\unrelated"), [], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(
-            state, new Msg.ShellOpCompleted(0, @"C:\", [@"C:\", @"C:\sub"]));
+            state, new Msg.ShellOpCompleted(0, new Location.RealDirectory(@"C:\"), [@"C:\", @"C:\sub"]));
 
         Assert.Equal(LoadState.Loading, next.Columns[0].Load);
         Assert.Equal(LoadState.Loading, next.Columns[1].Load);
@@ -889,26 +891,26 @@ public class TransitionTests
         Assert.Equal(2, effects.Count);
         var first = Assert.IsType<Effect.ReadDirectory>(effects[0]);
         Assert.Equal(0, first.ColumnIndex);
-        Assert.Equal(@"C:\", first.Path);
+        Assert.Equal(new Location.RealDirectory(@"C:\"), first.Location);
         var second = Assert.IsType<Effect.ReadDirectory>(effects[1]);
         Assert.Equal(1, second.ColumnIndex);
-        Assert.Equal(@"C:\sub", second.Path);
+        Assert.Equal(new Location.RealDirectory(@"C:\sub"), second.Location);
     }
 
     [Fact]
     public void ShellOpCompleted_with_no_affected_dirs_refreshes_only_the_completing_column()
     {
         var state = StateWithColumns(
-            new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loading),
-            new Column(@"C:\sub", [File2], Cursor: 0, Load: LoadState.Loaded));
+            new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loading),
+            new Column(new Location.RealDirectory(@"C:\sub"), [File2], Cursor: 0, Load: LoadState.Loaded));
 
-        var (next, effects) = Transition.Apply(state, new Msg.ShellOpCompleted(0, @"C:\", []));
+        var (next, effects) = Transition.Apply(state, new Msg.ShellOpCompleted(0, new Location.RealDirectory(@"C:\"), []));
 
         Assert.Equal(LoadState.Loading, next.Columns[0].Load);
         Assert.Equal(LoadState.Loaded, next.Columns[1].Load);
         var effect = Assert.IsType<Effect.ReadDirectory>(Assert.Single(effects));
         Assert.Equal(0, effect.ColumnIndex);
-        Assert.Equal(@"C:\", effect.Path);
+        Assert.Equal(new Location.RealDirectory(@"C:\"), effect.Location);
     }
 
     [Fact]
@@ -917,26 +919,26 @@ public class TransitionTests
         // Deleting a file from column 1 ("C:\sub") completes against that same column, and its
         // parent (also "C:\sub", the deleted target's parent) is itself the affected dir.
         var state = StateWithColumns(
-            new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded),
-            new Column(@"C:\sub", [File2], Cursor: 0, Load: LoadState.Loading));
+            new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loaded),
+            new Column(new Location.RealDirectory(@"C:\sub"), [File2], Cursor: 0, Load: LoadState.Loading));
 
         var (next, effects) = Transition.Apply(
-            state, new Msg.ShellOpCompleted(1, @"C:\sub", [@"C:\sub"]));
+            state, new Msg.ShellOpCompleted(1, new Location.RealDirectory(@"C:\sub"), [@"C:\sub"]));
 
         Assert.Equal(LoadState.Loaded, next.Columns[0].Load);
         Assert.Equal(LoadState.Loading, next.Columns[1].Load);
         var effect = Assert.IsType<Effect.ReadDirectory>(Assert.Single(effects));
         Assert.Equal(1, effect.ColumnIndex);
-        Assert.Equal(@"C:\sub", effect.Path);
+        Assert.Equal(new Location.RealDirectory(@"C:\sub"), effect.Location);
     }
 
     [Fact]
     public void ShellOpCompleted_with_wrong_path_is_ignored_as_stale()
     {
-        var column = new Column(@"C:\", [Dir], Load: LoadState.Loading);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir], Load: LoadState.Loading);
         var state = StateWithColumns(column);
 
-        var (next, effects) = Transition.Apply(state, new Msg.ShellOpCompleted(0, @"C:\stale", []));
+        var (next, effects) = Transition.Apply(state, new Msg.ShellOpCompleted(0, new Location.RealDirectory(@"C:\stale"), []));
 
         Assert.Equal(state, next);
         Assert.Empty(effects);
@@ -945,9 +947,9 @@ public class TransitionTests
     [Fact]
     public void ShellOpCompleted_with_out_of_range_column_is_ignored_as_stale()
     {
-        var state = StateWithColumns(new Column(@"C:\", [], Load: LoadState.Loading));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [], Load: LoadState.Loading));
 
-        var (next, effects) = Transition.Apply(state, new Msg.ShellOpCompleted(9, @"C:\", []));
+        var (next, effects) = Transition.Apply(state, new Msg.ShellOpCompleted(9, new Location.RealDirectory(@"C:\"), []));
 
         Assert.Equal(state, next);
         Assert.Empty(effects);
@@ -956,10 +958,10 @@ public class TransitionTests
     [Fact]
     public void ShellOpFailed_sets_error_and_keeps_old_entries()
     {
-        var column = new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loading);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loading);
         var state = StateWithColumns(column);
 
-        var (next, effects) = Transition.Apply(state, new Msg.ShellOpFailed(0, @"C:\", "access denied"));
+        var (next, effects) = Transition.Apply(state, new Msg.ShellOpFailed(0, new Location.RealDirectory(@"C:\"), "access denied"));
 
         Assert.Equal(LoadState.Error, next.Columns[0].Load);
         Assert.Equal("access denied", next.Columns[0].ErrorMessage);
@@ -970,10 +972,10 @@ public class TransitionTests
     [Fact]
     public void ShellOpFailed_with_wrong_path_is_ignored_as_stale()
     {
-        var column = new Column(@"C:\", [], Load: LoadState.Loading);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [], Load: LoadState.Loading);
         var state = StateWithColumns(column);
 
-        var (next, _) = Transition.Apply(state, new Msg.ShellOpFailed(0, @"C:\stale", "oops"));
+        var (next, _) = Transition.Apply(state, new Msg.ShellOpFailed(0, new Location.RealDirectory(@"C:\stale"), "oops"));
 
         Assert.Equal(state, next);
     }
@@ -981,7 +983,7 @@ public class TransitionTests
     [Fact]
     public void DropFiles_onto_column_background_marks_column_loading_and_emits_ShellCopyOrMove()
     {
-        var column = new Column(@"C:\dest", [Dir, File1], Cursor: 0, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\dest"), [Dir, File1], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
         ImmutableArray<string> paths = [@"C:\src\a.txt", @"C:\src\b.txt"];
 
@@ -993,7 +995,7 @@ public class TransitionTests
 
         var effect = Assert.IsType<Effect.ShellCopyOrMove>(Assert.Single(effects));
         Assert.Equal(0, effect.ColumnIndex);
-        Assert.Equal(@"C:\dest", effect.ColumnPath);
+        Assert.Equal(new Location.RealDirectory(@"C:\dest"), effect.ColumnLocation);
         Assert.Equal(@"C:\dest", effect.DestPath);
         Assert.Equal(paths, effect.Paths);
         Assert.True(effect.IsMove); // same volume (C:) by default
@@ -1002,7 +1004,7 @@ public class TransitionTests
     [Fact]
     public void DropFiles_onto_a_directory_row_resolves_dest_to_its_child_path()
     {
-        var column = new Column(@"C:\dest", [Dir, File1], Cursor: 0, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\dest"), [Dir, File1], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
         ImmutableArray<string> paths = [@"C:\src\a.txt"];
 
@@ -1012,7 +1014,7 @@ public class TransitionTests
         Assert.Equal(LoadState.Loading, next.Columns[0].Load);
 
         var effect = Assert.IsType<Effect.ShellCopyOrMove>(Assert.Single(effects));
-        Assert.Equal(@"C:\dest", effect.ColumnPath);
+        Assert.Equal(new Location.RealDirectory(@"C:\dest"), effect.ColumnLocation);
         Assert.Equal(@"C:\dest\sub", effect.DestPath);
         Assert.Equal(paths, effect.Paths);
     }
@@ -1020,7 +1022,7 @@ public class TransitionTests
     [Fact]
     public void DropFiles_onto_a_file_row_falls_back_to_the_columns_own_path()
     {
-        var column = new Column(@"C:\dest", [Dir, File1], Cursor: 0, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\dest"), [Dir, File1], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
         ImmutableArray<string> paths = [@"C:\src\a.txt"];
 
@@ -1034,7 +1036,7 @@ public class TransitionTests
     [Fact]
     public void DropFiles_onto_a_drive_row_on_the_root_column_resolves_dest_to_the_drive()
     {
-        var state = StateWithColumns(new Column("", [Drive], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(Location.Drives.Instance, [Drive], Cursor: 0, Load: LoadState.Loaded));
         ImmutableArray<string> paths = [@"D:\src\a.txt"];
 
         var (_, effects) = Transition.Apply(
@@ -1047,7 +1049,7 @@ public class TransitionTests
     [Fact]
     public void DropFiles_onto_root_column_background_is_ignored()
     {
-        var state = StateWithColumns(new Column("", [Drive], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(Location.Drives.Instance, [Drive], Cursor: 0, Load: LoadState.Loaded));
         ImmutableArray<string> paths = [@"C:\src\a.txt"];
 
         var (next, effects) = Transition.Apply(
@@ -1060,7 +1062,7 @@ public class TransitionTests
     [Fact]
     public void DropFiles_with_empty_paths_is_ignored()
     {
-        var state = StateWithColumns(new Column(@"C:\dest", [], Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\dest"), [], Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(
             state, new Msg.DropFiles(0, TargetEntryIndex: -1, [], ShiftHeld: false, CtrlHeld: false));
@@ -1072,7 +1074,7 @@ public class TransitionTests
     [Fact]
     public void DropFiles_with_out_of_range_column_is_ignored()
     {
-        var state = StateWithColumns(new Column(@"C:\dest", [], Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\dest"), [], Load: LoadState.Loaded));
         ImmutableArray<string> paths = [@"C:\src\a.txt"];
 
         var (next, effects) = Transition.Apply(
@@ -1085,7 +1087,7 @@ public class TransitionTests
     [Fact]
     public void DropFiles_silently_ignores_a_source_already_located_at_dest()
     {
-        var column = new Column(@"C:\dest", [], Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\dest"), [], Load: LoadState.Loaded);
         var state = StateWithColumns(column);
         ImmutableArray<string> paths = [@"C:\dest\already-here.txt"];
 
@@ -1099,7 +1101,7 @@ public class TransitionTests
     [Fact]
     public void DropFiles_silently_ignores_a_directory_dropped_onto_itself()
     {
-        var column = new Column(@"C:\dest", [], Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\dest"), [], Load: LoadState.Loaded);
         var state = StateWithColumns(column);
         ImmutableArray<string> paths = [@"C:\dest"];
 
@@ -1113,7 +1115,7 @@ public class TransitionTests
     [Fact]
     public void DropFiles_silently_ignores_a_source_whose_subtree_contains_dest()
     {
-        var column = new Column(@"C:\dest\child", [], Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\dest\child"), [], Load: LoadState.Loaded);
         var state = StateWithColumns(column);
         ImmutableArray<string> paths = [@"C:\dest"];
 
@@ -1127,7 +1129,7 @@ public class TransitionTests
     [Fact]
     public void DropFiles_filters_out_only_the_no_op_sources_keeping_the_rest()
     {
-        var column = new Column(@"C:\dest", [], Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\dest"), [], Load: LoadState.Loaded);
         var state = StateWithColumns(column);
         ImmutableArray<string> paths = [@"C:\dest\already-here.txt", @"C:\src\a.txt"];
 
@@ -1141,7 +1143,7 @@ public class TransitionTests
     [Fact]
     public void DropFiles_with_shift_held_forces_move_even_across_volumes()
     {
-        var column = new Column(@"C:\dest", [], Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\dest"), [], Load: LoadState.Loaded);
         var state = StateWithColumns(column);
         ImmutableArray<string> paths = [@"D:\src\a.txt"];
 
@@ -1155,7 +1157,7 @@ public class TransitionTests
     [Fact]
     public void DropFiles_with_ctrl_held_forces_copy_even_on_the_same_volume()
     {
-        var column = new Column(@"C:\dest", [], Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\dest"), [], Load: LoadState.Loaded);
         var state = StateWithColumns(column);
         ImmutableArray<string> paths = [@"C:\src\a.txt"];
 
@@ -1169,7 +1171,7 @@ public class TransitionTests
     [Fact]
     public void DropFiles_shift_wins_when_both_shift_and_ctrl_are_held()
     {
-        var column = new Column(@"C:\dest", [], Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\dest"), [], Load: LoadState.Loaded);
         var state = StateWithColumns(column);
         ImmutableArray<string> paths = [@"C:\src\a.txt"];
 
@@ -1183,7 +1185,7 @@ public class TransitionTests
     [Fact]
     public void DropFiles_defaults_to_move_when_source_and_dest_share_a_volume()
     {
-        var column = new Column(@"C:\dest", [], Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\dest"), [], Load: LoadState.Loaded);
         var state = StateWithColumns(column);
         ImmutableArray<string> paths = [@"C:\src\a.txt"];
 
@@ -1197,7 +1199,7 @@ public class TransitionTests
     [Fact]
     public void DropFiles_defaults_to_copy_when_source_and_dest_are_on_different_volumes()
     {
-        var column = new Column(@"C:\dest", [], Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\dest"), [], Load: LoadState.Loaded);
         var state = StateWithColumns(column);
         ImmutableArray<string> paths = [@"D:\src\a.txt"];
 
@@ -1211,7 +1213,7 @@ public class TransitionTests
     [Fact]
     public void PasteRequested_appends_queued_job_and_emits_RunFileJob()
     {
-        var column = new Column(@"C:\dest", [], Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\dest"), [], Load: LoadState.Loaded);
         var state = StateWithColumns(column);
         ImmutableArray<string> sources = [@"C:\src\a.txt", @"C:\src\b.txt"];
 
@@ -1235,7 +1237,7 @@ public class TransitionTests
     [Fact]
     public void PasteRequested_clears_CutPending()
     {
-        var column = new Column(@"C:\dest", [], Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\dest"), [], Load: LoadState.Loaded);
         var state = StateWithColumns(column) with { CutPending = [@"C:\src\a.txt"] };
 
         var (next, _) = Transition.Apply(state, new Msg.PasteRequested(0, [@"C:\src\a.txt"], IsMove: false));
@@ -1246,7 +1248,7 @@ public class TransitionTests
     [Fact]
     public void PasteRequested_that_is_a_complete_no_op_leaves_CutPending_untouched()
     {
-        var state = StateWithColumns(new Column(@"C:\dest", [], Load: LoadState.Loaded))
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\dest"), [], Load: LoadState.Loaded))
             with
         { CutPending = [@"C:\src\a.txt"] };
 
@@ -1259,7 +1261,7 @@ public class TransitionTests
     [Fact]
     public void PasteRequested_with_IsMove_true_creates_a_Move_job()
     {
-        var column = new Column(@"C:\dest", [], Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\dest"), [], Load: LoadState.Loaded);
         var state = StateWithColumns(column);
         ImmutableArray<string> sources = [@"C:\src\a.txt"];
 
@@ -1273,7 +1275,7 @@ public class TransitionTests
     [Fact]
     public void PasteRequested_increments_NextJobId_across_multiple_pastes()
     {
-        var column = new Column(@"C:\dest", [], Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\dest"), [], Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (once, _) = Transition.Apply(state, new Msg.PasteRequested(0, [@"C:\src\a.txt"], IsMove: false));
@@ -1288,7 +1290,7 @@ public class TransitionTests
     [Fact]
     public void PasteRequested_onto_root_column_is_ignored()
     {
-        var state = StateWithColumns(new Column("", [Drive], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(Location.Drives.Instance, [Drive], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(
             state, new Msg.PasteRequested(0, [@"C:\src\a.txt"], IsMove: false));
@@ -1301,7 +1303,7 @@ public class TransitionTests
     [Fact]
     public void PasteRequested_with_empty_sources_is_ignored()
     {
-        var state = StateWithColumns(new Column(@"C:\dest", [], Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\dest"), [], Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(state, new Msg.PasteRequested(0, [], IsMove: false));
 
@@ -1312,7 +1314,7 @@ public class TransitionTests
     [Fact]
     public void PasteRequested_with_out_of_range_column_is_ignored()
     {
-        var state = StateWithColumns(new Column(@"C:\dest", [], Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\dest"), [], Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(
             state, new Msg.PasteRequested(9, [@"C:\src\a.txt"], IsMove: false));
@@ -1324,7 +1326,7 @@ public class TransitionTests
     [Fact]
     public void PasteRequested_filters_no_op_sources_like_DropFiles_and_is_a_complete_no_op_if_all_filtered()
     {
-        var state = StateWithColumns(new Column(@"C:\dest", [], Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\dest"), [], Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(
             state, new Msg.PasteRequested(0, [@"C:\dest\already-here.txt"], IsMove: false));
@@ -1336,7 +1338,7 @@ public class TransitionTests
     [Fact]
     public void PasteRequested_filters_only_the_no_op_sources_keeping_the_rest()
     {
-        var state = StateWithColumns(new Column(@"C:\dest", [], Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\dest"), [], Load: LoadState.Loaded));
         ImmutableArray<string> sources = [@"C:\dest\already-here.txt", @"C:\src\a.txt"];
 
         var (next, effects) = Transition.Apply(state, new Msg.PasteRequested(0, sources, IsMove: false));
@@ -1424,9 +1426,9 @@ public class TransitionTests
     {
         var job = new Job(1, JobKind.Move, [@"C:\sub\a.txt"], @"C:\dest");
         var state = StateWithColumns(
-            new Column(@"C:\dest", [Dir], Cursor: 0, Load: LoadState.Loaded),
-            new Column(@"C:\sub", [File1], Cursor: 0, Load: LoadState.Loaded),
-            new Column(@"D:\unrelated", [], Cursor: 0, Load: LoadState.Loaded)) with
+            new Column(new Location.RealDirectory(@"C:\dest"), [Dir], Cursor: 0, Load: LoadState.Loaded),
+            new Column(new Location.RealDirectory(@"C:\sub"), [File1], Cursor: 0, Load: LoadState.Loaded),
+            new Column(new Location.RealDirectory(@"D:\unrelated"), [], Cursor: 0, Load: LoadState.Loaded)) with
         { Jobs = [job] };
 
         var (next, effects) = Transition.Apply(
@@ -1479,7 +1481,7 @@ public class TransitionTests
     public void JobCancelled_marks_job_cancelled_and_refreshes_affected_dirs()
     {
         var job = new Job(1, JobKind.Copy, [@"C:\src\a.txt"], @"C:\dest", Status: JobStatus.Running, DoneFiles: 1, CurrentFile: "a.txt");
-        var state = StateWithColumns(new Column(@"C:\dest", [Dir], Cursor: 0, Load: LoadState.Loaded)) with { Jobs = [job] };
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\dest"), [Dir], Cursor: 0, Load: LoadState.Loaded)) with { Jobs = [job] };
 
         var (next, effects) = Transition.Apply(state, new Msg.JobCancelled(1, [@"C:\dest"]));
 
@@ -1677,8 +1679,8 @@ public class TransitionTests
     public void ExternalDirectoryChanged_refreshes_matching_columns()
     {
         var state = StateWithColumns(
-            new Column(@"C:\dest", [Dir], Cursor: 0, Load: LoadState.Loaded),
-            new Column(@"D:\unrelated", [], Cursor: 0, Load: LoadState.Loaded));
+            new Column(new Location.RealDirectory(@"C:\dest"), [Dir], Cursor: 0, Load: LoadState.Loaded),
+            new Column(new Location.RealDirectory(@"D:\unrelated"), [], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(state, new Msg.ExternalDirectoryChanged(@"C:\dest"));
 
@@ -1691,7 +1693,7 @@ public class TransitionTests
     [Fact]
     public void ExternalDirectoryChanged_with_no_matching_column_is_a_no_op()
     {
-        var state = StateWithColumns(new Column(@"C:\dest", [Dir], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\dest"), [Dir], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(state, new Msg.ExternalDirectoryChanged(@"D:\elsewhere"));
 
@@ -1702,7 +1704,7 @@ public class TransitionTests
     [Fact]
     public void CursorMove_onto_a_file_emits_LoadPreview_with_incremented_generation()
     {
-        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
         Assert.Equal(0, state.Preview.Generation);
 
@@ -1719,7 +1721,7 @@ public class TransitionTests
     [Fact]
     public void CursorMove_onto_a_directory_clears_the_preview_and_emits_no_effect()
     {
-        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 1, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 1, Load: LoadState.Loaded);
         var state = StateWithColumns(column) with
         {
             Preview = new PreviewState(3, @"C:\a.txt", PreviewKind.Text, "hi", [], null),
@@ -1736,7 +1738,7 @@ public class TransitionTests
     [Fact]
     public void Repeated_Apply_with_the_same_cursor_target_does_not_re_emit_LoadPreview()
     {
-        var column = new Column(@"C:\", [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
         var (afterMove, moveEffects) = Transition.Apply(state, new Msg.CursorDown(0)); // lands on File1
@@ -1751,10 +1753,10 @@ public class TransitionTests
     [Fact]
     public void DirectoryLoaded_that_lands_the_cursor_on_a_file_triggers_a_preview_load()
     {
-        var column = new Column(@"C:\", [], Load: LoadState.Loading);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [], Load: LoadState.Loading);
         var state = StateWithColumns(column);
 
-        var (next, effects) = Transition.Apply(state, new Msg.DirectoryLoaded(0, @"C:\", [File1]));
+        var (next, effects) = Transition.Apply(state, new Msg.DirectoryLoaded(0, new Location.RealDirectory(@"C:\"), [File1]));
 
         Assert.Equal(PreviewKind.Loading, next.Preview.Kind);
         var effect = Assert.IsType<Effect.LoadPreview>(Assert.Single(effects));
@@ -1771,7 +1773,7 @@ public class TransitionTests
     /// </summary>
     private static AppState StateWithLoadingPreview()
     {
-        var column = new Column(@"C:\", [Dir, File1], Cursor: 0, Load: LoadState.Loaded);
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1], Cursor: 0, Load: LoadState.Loaded);
         var (afterMove, _) = Transition.Apply(StateWithColumns(column), new Msg.CursorDown(0));
         Assert.Equal(PreviewKind.Loading, afterMove.Preview.Kind); // sanity
         return afterMove;
@@ -1892,8 +1894,8 @@ public class TransitionTests
     public void FocusColumn_change_to_a_column_whose_cursor_is_on_a_file_triggers_a_preview_load()
     {
         var state = StateWithColumns(
-            new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded),
-            new Column(@"C:\sub", [File1], Cursor: 0, Load: LoadState.Loaded));
+            new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loaded),
+            new Column(new Location.RealDirectory(@"C:\sub"), [File1], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, effects) = Transition.Apply(state, new Msg.FocusColumn(1));
 
@@ -1908,18 +1910,18 @@ public class TransitionTests
         // The parent column's cursor lands on the directory it just entered (not a file), and the
         // new child column starts with cursor -1 - so no preview effect should be appended, just
         // the usual ReadDirectory.
-        var state = StateWithColumns(new Column(@"C:\", [Dir, File1], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [Dir, File1], Cursor: 0, Load: LoadState.Loaded));
 
         var (_, effects) = Transition.Apply(state, new Msg.EnterDirectory(0, 0));
 
         var effect = Assert.IsType<Effect.ReadDirectory>(Assert.Single(effects));
-        Assert.Equal(@"C:\sub", effect.Path);
+        Assert.Equal(new Location.RealDirectory(@"C:\sub"), effect.Location);
     }
 
     [Fact]
     public void SetCutPending_replaces_CutPending_with_the_given_paths()
     {
-        var state = StateWithColumns(new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded));
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loaded));
         ImmutableArray<string> paths = [@"C:\a.txt", @"C:\b.txt"];
 
         var (next, effects) = Transition.Apply(state, new Msg.SetCutPending(paths));
@@ -1931,7 +1933,7 @@ public class TransitionTests
     [Fact]
     public void SetCutPending_with_an_empty_array_clears_CutPending()
     {
-        var state = StateWithColumns(new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded))
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loaded))
             with
         { CutPending = [@"C:\a.txt"] };
 
@@ -1943,7 +1945,7 @@ public class TransitionTests
     [Fact]
     public void SetCutPending_overwrites_a_previous_pending_cut()
     {
-        var state = StateWithColumns(new Column(@"C:\", [Dir], Cursor: 0, Load: LoadState.Loaded))
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loaded))
             with
         { CutPending = [@"C:\old.txt"] };
 
@@ -1975,6 +1977,20 @@ public class TransitionProperties
 
     private static Gen<ImmutableArray<string>> GenPaths =>
         GenPath.List[0, 3].Select(list => list.ToImmutableArray());
+
+    /// <summary>
+    /// Locations a column or a column-keyed result can refer to. Covers both cases of the union -
+    /// the drive list has no filesystem path, which is exactly the branch that used to be the
+    /// empty-string sentinel - plus enough distinct real directories that staleness checks
+    /// (a result arriving for a location the column no longer shows) are actually exercised.
+    /// </summary>
+    private static Gen<Location> GenLocation => Gen.OneOfConst<Location>(
+        Location.Drives.Instance,
+        new Location.RealDirectory(@"C:\"),
+        new Location.RealDirectory(@"D:\"),
+        new Location.RealDirectory(@"C:\Users"),
+        new Location.RealDirectory(@"C:\Users\someone"),
+        new Location.RealDirectory(@"C:\stale"));
 
     private static Gen<bool> GenIsMove => Gen.OneOfConst(true, false);
 
@@ -2021,17 +2037,17 @@ public class TransitionProperties
             .Select(t => (Msg)new Msg.EnterDirectory(t.Item1.Item1, t.Item1.Item2, t.Item2)),
         GenColumnIndex.Select(i => (Msg)new Msg.GoToParent(i)),
         Gen.Const<Msg>(new Msg.Refresh()),
-        Gen.Select(GenColumnIndex, GenPath, GenEntries).Select(t => (Msg)new Msg.DirectoryLoaded(t.Item1, t.Item2, t.Item3)),
-        Gen.Select(GenColumnIndex, GenPath).Select(t => (Msg)new Msg.DirectoryLoadFailed(t.Item1, t.Item2, "error")),
+        Gen.Select(GenColumnIndex, GenLocation, GenEntries).Select(t => (Msg)new Msg.DirectoryLoaded(t.Item1, t.Item2, t.Item3)),
+        Gen.Select(GenColumnIndex, GenLocation).Select(t => (Msg)new Msg.DirectoryLoadFailed(t.Item1, t.Item2, "error")),
         Gen.Select(Gen.Select(GenColumnIndex, GenEntryIndex), GenIsMove)
             .Select(t => (Msg)new Msg.DeleteEntry(t.Item1.Item1, t.Item1.Item2, t.Item2)),
         Gen.Select(
             Gen.Select(GenColumnIndex, GenEntryIndex),
             Gen.Select(GenPaths, GenIsMove, GenIsMove))
             .Select(t => (Msg)new Msg.DropFiles(t.Item1.Item1, t.Item1.Item2, t.Item2.Item1, t.Item2.Item2, t.Item2.Item3)),
-        Gen.Select(Gen.Select(GenColumnIndex, GenPath), GenPaths)
+        Gen.Select(Gen.Select(GenColumnIndex, GenLocation), GenPaths)
             .Select(t => (Msg)new Msg.ShellOpCompleted(t.Item1.Item1, t.Item1.Item2, t.Item2)),
-        Gen.Select(GenColumnIndex, GenPath).Select(t => (Msg)new Msg.ShellOpFailed(t.Item1, t.Item2, "error")),
+        Gen.Select(GenColumnIndex, GenLocation).Select(t => (Msg)new Msg.ShellOpFailed(t.Item1, t.Item2, "error")),
         Gen.Select(GenColumnIndex, GenEntryIndex).Select(t => (Msg)new Msg.ToggleMark(t.Item1, t.Item2)),
         GenColumnIndex.Select(i => (Msg)new Msg.ToggleMarkAtCursor(i)),
         GenColumnIndex.Select(i => (Msg)new Msg.ClearMarks(i)),
@@ -2112,7 +2128,7 @@ public class TransitionProperties
         {
             var e = expected.Columns[i];
             var a = actual.Columns[i];
-            Assert.Equal(e.Path, a.Path);
+            Assert.Equal(e.Location, a.Location);
             Assert.Equal(e.Cursor, a.Cursor);
             Assert.Equal(e.ScrollOffset, a.ScrollOffset);
             Assert.Equal(e.Load, a.Load);

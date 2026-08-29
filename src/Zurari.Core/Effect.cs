@@ -15,36 +15,37 @@ public abstract record Effect
     }
 
     /// <summary>
-    /// Enumerate the directory at <paramref name="Path"/> and report it back as
+    /// Enumerate <paramref name="Location"/> and report it back as
     /// <see cref="Msg.DirectoryLoaded"/> or <see cref="Msg.DirectoryLoadFailed"/> for
-    /// <paramref name="ColumnIndex"/>. An empty <paramref name="Path"/> means the virtual root:
-    /// the Runtime enumerates drives instead of a filesystem directory.
+    /// <paramref name="ColumnIndex"/>. How it is enumerated is the Runtime's business: a
+    /// <see cref="Zurari.Core.Location.RealDirectory"/> is a filesystem listing, while
+    /// <see cref="Zurari.Core.Location.Drives"/> is synthesized from the machine's drives.
     /// </summary>
-    public sealed record ReadDirectory(int ColumnIndex, string Path) : Effect;
+    public sealed record ReadDirectory(int ColumnIndex, Location Location) : Effect;
 
     /// <summary>
     /// Move every path in <paramref name="Targets"/> to the recycle bin as a single batch
     /// operation - or, when <paramref name="Permanent"/> is <c>true</c>, delete them outright,
     /// bypassing the recycle bin (Shift+Delete). Reports the outcome back as
     /// <see cref="Msg.ShellOpCompleted"/> or <see cref="Msg.ShellOpFailed"/> for
-    /// <paramref name="ColumnIndex"/>/<paramref name="Path"/> (the containing column, so a
+    /// <paramref name="ColumnIndex"/>/<paramref name="ColumnLocation"/> (the containing column, so a
     /// successful delete can trigger a re-read of that column).
     /// </summary>
     public sealed record DeleteToRecycleBin(
-        int ColumnIndex, string Path, ImmutableArray<string> Targets, bool Permanent = false) : Effect;
+        int ColumnIndex, Location ColumnLocation, ImmutableArray<string> Targets, bool Permanent = false) : Effect;
 
     /// <summary>
     /// Copy or move <paramref name="Paths"/> into <paramref name="DestPath"/> via the shell's
     /// <c>IFileOperation</c>, which owns its own progress/overwrite UI. <paramref name="DestPath"/>
     /// may be a subdirectory row within the column rather than the column's own path (a
-    /// row-granular drop), so the outcome is reported back against <paramref name="ColumnPath"/> -
-    /// the path shown by <paramref name="ColumnIndex"/> at the time the drop was issued - as
+    /// row-granular drop), so the outcome is reported back against <paramref name="ColumnLocation"/> -
+    /// the location shown by <paramref name="ColumnIndex"/> at the time the drop was issued - as
     /// <see cref="Msg.ShellOpCompleted"/> or <see cref="Msg.ShellOpFailed"/>, matching the
     /// staleness contract every other column-keyed result follows (ignored unless the column still
-    /// shows that path) and triggering a re-read of the column, not the row that was dropped onto.
+    /// shows that location) and triggering a re-read of the column, not the row that was dropped onto.
     /// </summary>
     public sealed record ShellCopyOrMove(
-        int ColumnIndex, string ColumnPath, string DestPath, ImmutableArray<string> Paths, bool IsMove) : Effect;
+        int ColumnIndex, Location ColumnLocation, string DestPath, ImmutableArray<string> Paths, bool IsMove) : Effect;
 
     /// <summary>
     /// Runs the internal job engine's copy or move of <paramref name="Sources"/> into

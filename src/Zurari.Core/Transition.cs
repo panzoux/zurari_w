@@ -36,12 +36,12 @@ public static class Transition
             Msg.EnterDirectory m => EnterDirectory(state, m.ColumnIndex, m.EntryIndex, m.FocusChild),
             Msg.GoToParent m => (GoToParent(state, m.ColumnIndex), NoEffects),
             Msg.Refresh => Refresh(state),
-            Msg.DirectoryLoaded m => (DirectoryLoaded(state, m.ColumnIndex, m.Path, m.Entries), NoEffects),
-            Msg.DirectoryLoadFailed m => (DirectoryLoadFailed(state, m.ColumnIndex, m.Path, m.Error), NoEffects),
+            Msg.DirectoryLoaded m => (DirectoryLoaded(state, m.ColumnIndex, m.Location, m.Entries), NoEffects),
+            Msg.DirectoryLoadFailed m => (DirectoryLoadFailed(state, m.ColumnIndex, m.Location, m.Error), NoEffects),
             Msg.DeleteEntry m => DeleteEntry(state, m.ColumnIndex, m.EntryIndex, m.Permanent),
             Msg.DropFiles m => DropFiles(state, m.ColumnIndex, m.TargetEntryIndex, m.Paths, m.ShiftHeld, m.CtrlHeld),
-            Msg.ShellOpCompleted m => ShellOpCompleted(state, m.ColumnIndex, m.Path, m.AffectedDirs),
-            Msg.ShellOpFailed m => (ShellOpFailed(state, m.ColumnIndex, m.Path, m.Error), NoEffects),
+            Msg.ShellOpCompleted m => ShellOpCompleted(state, m.ColumnIndex, m.ColumnLocation, m.AffectedDirs),
+            Msg.ShellOpFailed m => (ShellOpFailed(state, m.ColumnIndex, m.ColumnLocation, m.Error), NoEffects),
             Msg.ToggleMark m => (ToggleMark(state, m.ColumnIndex, m.EntryIndex), NoEffects),
             Msg.ToggleMarkAtCursor m => (ToggleMarkAtCursor(state, m.ColumnIndex), NoEffects),
             Msg.ClearMarks m => (ClearMarks(state, m.ColumnIndex), NoEffects),
@@ -73,6 +73,21 @@ public static class Transition
 
     private static AppState WithColumn(AppState state, int columnIndex, Column column) =>
         state with { Columns = state.Columns.SetItem(columnIndex, column) };
+
+    /// <summary>
+    /// Where opening <paramref name="entry"/> from <paramref name="column"/> leads: the row's own
+    /// <see cref="Entry.Target"/> when it has one (a favorite or pinned share pointing outside the
+    /// column), otherwise derived from the column's location.
+    /// </summary>
+    private static Location ChildLocation(Column column, Entry entry) =>
+        entry.Target ?? column.Location.Child(entry.Name);
+
+    /// <summary>
+    /// The filesystem path of <paramref name="entry"/> as shown in <paramref name="column"/>, or
+    /// <c>null</c> when it has none (a row inside a location that is not backed by the filesystem).
+    /// </summary>
+    private static string? EntryPath(Column column, Entry entry) =>
+        entry.Target is { } target ? target.FilesystemPath : column.Location.ChildPath(entry.Name);
 
     private static AppState MoveCursor(AppState state, int columnIndex, int delta)
     {
@@ -134,19 +149,17 @@ public static class Transition
             return (fileState, NoEffects);
         }
 
-        var childPath = column.Path.Length == 0
-            ? entry.Name
-            : System.IO.Path.Combine(column.Path, entry.Name);
+        var childLocation = ChildLocation(column, entry);
 
         var truncated = state.Columns.Take(columnIndex + 1).ToImmutableArray();
         truncated = truncated.SetItem(columnIndex, column with { Cursor = entryIndex });
 
         var newColumnIndex = truncated.Length;
-        var newColumn = new Column(Path: childPath, Entries: [], Cursor: -1, Load: LoadState.Loading);
+        var newColumn = new Column(childLocation, Entries: [], Cursor: -1, Load: LoadState.Loading);
         var newColumns = truncated.Add(newColumn);
 
         var newState = state with { Columns = newColumns, FocusedColumn = focusChild ? newColumnIndex : columnIndex };
-        return (newState, [new Effect.ReadDirectory(newColumnIndex, childPath)]);
+        return (newState, [new Effect.ReadDirectory(newColumnIndex, childLocation)]);
     }
 
     private static AppState GoToParent(AppState state, int columnIndex)
@@ -167,13 +180,14 @@ public static class Transition
         for (var i = 0; i < columns.Length; i++)
         {
             newColumns.Add(columns[i] with { Load = LoadState.Loading });
-            effects[i] = new Effect.ReadDirectory(i, columns[i].Path);
+            effects[i] = new Effect.ReadDirectory(i, columns[i].Location);
         }
 
         return (state with { Columns = newColumns.MoveToImmutable() }, effects);
     }
 
-    private static AppState DirectoryLoaded(AppState state, int columnIndex, string path, ImmutableArray<Entry> entries)
+    private static AppState DirectoryLoaded(
+        AppState state, int columnIndex, Location location, ImmutableArray<Entry> entries)
     {
         if (!InRange(state, columnIndex))
         {
@@ -181,7 +195,7 @@ public static class Transition
         }
 
         var column = state.Columns[columnIndex];
-        if (column.Path != path)
+        if (column.Location != location)
         {
             return state;
         }
@@ -217,7 +231,7 @@ public static class Transition
             .ToImmutableArray();
     }
 
-    private static AppState DirectoryLoadFailed(AppState state, int columnIndex, string path, string error)
+    private static AppState DirectoryLoadFailed(AppState state, int columnIndex, Location location, string error)
     {
         if (!InRange(state, columnIndex))
         {
@@ -225,7 +239,7 @@ public static class Transition
         }
 
         var column = state.Columns[columnIndex];
-        if (column.Path != path)
+        if (column.Location != location)
         {
             return state;
         }
@@ -254,12 +268,13 @@ public static class Transition
             return (state, NoEffects);
         }
 
-        var targetFullPath = column.Path.Length == 0
-            ? entry.Name
-            : System.IO.Path.Combine(column.Path, entry.Name);
+        if (EntryPath(column, entry) is not { } targetFullPath)
+        {
+            return (state, NoEffects);
+        }
 
         var newState = WithColumn(state, columnIndex, column with { Load = LoadState.Loading });
-        return (newState, [new Effect.DeleteToRecycleBin(columnIndex, column.Path, [targetFullPath], permanent)]);
+        return (newState, [new Effect.DeleteToRecycleBin(columnIndex, column.Location, [targetFullPath], permanent)]);
     }
 
     private static AppState ToggleMark(AppState state, int columnIndex, int entryIndex)
@@ -332,7 +347,10 @@ public static class Transition
                 continue;
             }
 
-            targets.Add(column.Path.Length == 0 ? entry.Name : System.IO.Path.Combine(column.Path, entry.Name));
+            if (EntryPath(column, entry) is { } path)
+            {
+                targets.Add(path);
+            }
         }
 
         if (targets.Count == 0)
@@ -341,7 +359,9 @@ public static class Transition
         }
 
         var newState = WithColumn(state, columnIndex, column with { Load = LoadState.Loading });
-        return (newState, [new Effect.DeleteToRecycleBin(columnIndex, column.Path, targets.ToImmutable(), permanent)]);
+        return (
+            newState,
+            [new Effect.DeleteToRecycleBin(columnIndex, column.Location, targets.ToImmutable(), permanent)]);
     }
 
     private static AppState MarkRange(AppState state, int columnIndex, int fromIndex, int toIndex, bool additive)
@@ -405,14 +425,14 @@ public static class Transition
         var isMove = shiftHeld || (!ctrlHeld && SameVolume(dest, filtered[0]));
 
         var newState = WithColumn(state, columnIndex, column with { Load = LoadState.Loading });
-        return (newState, [new Effect.ShellCopyOrMove(columnIndex, column.Path, dest, filtered, isMove)]);
+        return (newState, [new Effect.ShellCopyOrMove(columnIndex, column.Location, dest, filtered, isMove)]);
     }
 
     /// <summary>
-    /// Resolves where a drop onto <paramref name="column"/> should land: the child path of
+    /// Resolves where a drop onto <paramref name="column"/> should land: the path of
     /// <paramref name="targetEntryIndex"/> when it names a Directory or Drive row, otherwise the
-    /// column's own path - unless that is the virtual root's empty path with no container row
-    /// targeted, which means nothing (returns null).
+    /// column's own path - unless the column has no filesystem path of its own (the drive list)
+    /// and no container row was targeted, which means nothing (returns null).
     /// </summary>
     private static string? ResolveDropDest(Column column, int targetEntryIndex)
     {
@@ -421,13 +441,11 @@ public static class Transition
             var entry = column.Entries[targetEntryIndex];
             if (entry.Kind is EntryKind.Directory or EntryKind.Drive)
             {
-                return column.Path.Length == 0
-                    ? entry.Name
-                    : System.IO.Path.Combine(column.Path, entry.Name);
+                return EntryPath(column, entry);
             }
         }
 
-        return column.Path.Length == 0 ? null : column.Path;
+        return column.Location.FilesystemPath;
     }
 
     /// <summary>
@@ -438,7 +456,7 @@ public static class Transition
     /// </summary>
     private static ImmutableArray<string> FilterDropSources(string dest, ImmutableArray<string> paths)
     {
-        var normalizedDest = NormalizePath(dest);
+        var normalizedDest = PathComparisonKey(dest);
         var builder = ImmutableArray.CreateBuilder<string>(paths.Length);
 
         foreach (var source in paths)
@@ -448,7 +466,7 @@ public static class Transition
                 continue;
             }
 
-            var normalizedSource = NormalizePath(source);
+            var normalizedSource = PathComparisonKey(source);
 
             if (string.Equals(normalizedSource, normalizedDest, StringComparison.OrdinalIgnoreCase))
             {
@@ -457,7 +475,7 @@ public static class Transition
 
             var parent = TryGetDirectoryName(source);
             if (parent is not null
-                && string.Equals(NormalizePath(parent), normalizedDest, StringComparison.OrdinalIgnoreCase))
+                && string.Equals(PathComparisonKey(parent), normalizedDest, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -474,7 +492,17 @@ public static class Transition
         return builder.ToImmutable();
     }
 
-    private static string NormalizePath(string path) => path.TrimEnd('\\', '/');
+    /// <summary>
+    /// A key for comparing two paths for "same directory", not a path.
+    /// </summary>
+    /// <remarks>
+    /// Trailing separators are dropped so that <c>C:\Users\</c> and <c>C:\Users</c> compare equal.
+    /// That also turns a bare drive root <c>C:\</c> into <c>C:</c>, which Windows would read as a
+    /// *relative* path (the current directory on drive C) if it were ever used as one - so it must
+    /// not be. Every caller compares the result and discards it; nothing builds a path from it.
+    /// The name says so, to keep it that way.
+    /// </remarks>
+    private static string PathComparisonKey(string path) => path.TrimEnd('\\', '/');
 
     private static string? TryGetDirectoryName(string path)
     {
@@ -505,7 +533,7 @@ public static class Transition
     }
 
     private static (AppState, IReadOnlyList<Effect>) ShellOpCompleted(
-        AppState state, int columnIndex, string path, ImmutableArray<string> affectedDirs)
+        AppState state, int columnIndex, Location columnLocation, ImmutableArray<string> affectedDirs)
     {
         if (!InRange(state, columnIndex))
         {
@@ -513,7 +541,7 @@ public static class Transition
         }
 
         var column = state.Columns[columnIndex];
-        if (column.Path != path)
+        if (column.Location != columnLocation)
         {
             return (state, NoEffects);
         }
@@ -529,34 +557,35 @@ public static class Transition
         var effects = new List<Effect>();
         for (var i = 0; i < columns.Length; i++)
         {
-            if (i != columnIndex && !IsAffectedDirectory(columns[i].Path, affectedDirs))
+            if (i != columnIndex && !IsAffectedDirectory(columns[i].Location, affectedDirs))
             {
                 continue;
             }
 
             newColumns = newColumns.SetItem(i, columns[i] with { Load = LoadState.Loading });
-            effects.Add(new Effect.ReadDirectory(i, columns[i].Path));
+            effects.Add(new Effect.ReadDirectory(i, columns[i].Location));
         }
 
         return (state with { Columns = newColumns }, effects);
     }
 
     /// <summary>
-    /// Whether <paramref name="columnPath"/> matches one of <paramref name="affectedDirs"/>,
+    /// Whether <paramref name="columnLocation"/> matches one of <paramref name="affectedDirs"/>,
     /// case-insensitively and ignoring a trailing path separator (so e.g. <c>C:\</c> and <c>C:</c>
-    /// style roots still compare equal).
+    /// style roots still compare equal). A location with no filesystem path of its own - the drive
+    /// list - never matches, since these are filesystem directories that changed.
     /// </summary>
-    private static bool IsAffectedDirectory(string columnPath, ImmutableArray<string> affectedDirs)
+    private static bool IsAffectedDirectory(Location columnLocation, ImmutableArray<string> affectedDirs)
     {
-        if (affectedDirs.IsDefaultOrEmpty)
+        if (affectedDirs.IsDefaultOrEmpty || columnLocation.FilesystemPath is not { } columnPath)
         {
             return false;
         }
 
-        var normalizedColumn = NormalizePath(columnPath);
+        var normalizedColumn = PathComparisonKey(columnPath);
         foreach (var dir in affectedDirs)
         {
-            if (string.Equals(normalizedColumn, NormalizePath(dir), StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalizedColumn, PathComparisonKey(dir), StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
@@ -565,7 +594,7 @@ public static class Transition
         return false;
     }
 
-    private static AppState ShellOpFailed(AppState state, int columnIndex, string path, string error)
+    private static AppState ShellOpFailed(AppState state, int columnIndex, Location columnLocation, string error)
     {
         if (!InRange(state, columnIndex))
         {
@@ -573,7 +602,7 @@ public static class Transition
         }
 
         var column = state.Columns[columnIndex];
-        if (column.Path != path)
+        if (column.Location != columnLocation)
         {
             return state;
         }
@@ -591,19 +620,19 @@ public static class Transition
         }
 
         var column = state.Columns[columnIndex];
-        if (column.Path.Length == 0 || sources.IsDefaultOrEmpty)
+        if (column.Location.FilesystemPath is not { } destDir || sources.IsDefaultOrEmpty)
         {
             return (state, NoEffects);
         }
 
-        var filtered = FilterDropSources(column.Path, sources);
+        var filtered = FilterDropSources(destDir, sources);
         if (filtered.Length == 0)
         {
             return (state, NoEffects);
         }
 
         var jobId = state.NextJobId;
-        var job = new Job(jobId, isMove ? JobKind.Move : JobKind.Copy, filtered, column.Path);
+        var job = new Job(jobId, isMove ? JobKind.Move : JobKind.Copy, filtered, destDir);
         var newState = state with
         {
             Jobs = state.Jobs.Add(job),
@@ -612,7 +641,7 @@ public static class Transition
             // pending-cut look; keeping it simple rather than trying to diff which paths were pasted.
             CutPending = [],
         };
-        return (newState, [new Effect.RunFileJob(jobId, job.Kind, filtered, column.Path)]);
+        return (newState, [new Effect.RunFileJob(jobId, job.Kind, filtered, destDir)]);
     }
 
     private static int FindJobIndex(ImmutableArray<Job> jobs, int jobId)
@@ -699,13 +728,13 @@ public static class Transition
         var effects = new List<Effect>();
         for (var i = 0; i < columns.Length; i++)
         {
-            if (!IsAffectedDirectory(columns[i].Path, affectedDirs))
+            if (!IsAffectedDirectory(columns[i].Location, affectedDirs))
             {
                 continue;
             }
 
             newColumns = newColumns.SetItem(i, columns[i] with { Load = LoadState.Loading });
-            effects.Add(new Effect.ReadDirectory(i, columns[i].Path));
+            effects.Add(new Effect.ReadDirectory(i, columns[i].Location));
         }
 
         return (stateWithJob with { Columns = newColumns }, effects);
@@ -796,13 +825,13 @@ public static class Transition
         var effects = new List<Effect>();
         for (var i = 0; i < columns.Length; i++)
         {
-            if (!IsAffectedDirectory(columns[i].Path, [path]))
+            if (!IsAffectedDirectory(columns[i].Location, [path]))
             {
                 continue;
             }
 
             newColumns = newColumns.SetItem(i, columns[i] with { Load = LoadState.Loading });
-            effects.Add(new Effect.ReadDirectory(i, columns[i].Path));
+            effects.Add(new Effect.ReadDirectory(i, columns[i].Location));
         }
 
         return (state with { Columns = newColumns }, effects);
@@ -873,7 +902,7 @@ public static class Transition
             return null;
         }
 
-        return column.Path.Length == 0 ? entry.Name : System.IO.Path.Combine(column.Path, entry.Name);
+        return EntryPath(column, entry);
     }
 
     private static AppState PreviewLoaded(

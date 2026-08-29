@@ -5,7 +5,7 @@ namespace Zurari.Core;
 /// <summary>What an <see cref="Entry"/> represents in a <see cref="Column"/>.</summary>
 public enum EntryKind
 {
-    /// <summary>A drive root, only ever found in the virtual root column (Path == "").</summary>
+    /// <summary>A drive root, only ever found in the virtual root column (<see cref="Location.Drives"/>).</summary>
     Drive,
 
     /// <summary>A directory that can be entered to extend the browser one column to the right.</summary>
@@ -37,28 +37,32 @@ public enum LoadState
 /// <param name="SizeBytes">Size in bytes, or -1 when unknown/not applicable (directories, drives).</param>
 /// <param name="Modified">Last-modified timestamp, or <c>default(DateTime)</c> when unknown.</param>
 /// <param name="IsMarked">Whether the user has marked/selected this entry for a bulk operation.</param>
+/// <param name="Target">
+/// Where opening this row leads, when that is not simply "underneath the column it sits in".
+/// <c>null</c> - the overwhelmingly common case - means derive it from the parent via
+/// <see cref="Location.Child"/>, which costs nothing per entry. A row that points elsewhere (a
+/// favorite, a pinned network share, the recycle bin) sets it explicitly.
+/// </param>
 public sealed record Entry(
     string Name,
     EntryKind Kind,
     long SizeBytes = -1,
     DateTime Modified = default,
-    bool IsMarked = false);
+    bool IsMarked = false,
+    Location? Target = null);
 
 /// <summary>
-/// One column of the miller-columns browser: the directory listing at <see cref="Path"/> plus
-/// its cursor/scroll/load state.
+/// One column of the miller-columns browser: the listing at <see cref="Location"/> plus its
+/// cursor/scroll/load state.
 /// </summary>
-/// <param name="Path">
-/// Normalized full path of the directory this column shows. Empty string means the virtual
-/// root/drive-list column.
-/// </param>
+/// <param name="Location">Where this column points - see <see cref="Zurari.Core.Location"/>.</param>
 /// <param name="Entries">The items currently known for this column.</param>
 /// <param name="Cursor">Index of the highlighted entry in <see cref="Entries"/>, or -1 when empty.</param>
 /// <param name="ScrollOffset">Index of the first visible entry, for virtualized rendering.</param>
 /// <param name="Load">Whether <see cref="Entries"/> reflects a completed read, is loading, or errored.</param>
 /// <param name="ErrorMessage">Set only when <see cref="Load"/> is <see cref="LoadState.Error"/>.</param>
 public sealed record Column(
-    string Path,
+    Location Location,
     ImmutableArray<Entry> Entries,
     int Cursor = -1,
     int ScrollOffset = 0,
@@ -189,7 +193,7 @@ public sealed record AppState
     /// <summary>Starting state: a single, still-loading virtual root column (the drive list).</summary>
     public static AppState Initial { get; } = new()
     {
-        Columns = [new Column(Path: "", Entries: [])],
+        Columns = [new Column(Location.Drives.Instance, Entries: [])],
         FocusedColumn = 0,
     };
 
@@ -236,22 +240,12 @@ public sealed record AppState
                 violations.Add($"Columns[{i}].Load is Error but ErrorMessage is null.");
             }
 
-            if (i > 0)
-            {
-                var parentPath = Columns[i - 1].Path;
-                if (parentPath.Length == 0)
-                {
-                    if (column.Path.Length == 0)
-                    {
-                        violations.Add($"Columns[{i}].Path must be a drive root, not the virtual root.");
-                    }
-                }
-                else if (!column.Path.StartsWith(parentPath, StringComparison.Ordinal))
-                {
-                    violations.Add(
-                        $"Columns[{i}].Path \"{column.Path}\" is not under Columns[{i - 1}].Path \"{parentPath}\".");
-                }
-            }
+            // There is deliberately no parent/child relationship checked between adjacent columns.
+            // The old invariant required Columns[i].Path to start with Columns[i-1].Path, which was
+            // only ever true because child locations were built by concatenating onto the parent.
+            // Now a row carries its own Entry.Target, so a column can legitimately point somewhere
+            // unrelated to the one on its left - that is exactly what a favorite, a pinned network
+            // share, or the recycle bin does. String containment would reject all of them.
         }
 
         if (!Jobs.IsDefaultOrEmpty)

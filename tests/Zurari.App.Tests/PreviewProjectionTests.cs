@@ -9,7 +9,7 @@ public class PreviewProjectionTests
     private static AppState StateWithPreview(PreviewState preview) =>
         new()
         {
-            Columns = [new Column("", [], Load: LoadState.Loaded)],
+            Columns = [new Column(Location.Drives.Instance, [], Load: LoadState.Loaded)],
             FocusedColumn = 0,
             Preview = preview,
         };

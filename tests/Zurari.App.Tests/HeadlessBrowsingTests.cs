@@ -51,7 +51,7 @@ public class HeadlessBrowsingTests
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue);
             var loop = new MessageLoop(
-                initial: new AppState { Columns = [new Column(Path: root, Entries: [])], FocusedColumn = 0 },
+                initial: new AppState { Columns = [new Column(new Location.RealDirectory(root), Entries: [])], FocusedColumn = 0 },
                 runEffect: runtime.Submit);
 
             // 1. Refresh loads the root column.

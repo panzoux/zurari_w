@@ -378,7 +378,7 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
-        if (state.Columns[e.ColumnIndex].Path.Length == 0)
+        if (state.Columns[e.ColumnIndex].Location.FilesystemPath is null)
         {
             return;
         }
@@ -425,7 +425,7 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         var entry = column.Entries[entryIndex];
-        return column.Path.Length == 0 ? entry.Name : System.IO.Path.Combine(column.Path, entry.Name);
+        return entry.Target is { } target ? target.FilesystemPath : column.Location.ChildPath(entry.Name);
     }
 
     private bool IsEntryMarked(int columnIndex, int entryIndex)
@@ -455,7 +455,13 @@ public sealed partial class MainWindow : Window, IDisposable
         {
             if (entry.IsMarked)
             {
-                result.Add(column.Path.Length == 0 ? entry.Name : System.IO.Path.Combine(column.Path, entry.Name));
+                var path = entry.Target is { } target
+                    ? target.FilesystemPath
+                    : column.Location.ChildPath(entry.Name);
+                if (path is not null)
+                {
+                    result.Add(path);
+                }
             }
         }
 
@@ -527,7 +533,7 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         var column = state.Columns[columnIndex];
-        if (column.Path.Length == 0)
+        if (column.Location.FilesystemPath is null)
         {
             return;
         }
@@ -718,15 +724,23 @@ public sealed partial class MainWindow : Window, IDisposable
             // when the columns actually changed, same guard as the Browser.Columns reassignment
             // above, so an unrelated render (job progress, preview loads, ...) does not churn
             // watchers.
+            // Only real directories can be watched. A virtual location (the drive list, and later
+            // the recycle bin or the inside of an archive) has no path for FileSystemWatcher to
+            // point at, so it is filtered out here rather than relying on the watcher to reject it.
             directoryWatcher.SetWatchedPaths(
-                state.Columns.Select(c => c.Path).Where(p => p.Length > 0).Distinct().ToList());
+                state.Columns
+                    .Select(c => c.Location)
+                    .OfType<Location.RealDirectory>()
+                    .Select(d => d.Path)
+                    .Distinct()
+                    .ToList());
         }
 
         RenderJobs(state);
         RenderPreview(state);
 
         var focused = state.Columns[state.FocusedColumn];
-        var focusedPath = focused.Path.Length == 0 ? "ドライブ" : focused.Path;
+        var focusedPath = focused.Location.FilesystemPath ?? "ドライブ";
         Title = "zurari — " + focusedPath;
 
         var markedCount = 0;

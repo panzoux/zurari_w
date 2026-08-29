@@ -172,18 +172,18 @@ public sealed class ShellEffectExecutor : IDisposable
 
             if (aborted)
             {
-                post(new Msg.ShellOpFailed(effect.ColumnIndex, effect.Path, "Delete operation was aborted."));
+                post(new Msg.ShellOpFailed(effect.ColumnIndex, effect.ColumnLocation, "Delete operation was aborted."));
                 return;
             }
 
-            post(new Msg.ShellOpCompleted(effect.ColumnIndex, effect.Path, DistinctParents(effect.Targets)));
+            post(new Msg.ShellOpCompleted(effect.ColumnIndex, effect.ColumnLocation, DistinctParents(effect.Targets)));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // Mirrors Zurari.Runtime.WorkerRuntime.ExecuteReadDirectory: a single effect's
             // interop failure (invalid path, COM error, cast failure...) must never take the
             // worker thread down, so it is reported as a Msg instead of propagating.
-            post(new Msg.ShellOpFailed(effect.ColumnIndex, effect.Path, ex.Message));
+            post(new Msg.ShellOpFailed(effect.ColumnIndex, effect.ColumnLocation, ex.Message));
         }
         finally
         {
@@ -257,15 +257,20 @@ public sealed class ShellEffectExecutor : IDisposable
 
             if (aborted)
             {
-                post(new Msg.ShellOpFailed(effect.ColumnIndex, effect.DestPath, "Operation was aborted."));
+                // Keyed to the column, not to DestPath. Msg.ShellOpFailed is matched against the
+                // column's own location, so reporting the drop destination here meant that an
+                // aborted row-granular drop (DestPath = a subdirectory row, not the column) failed
+                // that check, was discarded, and left the column stuck in LoadState.Loading. The
+                // success and exception paths below always keyed on the column; this one did not.
+                post(new Msg.ShellOpFailed(effect.ColumnIndex, effect.ColumnLocation, "Operation was aborted."));
                 return;
             }
 
-            post(new Msg.ShellOpCompleted(effect.ColumnIndex, effect.ColumnPath, AffectedDirs(effect)));
+            post(new Msg.ShellOpCompleted(effect.ColumnIndex, effect.ColumnLocation, AffectedDirs(effect)));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            post(new Msg.ShellOpFailed(effect.ColumnIndex, effect.ColumnPath, ex.Message));
+            post(new Msg.ShellOpFailed(effect.ColumnIndex, effect.ColumnLocation, ex.Message));
         }
         finally
         {

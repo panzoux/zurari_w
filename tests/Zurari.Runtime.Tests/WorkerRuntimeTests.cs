@@ -42,12 +42,12 @@ public class WorkerRuntimeTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue);
-            runtime.Submit(new Effect.ReadDirectory(0, dir));
+            runtime.Submit(new Effect.ReadDirectory(0, new Location.RealDirectory(dir)));
 
             var msg = WaitForMsg(queue, TimeSpan.FromSeconds(10));
             var loaded = Assert.IsType<Msg.DirectoryLoaded>(msg);
             Assert.Equal(0, loaded.ColumnIndex);
-            Assert.Equal(dir, loaded.Path);
+            Assert.Equal(new Location.RealDirectory(dir), loaded.Location);
             Assert.Equal(4, loaded.Entries.Length);
 
             // Directories first, then files; each group ordinal-ignore-case by name.
@@ -78,12 +78,12 @@ public class WorkerRuntimeTests
         var dir = Path.Combine(Path.GetTempPath(), "zurari-does-not-exist-" + Guid.NewGuid());
         var queue = new ConcurrentQueue<Msg>();
         using var runtime = new WorkerRuntime(queue.Enqueue);
-        runtime.Submit(new Effect.ReadDirectory(3, dir));
+        runtime.Submit(new Effect.ReadDirectory(3, new Location.RealDirectory(dir)));
 
         var msg = WaitForMsg(queue, TimeSpan.FromSeconds(10));
         var failed = Assert.IsType<Msg.DirectoryLoadFailed>(msg);
         Assert.Equal(3, failed.ColumnIndex);
-        Assert.Equal(dir, failed.Path);
+        Assert.Equal(new Location.RealDirectory(dir), failed.Location);
         Assert.False(string.IsNullOrEmpty(failed.Error));
     }
 
@@ -92,12 +92,12 @@ public class WorkerRuntimeTests
     {
         var queue = new ConcurrentQueue<Msg>();
         using var runtime = new WorkerRuntime(queue.Enqueue);
-        runtime.Submit(new Effect.ReadDirectory(0, ""));
+        runtime.Submit(new Effect.ReadDirectory(0, Location.Drives.Instance));
 
         var msg = WaitForMsg(queue, TimeSpan.FromSeconds(10));
         var loaded = Assert.IsType<Msg.DirectoryLoaded>(msg);
         Assert.Equal(0, loaded.ColumnIndex);
-        Assert.Equal("", loaded.Path);
+        Assert.Equal(Location.Drives.Instance, loaded.Location);
         Assert.NotEmpty(loaded.Entries);
         Assert.All(loaded.Entries, e => Assert.Equal(EntryKind.Drive, e.Kind));
     }
@@ -109,7 +109,7 @@ public class WorkerRuntimeTests
         var runtime = new WorkerRuntime(queue.Enqueue, workerCount: 1);
         for (var i = 0; i < 200; i++)
         {
-            runtime.Submit(new Effect.ReadDirectory(i, ""));
+            runtime.Submit(new Effect.ReadDirectory(i, Location.Drives.Instance));
         }
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -131,7 +131,7 @@ public class WorkerRuntimeTests
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue);
             var loop = new MessageLoop(
-                initial: new AppState { Columns = [new Column(Path: dir, Entries: [])], FocusedColumn = 0 },
+                initial: new AppState { Columns = [new Column(new Location.RealDirectory(dir), Entries: [])], FocusedColumn = 0 },
                 runEffect: runtime.Submit);
 
             loop.Dispatch(new Msg.Refresh());

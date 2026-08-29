@@ -9,7 +9,7 @@ public class JobProjectionTests
     private static AppState StateWithJobs(params Job[] jobs) =>
         new()
         {
-            Columns = [new Column("", [], Load: LoadState.Loaded)],
+            Columns = [new Column(Location.Drives.Instance, [], Load: LoadState.Loaded)],
             FocusedColumn = 0,
             Jobs = [.. jobs],
         };
