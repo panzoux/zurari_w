@@ -13,6 +13,19 @@ public enum EntryKind
 
     /// <summary>A regular file.</summary>
     File,
+
+    /// <summary>
+    /// A section label in the drive pane - お気に入り, ドライブ, and so on. Not a place: it has no
+    /// target, no size and no operations.
+    /// </summary>
+    /// <remarks>
+    /// It is nonetheless a real entry rather than something the view invents, because the cursor
+    /// lands on it and <c>Space</c> collapses the section beneath it. <see cref="Column.Cursor"/>
+    /// is an index into <see cref="Column.Entries"/>, so anything the cursor can reach has to live
+    /// there; a header synthesized during projection would put the control's indices and Core's out
+    /// of step. Search skips these - narrowing a list to "ドライブ" means nothing.
+    /// </remarks>
+    Header,
 }
 
 /// <summary>Load state of a <see cref="Column"/>'s <see cref="Column.Entries"/>.</summary>
@@ -32,7 +45,22 @@ public enum LoadState
 /// A single item shown in a column. Contains no I/O types (BannedSymbols enforces this) —
 /// everything the Runtime learns about the filesystem must be reduced to this shape first.
 /// </summary>
-/// <param name="Name">Display name (also the path segment used to build a child column's path).</param>
+/// <param name="Name">
+/// What identifies this entry, and the path segment used to build a child column's path. In a
+/// directory listing it is the file's name. In the drive pane it is the full target path, because
+/// that pane is the one place two rows can share a display label - two pinned folders both called
+/// <c>fol1</c>, from different roots - and the cursor follows entries by <see cref="Name"/>.
+/// </param>
+/// <param name="DisplayName">
+/// What the user reads, when that differs from <see cref="Name"/>: <c>Windows (C:)</c> for a drive,
+/// or <c>fol1 (D:\test\fol1)</c> for a favorite whose bare name would be ambiguous. <c>null</c> - the
+/// normal case - means show <see cref="Name"/>.
+/// </param>
+/// <param name="Group">
+/// Which section of the drive pane this row belongs to, or <c>null</c> outside that pane. Data
+/// rather than presentation: a section-aware operation needs it, and the header rows themselves
+/// carry it so a collapse knows what it is hiding.
+/// </param>
 /// <param name="Kind">What kind of item this is.</param>
 /// <param name="SizeBytes">Size in bytes, or -1 when unknown/not applicable (directories, drives).</param>
 /// <param name="Modified">Last-modified timestamp, or <c>default(DateTime)</c> when unknown.</param>
@@ -49,7 +77,13 @@ public sealed record Entry(
     long SizeBytes = -1,
     DateTime Modified = default,
     bool IsMarked = false,
-    Location? Target = null);
+    Location? Target = null,
+    string? DisplayName = null,
+    string? Group = null)
+{
+    /// <summary>What to render for this entry - <see cref="DisplayName"/> when it has one.</summary>
+    public string Label => DisplayName ?? Name;
+}
 
 /// <summary>
 /// One column of the miller-columns browser: the listing at <see cref="Location"/> plus its
@@ -100,6 +134,25 @@ public sealed record Column(
         init => allEntries = value;
     }
 
+    /// <summary>
+    /// Names of the sections whose rows are hidden. The header itself always stays - it is what you
+    /// press to bring the section back.
+    /// </summary>
+    public ImmutableHashSet<string> CollapsedGroups { get; init; } = ImmutableHashSet<string>.Empty;
+
+    /// <summary>
+    /// Collapses or expands <paramref name="group"/>, re-deriving the visible list and keeping the
+    /// cursor on the same entry - which, for the header you just pressed, means it stays put.
+    /// </summary>
+    public Column ToggleGroup(string group)
+    {
+        // Remove hands back the very same set when the group was not in it, which is precisely
+        // "this section was expanded" - so one call answers the question and does the work.
+        var afterRemove = CollapsedGroups.Remove(group);
+        var collapsed = ReferenceEquals(afterRemove, CollapsedGroups) ? CollapsedGroups.Add(group) : afterRemove;
+        return WithView(AllEntries, collapsed);
+    }
+
     /// <summary>Name of the entry under the cursor, or <c>null</c> when there is none.</summary>
     public string? CursorName =>
         Cursor >= 0 && Cursor < Entries.Length ? Entries[Cursor].Name : null;
@@ -114,23 +167,59 @@ public sealed record Column(
     /// the name is the same principle the cursor memory uses, and re-deriving will need it anyway:
     /// re-sorting moves every row.
     /// </remarks>
-    public Column WithAllEntries(ImmutableArray<Entry> all)
+    public Column WithAllEntries(ImmutableArray<Entry> all) => WithView(all, CollapsedGroups);
+
+    /// <summary>
+    /// The single place that writes <see cref="AllEntries"/>, <see cref="Entries"/> and
+    /// <see cref="Cursor"/>, so they cannot drift apart.
+    /// </summary>
+    /// <remarks>
+    /// Both must always be assigned together. <see cref="AllEntries"/> falls back to
+    /// <see cref="Entries"/> when its backing field was never set - which is what lets a column be
+    /// built from a single list - so a bare <c>with { Entries = … }</c> on such a column silently
+    /// redefines what "everything" means, and the full list is lost. Going through here instead
+    /// makes that unrepresentable.
+    /// </remarks>
+    private Column WithView(ImmutableArray<Entry> all, ImmutableHashSet<string> collapsedGroups)
     {
         var previousName = CursorName;
-        var visible = Derive(all);
+        var visible = Derive(all, collapsedGroups);
         return this with
         {
             AllEntries = all,
             Entries = visible,
+            CollapsedGroups = collapsedGroups,
             Cursor = ResolveCursor(visible, previousName, Cursor),
         };
     }
 
     /// <summary>
-    /// The visible list for <paramref name="all"/>. Identity today - nothing narrows or reorders a
-    /// column yet; collapsed sections, hidden files and sort order all land here.
+    /// The visible list: everything except the rows of collapsed sections. Hidden files and sort
+    /// order will join this.
     /// </summary>
-    private static ImmutableArray<Entry> Derive(ImmutableArray<Entry> all) => all;
+    private static ImmutableArray<Entry> Derive(
+        ImmutableArray<Entry> all, ImmutableHashSet<string> collapsedGroups)
+    {
+        if (collapsedGroups.IsEmpty)
+        {
+            // Returning the same instance matters beyond saving a copy: the projection reuses its
+            // row array when Entries is reference-equal, which is what keeps cursor movement cheap.
+            return all;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<Entry>(all.Length);
+        foreach (var entry in all)
+        {
+            // A header survives its own section being collapsed - otherwise there would be nothing
+            // left to press to bring it back.
+            if (entry.Kind == EntryKind.Header || entry.Group is not { } group || !collapsedGroups.Contains(group))
+            {
+                builder.Add(entry);
+            }
+        }
+
+        return builder.ToImmutable();
+    }
 
     private static int ResolveCursor(ImmutableArray<Entry> visible, string? previousName, int previousIndex)
     {

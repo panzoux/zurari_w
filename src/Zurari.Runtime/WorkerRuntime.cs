@@ -348,18 +348,84 @@ public sealed class WorkerRuntime : IDisposable
         }
     }
 
+    /// <summary>Section identifiers for the drive pane. Stable keys; the labels are the header rows.</summary>
+    private const string DrivesGroup = "drives";
+
+    /// <summary>
+    /// Builds the drive pane: a header row per section, followed by that section's places.
+    /// </summary>
+    /// <remarks>
+    /// Both the headers and their rows are produced here rather than during projection, because the
+    /// cursor lands on a header and <c>Space</c> collapses it - see <see cref="EntryKind.Header"/>.
+    /// A section with nothing in it contributes no header.
+    /// </remarks>
     private static ImmutableArray<Entry> ReadDrives()
     {
         var builder = ImmutableArray.CreateBuilder<Entry>();
+
+        var drives = new List<Entry>();
         foreach (var drive in DriveInfo.GetDrives())
         {
-            // Not-ready drives (empty CD/DVD, disconnected mapped drives...) are still listed;
-            // browsing into one will simply fail later with DirectoryLoadFailed.
-            builder.Add(new Entry(drive.Name, EntryKind.Drive, SizeBytes: -1));
+            // Not-ready drives (empty CD/DVD, disconnected mapped drives...) are still listed. The
+            // cursor has to be able to reach one - otherwise there is nothing to aim an eject at -
+            // and entering one simply fails later with DirectoryLoadFailed.
+            drives.Add(new Entry(
+                drive.Name,
+                EntryKind.Drive,
+                SizeBytes: -1,
+                Group: DrivesGroup,
+                DisplayName: DescribeDrive(drive)));
         }
 
+        AppendSection(builder, DrivesGroup, "ドライブ", drives);
         return builder.ToImmutable();
     }
+
+    /// <summary>Adds a header row and its contents, or nothing at all when the section is empty.</summary>
+    private static void AppendSection(
+        ImmutableArray<Entry>.Builder builder, string group, string label, IReadOnlyList<Entry> rows)
+    {
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        builder.Add(new Entry(label, EntryKind.Header, SizeBytes: -1, Group: group));
+        builder.AddRange(rows);
+    }
+
+    /// <summary>
+    /// What a drive row reads as: its volume label with the letter, the way Explorer shows it, or
+    /// just the letter when the volume has no label or cannot be reached.
+    /// </summary>
+    private static string DescribeDrive(DriveInfo drive)
+    {
+        var letter = drive.Name.TrimEnd('\\', '/');
+        try
+        {
+            if (!drive.IsReady)
+            {
+                return $"{letter} ({DriveKindLabel(drive.DriveType)})";
+            }
+
+            var label = drive.VolumeLabel;
+            return string.IsNullOrWhiteSpace(label) ? letter : $"{label} ({letter})";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or DriveNotFoundException)
+        {
+            // A drive can stop being ready between the check and the read.
+            return letter;
+        }
+    }
+
+    private static string DriveKindLabel(DriveType type) => type switch
+    {
+        DriveType.CDRom => "光学ドライブ",
+        DriveType.Removable => "リムーバブル",
+        DriveType.Network => "ネットワーク",
+        DriveType.Ram => "RAM ディスク",
+        _ => "準備できていません",
+    };
 
     private static ImmutableArray<Entry> ReadDirectoryEntries(string path)
     {

@@ -557,14 +557,23 @@ public class TransitionTests
         Assert.False(twice.Columns[0].Entries[1].IsMarked);
     }
 
+    /// <summary>
+    /// Rows in the drive pane cannot be marked.
+    /// </summary>
+    /// <remarks>
+    /// Reversed deliberately: this used to assert that a drive could be marked. Marks exist to
+    /// gather files for a copy, move or delete, and none of those means anything applied to a drive
+    /// or a favorite — so there was never anything for a mark here to feed. Refusing it also frees
+    /// Space to mean the one useful thing in this pane, collapsing a section.
+    /// </remarks>
     [Fact]
-    public void ToggleMark_can_mark_a_drive_entry()
+    public void ToggleMark_does_nothing_in_the_drive_pane()
     {
         var state = StateWithColumns(new Column(Location.Drives.Instance, [Drive], Cursor: 0, Load: LoadState.Loaded));
 
         var (next, _) = Transition.Apply(state, new Msg.ToggleMark(0, 0));
 
-        Assert.True(next.Columns[0].Entries[0].IsMarked);
+        Assert.False(next.Columns[0].Entries[0].IsMarked);
     }
 
     [Fact]
@@ -1735,6 +1744,89 @@ public class TransitionTests
         Assert.Empty(effects);
     }
 
+    private static Column DrivePaneColumn(int cursor = 0) => new(
+        Location.Drives.Instance,
+        [
+            new Entry("ドライブ", EntryKind.Header, Group: "drives"),
+            new Entry(@"C:\", EntryKind.Drive, Group: "drives", DisplayName: "Windows (C:)"),
+            new Entry(@"D:\", EntryKind.Drive, Group: "drives", DisplayName: "Data (D:)"),
+            new Entry("ゴミ箱", EntryKind.Header, Group: "trash"),
+            new Entry("::trash", EntryKind.Directory, Group: "trash", DisplayName: "ゴミ箱"),
+        ],
+        Cursor: cursor,
+        Load: LoadState.Loaded);
+
+    [Fact]
+    public void Space_on_a_header_collapses_its_section_and_leaves_the_header()
+    {
+        var state = StateWithColumns(DrivePaneColumn(cursor: 0));
+
+        var (next, _) = Transition.Apply(state, new Msg.ToggleMarkAtCursor(0));
+
+        var column = next.Columns[0];
+        Assert.Equal(3, column.Entries.Length);
+        Assert.Equal("ドライブ", column.Entries[0].Name);
+        Assert.DoesNotContain(column.Entries, e => e.Kind == EntryKind.Drive);
+
+        // Nothing was read again - the rows are still there, just not shown.
+        Assert.Equal(5, column.AllEntries.Length);
+
+        // The cursor stays on the header you pressed, so pressing again puts them back.
+        Assert.Equal(0, column.Cursor);
+    }
+
+    [Fact]
+    public void Space_on_a_header_a_second_time_expands_it_again()
+    {
+        var state = StateWithColumns(DrivePaneColumn(cursor: 0));
+
+        var (collapsed, _) = Transition.Apply(state, new Msg.ToggleMarkAtCursor(0));
+        var (expanded, _) = Transition.Apply(collapsed, new Msg.ToggleMarkAtCursor(0));
+
+        Assert.Equal(5, expanded.Columns[0].Entries.Length);
+        Assert.Empty(expanded.Columns[0].CollapsedGroups);
+    }
+
+    [Fact]
+    public void A_collapsed_section_keeps_the_cursor_on_a_row_that_is_still_shown()
+    {
+        // Cursor on D:\, then the section it lives in is collapsed from elsewhere.
+        var column = DrivePaneColumn(cursor: 2);
+        var state = StateWithColumns(column);
+
+        var (next, _) = Transition.Apply(state, new Msg.CursorHome(0));
+        var (collapsed, _) = Transition.Apply(next, new Msg.ToggleMarkAtCursor(0));
+
+        var result = collapsed.Columns[0];
+        Assert.InRange(result.Cursor, 0, result.Entries.Length - 1);
+        Assert.Empty(collapsed.CheckInvariants());
+    }
+
+    [Fact]
+    public void Space_in_the_drive_pane_never_marks()
+    {
+        // Cursor on a drive row, not a header.
+        var state = StateWithColumns(DrivePaneColumn(cursor: 1));
+
+        var (next, _) = Transition.Apply(state, new Msg.ToggleMarkAtCursor(0));
+
+        Assert.DoesNotContain(next.Columns[0].AllEntries, e => e.IsMarked);
+    }
+
+    [Fact]
+    public void A_header_is_not_a_delete_target_and_cannot_be_entered()
+    {
+        var state = StateWithColumns(DrivePaneColumn(cursor: 0));
+
+        var (afterDelete, deleteEffects) = Transition.Apply(state, new Msg.DeleteEntry(0, 0));
+        var (afterEnter, enterEffects) = Transition.Apply(state, new Msg.EnterDirectory(0, 0));
+
+        Assert.Empty(deleteEffects);
+        Assert.Equal(LoadState.Loaded, afterDelete.Columns[0].Load);
+        Assert.Empty(enterEffects);
+        Assert.Single(afterEnter.Columns);
+    }
+
     [Fact]
     public void DirectoryLoaded_keeps_the_cursor_on_the_same_entry_when_one_above_it_disappears()
     {
@@ -2137,11 +2229,17 @@ public class TransitionProperties
     private static Gen<EntryKind> GenEntryKind => Gen.OneOfConst(
         EntryKind.Drive,
         EntryKind.Directory,
-        EntryKind.File);
+        EntryKind.File,
+        EntryKind.Header);
 
+    /// <summary>
+    /// Entries carry a group so that collapsing one actually narrows the view - a generated header
+    /// with no group would toggle nothing, and the subsequence invariant would never be tested
+    /// against a list that is genuinely shorter than the one it came from.
+    /// </summary>
     private static Gen<Entry> GenEntry =>
-        Gen.Select(Gen.OneOfConst("a", "b", "c"), GenEntryKind)
-            .Select(t => new Entry(t.Item1, t.Item2));
+        Gen.Select(Gen.OneOfConst("a", "b", "c"), GenEntryKind, Gen.OneOfConst("g1", "g2"))
+            .Select(t => new Entry(t.Item1, t.Item2, Group: t.Item3));
 
     private static Gen<ImmutableArray<Entry>> GenEntries =>
         GenEntry.List[0, 3].Select(list => list.ToImmutableArray());

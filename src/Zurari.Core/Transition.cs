@@ -141,7 +141,7 @@ public static class Transition
         }
 
         var entry = column.Entries[entryIndex];
-        if (entry.Kind == EntryKind.File)
+        if (entry.Kind is EntryKind.File or EntryKind.Header)
         {
             var fileTruncated = state.Columns.Take(columnIndex + 1).ToImmutableArray();
             fileTruncated = fileTruncated.SetItem(columnIndex, column with { Cursor = entryIndex });
@@ -262,7 +262,7 @@ public static class Transition
         }
 
         var entry = column.Entries[entryIndex];
-        if (entry.Kind == EntryKind.Drive)
+        if (entry.Kind is EntryKind.Drive or EntryKind.Header)
         {
             return (state, NoEffects);
         }
@@ -300,6 +300,17 @@ public static class Transition
         return column.WithAllEntries(updated);
     }
 
+    /// <summary>
+    /// Whether rows in <paramref name="column"/> can be marked at all.
+    /// </summary>
+    /// <remarks>
+    /// Marks exist to gather a set of files for one operation - copy, move, delete. The drive pane
+    /// holds places rather than files, and none of those operations means anything applied to a
+    /// drive or a favorite, so there is nothing for a mark there to feed. Refusing it also leaves
+    /// Space free to mean the one thing it should mean in that pane: collapse the section.
+    /// </remarks>
+    private static bool AllowsMarks(Column column) => column.Location is not Location.Drives;
+
     private static AppState ToggleMark(AppState state, int columnIndex, int entryIndex)
     {
         if (!InRange(state, columnIndex))
@@ -308,17 +319,31 @@ public static class Transition
         }
 
         var column = state.Columns[columnIndex];
-        if (entryIndex < 0 || entryIndex >= column.Entries.Length)
+        if (entryIndex < 0 || entryIndex >= column.Entries.Length || !AllowsMarks(column))
         {
             return state;
         }
 
         var target = column.Entries[entryIndex];
+        if (target.Kind == EntryKind.Header)
+        {
+            return state;
+        }
+
         var updated = WithMarkChange(
             column, e => ReferenceEquals(e, target) ? e with { IsMarked = !e.IsMarked } : e);
         return WithColumn(state, columnIndex, updated with { Cursor = entryIndex });
     }
 
+    /// <summary>
+    /// Space: acts on the row under the cursor, which is a mark almost everywhere and a section
+    /// collapse on a header.
+    /// </summary>
+    /// <remarks>
+    /// The branch lives here rather than in the App so that the decision stays with the state that
+    /// knows what the row is. The two meanings never compete: a header cannot be marked, and the one
+    /// pane that has headers does not have marks either.
+    /// </remarks>
     private static AppState ToggleMarkAtCursor(AppState state, int columnIndex)
     {
         if (!InRange(state, columnIndex))
@@ -333,10 +358,39 @@ public static class Transition
         }
 
         var target = column.Entries[column.Cursor];
+        if (target.Kind == EntryKind.Header)
+        {
+            return target.Group is { } group
+                ? WithColumn(state, columnIndex, column.ToggleGroup(group))
+                : state;
+        }
+
+        if (!AllowsMarks(column))
+        {
+            return state;
+        }
+
         var updated = WithMarkChange(
             column, e => ReferenceEquals(e, target) ? e with { IsMarked = !e.IsMarked } : e);
-        var nextCursor = Math.Clamp(column.Cursor + 1, 0, updated.Entries.Length - 1);
+
+        // Advancing past the row you just marked is what makes marking a run of files one keypress
+        // each. Skips a header, which is never a mark target.
+        var nextCursor = AdvancePastHeaders(updated.Entries, column.Cursor + 1);
         return WithColumn(state, columnIndex, updated with { Cursor = nextCursor });
+    }
+
+    /// <summary>
+    /// First markable row at or after <paramref name="from"/>, clamped into range.
+    /// </summary>
+    private static int AdvancePastHeaders(ImmutableArray<Entry> entries, int from)
+    {
+        var index = Math.Clamp(from, 0, entries.Length - 1);
+        while (index < entries.Length - 1 && entries[index].Kind == EntryKind.Header)
+        {
+            index++;
+        }
+
+        return index;
     }
 
     private static AppState ClearMarks(AppState state, int columnIndex)
@@ -370,7 +424,7 @@ public static class Transition
         var targets = ImmutableArray.CreateBuilder<string>();
         foreach (var entry in column.Entries)
         {
-            if (!entry.IsMarked || entry.Kind == EntryKind.Drive)
+            if (!entry.IsMarked || entry.Kind is EntryKind.Drive or EntryKind.Header)
             {
                 continue;
             }
@@ -400,7 +454,7 @@ public static class Transition
         }
 
         var column = state.Columns[columnIndex];
-        if (column.Entries.Length == 0)
+        if (column.Entries.Length == 0 || !AllowsMarks(column))
         {
             return state;
         }
@@ -416,7 +470,10 @@ public static class Transition
         var inRange = new HashSet<object>(ReferenceEqualityComparer.Instance);
         for (var i = from; i <= to; i++)
         {
-            inRange.Add(column.Entries[i]);
+            if (column.Entries[i].Kind != EntryKind.Header)
+            {
+                inRange.Add(column.Entries[i]);
+            }
         }
 
         var updated = WithMarkChange(column, e =>

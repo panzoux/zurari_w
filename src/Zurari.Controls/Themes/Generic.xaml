@@ -181,8 +181,25 @@
                                         </Style.Triggers>
                                     </Style>
                                 </ListBox.ItemContainerStyle>
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
+                                <ListBox.ItemTemplateSelector>
+                                    <local:EntryTemplateSelector>
+                                        <local:EntryTemplateSelector.HeaderTemplate>
+                                            <!-- A section label, not a row: 11px semibold in the same
+                                                 Gray the size column uses, so it adds no new colour.
+                                                 Spacing is asymmetric on purpose - the gap belongs to
+                                                 the break above, not to the group it labels. Aligned
+                                                 with the row icons so the pane keeps one left edge. -->
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding Name}"
+                                                           FontSize="11"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="Gray"
+                                                           Margin="0,8,0,0"
+                                                           TextTrimming="CharacterEllipsis" />
+                                            </DataTemplate>
+                                        </local:EntryTemplateSelector.HeaderTemplate>
+                                        <local:EntryTemplateSelector.EntryTemplate>
+                                            <DataTemplate>
                                         <DockPanel>
                                             <TextBlock DockPanel.Dock="Right"
                                                        Margin="4,0,0,0"
@@ -216,8 +233,10 @@
                                             <TextBlock TextTrimming="CharacterEllipsis"
                                                        Text="{Binding Name}" />
                                         </DockPanel>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
+                                            </DataTemplate>
+                                        </local:EntryTemplateSelector.EntryTemplate>
+                                    </local:EntryTemplateSelector>
+                                </ListBox.ItemTemplateSelector>
                             </ListBox>
                             <!-- Rubber-band (rectangle) select feedback. Positioned in code
                                  (ColumnView) via Canvas.Left/Top and Width/Height; hidden

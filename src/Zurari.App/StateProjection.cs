@@ -108,11 +108,24 @@ public static class StateProjection
     private static Controls.EntryVm ProjectEntry(
         Entry entry, Func<Entry, ImageSource?>? iconResolver, Location columnLocation, HashSet<string>? cutPending)
     {
+        // A header is a label, not a place: no path, no icon, no size or date column.
+        if (entry.Kind == EntryKind.Header)
+        {
+            return new(
+                Name: entry.Label,
+                Kind: Controls.EntryKind.Header,
+                IsMarked: false,
+                SizeText: null,
+                DateText: null);
+        }
+
         var fullPath = entry.Target is { } target
             ? target.FilesystemPath
             : columnLocation.ChildPath(entry.Name);
         return new(
-            Name: entry.Name,
+            // What the user reads. Differs from Entry.Name in the drive pane, where the name is the
+            // target path so that two favorites called the same thing stay distinguishable.
+            Name: entry.Label,
             Kind: ProjectKind(entry.Kind),
             IsMarked: entry.IsMarked,
             SizeText: ProjectSize(entry),
@@ -125,6 +138,7 @@ public static class StateProjection
     {
         EntryKind.Drive => Controls.EntryKind.Drive,
         EntryKind.Directory => Controls.EntryKind.Directory,
+        EntryKind.Header => Controls.EntryKind.Header,
         _ => Controls.EntryKind.File,
     };
 

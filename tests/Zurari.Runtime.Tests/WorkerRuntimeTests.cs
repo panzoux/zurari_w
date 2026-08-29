@@ -99,7 +99,20 @@ public class WorkerRuntimeTests
         Assert.Equal(0, loaded.ColumnIndex);
         Assert.Equal(Location.Drives.Instance, loaded.Location);
         Assert.NotEmpty(loaded.Entries);
-        Assert.All(loaded.Entries, e => Assert.Equal(EntryKind.Drive, e.Kind));
+
+        // The pane is sectioned now, so it opens with a header and every drive sits under it. The
+        // header is a real entry rather than something the view adds, because the cursor lands on it.
+        Assert.Equal(EntryKind.Header, loaded.Entries[0].Kind);
+        Assert.Equal("ドライブ", loaded.Entries[0].Name);
+        Assert.All(loaded.Entries.Skip(1), e => Assert.Equal(EntryKind.Drive, e.Kind));
+        Assert.All(loaded.Entries, e => Assert.Equal("drives", e.Group));
+
+        // Every drive reads as something, and the name stays the path so rows stay distinguishable.
+        Assert.All(loaded.Entries.Skip(1), e =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(e.Label));
+            Assert.EndsWith(@"\", e.Name, StringComparison.Ordinal);
+        });
     }
 
     [Fact]

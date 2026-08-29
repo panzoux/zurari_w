@@ -13,6 +13,12 @@ public enum EntryKind
 
     /// <summary>A regular file.</summary>
     File,
+
+    /// <summary>
+    /// A section label in the drive pane. Rendered as a label rather than a row: no icon, no size,
+    /// no chevron, and none of the row-state fills.
+    /// </summary>
+    Header,
 }
 
 /// <summary>
