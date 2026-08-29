@@ -200,12 +200,11 @@ public static class Transition
             return state;
         }
 
-        var carried = CarryMarks(column.Entries, entries);
-        var cursor = carried.Length == 0 ? -1 : Math.Clamp(column.Cursor, 0, carried.Length - 1);
-        var updated = column with
+        // Marks carry from everything the column knew, not just what was on screen, so a refresh
+        // does not quietly drop the marks of rows the view happened to be hiding.
+        var carried = CarryMarks(column.AllEntries, entries);
+        var updated = column.WithAllEntries(carried) with
         {
-            Entries = carried,
-            Cursor = cursor,
             Load = LoadState.Loaded,
             ErrorMessage = null,
         };
@@ -277,6 +276,30 @@ public static class Transition
         return (newState, [new Effect.DeleteToRecycleBin(columnIndex, column.Location, [targetFullPath], permanent)]);
     }
 
+    /// <summary>
+    /// Applies <paramref name="change"/> to every entry the column knows about, visible or not, and
+    /// re-derives the visible list.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Mark state is recorded on <see cref="Column.AllEntries"/> rather than on the visible list, so
+    /// that a mark survives its row being hidden and returns when the row does. Writing it to the
+    /// visible list instead would silently drop marks every time the view narrowed. The cost is the
+    /// same single array copy the previous <c>SetItem</c> made.
+    /// </para>
+    /// <para>
+    /// Callers identify their target by <em>instance</em>, not by name. Deriving the visible list
+    /// carries the same <see cref="Entry"/> objects across, so reference identity is exact and needs
+    /// no assumption that names are unique - which holds for a directory listing but would not for a
+    /// set of search results gathered from several directories at once.
+    /// </para>
+    /// </remarks>
+    private static Column WithMarkChange(Column column, Func<Entry, Entry> change)
+    {
+        var updated = column.AllEntries.Select(change).ToImmutableArray();
+        return column.WithAllEntries(updated);
+    }
+
     private static AppState ToggleMark(AppState state, int columnIndex, int entryIndex)
     {
         if (!InRange(state, columnIndex))
@@ -290,9 +313,10 @@ public static class Transition
             return state;
         }
 
-        var entry = column.Entries[entryIndex];
-        var newEntries = column.Entries.SetItem(entryIndex, entry with { IsMarked = !entry.IsMarked });
-        return WithColumn(state, columnIndex, column with { Entries = newEntries, Cursor = entryIndex });
+        var target = column.Entries[entryIndex];
+        var updated = WithMarkChange(
+            column, e => ReferenceEquals(e, target) ? e with { IsMarked = !e.IsMarked } : e);
+        return WithColumn(state, columnIndex, updated with { Cursor = entryIndex });
     }
 
     private static AppState ToggleMarkAtCursor(AppState state, int columnIndex)
@@ -308,10 +332,11 @@ public static class Transition
             return state;
         }
 
-        var entry = column.Entries[column.Cursor];
-        var newEntries = column.Entries.SetItem(column.Cursor, entry with { IsMarked = !entry.IsMarked });
-        var nextCursor = Math.Clamp(column.Cursor + 1, 0, newEntries.Length - 1);
-        return WithColumn(state, columnIndex, column with { Entries = newEntries, Cursor = nextCursor });
+        var target = column.Entries[column.Cursor];
+        var updated = WithMarkChange(
+            column, e => ReferenceEquals(e, target) ? e with { IsMarked = !e.IsMarked } : e);
+        var nextCursor = Math.Clamp(column.Cursor + 1, 0, updated.Entries.Length - 1);
+        return WithColumn(state, columnIndex, updated with { Cursor = nextCursor });
     }
 
     private static AppState ClearMarks(AppState state, int columnIndex)
@@ -322,13 +347,16 @@ public static class Transition
         }
 
         var column = state.Columns[columnIndex];
-        if (!column.Entries.Any(e => e.IsMarked))
+
+        // Clears hidden marks too: Esc means "nothing is marked", and leaving marks alive on rows
+        // the user cannot see would make them reappear the next time the view widened.
+        if (!column.AllEntries.Any(e => e.IsMarked))
         {
             return state;
         }
 
-        var newEntries = column.Entries.Select(e => e.IsMarked ? e with { IsMarked = false } : e).ToImmutableArray();
-        return WithColumn(state, columnIndex, column with { Entries = newEntries });
+        var updated = WithMarkChange(column, e => e.IsMarked ? e with { IsMarked = false } : e);
+        return WithColumn(state, columnIndex, updated);
     }
 
     private static (AppState, IReadOnlyList<Effect>) DeleteMarked(AppState state, int columnIndex, bool permanent)
@@ -382,18 +410,26 @@ public static class Transition
         var to = Math.Clamp(Math.Max(fromIndex, toIndex), 0, lastIndex);
         var clampedTo = Math.Clamp(toIndex, 0, lastIndex);
 
-        var newEntries = column.Entries.Select((e, i) =>
+        // The range is expressed in visible rows, so the rows it covers are collected here and
+        // applied to every entry below. A non-additive drag clears marks outside the range, hidden
+        // ones included - a rubber band means "these and only these".
+        var inRange = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        for (var i = from; i <= to; i++)
         {
-            var inRange = i >= from && i <= to;
-            if (inRange)
+            inRange.Add(column.Entries[i]);
+        }
+
+        var updated = WithMarkChange(column, e =>
+        {
+            if (inRange.Contains(e))
             {
                 return e.IsMarked ? e : e with { IsMarked = true };
             }
 
             return additive || !e.IsMarked ? e : e with { IsMarked = false };
-        }).ToImmutableArray();
+        });
 
-        return WithColumn(state, columnIndex, column with { Entries = newEntries, Cursor = clampedTo });
+        return WithColumn(state, columnIndex, updated with { Cursor = clampedTo });
     }
 
     private static (AppState, IReadOnlyList<Effect>) DropFiles(

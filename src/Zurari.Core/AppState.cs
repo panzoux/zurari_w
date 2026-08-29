@@ -67,7 +67,94 @@ public sealed record Column(
     int Cursor = -1,
     int ScrollOffset = 0,
     LoadState Load = LoadState.Loading,
-    string? ErrorMessage = null);
+    string? ErrorMessage = null)
+{
+    private readonly ImmutableArray<Entry>? allEntries;
+
+    /// <summary>
+    /// Everything the last read returned. <see cref="Entries"/> is derived from this - the subset
+    /// currently on screen, in the order it is shown.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The two are the same array until something narrows or reorders the view. Keeping the full
+    /// list means a view change - collapsing a section, revealing hidden files, changing the sort -
+    /// is a pure transformation of data already in hand, rather than a trip back to the disk. That
+    /// matters most exactly where a re-read hurts: a network share, an optical drive, a directory
+    /// with a hundred thousand files in it.
+    /// </para>
+    /// <para>
+    /// Marks live on the <see cref="Entry"/>, so they are recorded here rather than on the visible
+    /// list: a mark must survive its row being hidden and come back when it is shown again, instead
+    /// of being quietly dropped. Operations still act on <see cref="Entries"/> alone, so a mark you
+    /// cannot see is never acted on.
+    /// </para>
+    /// <para>
+    /// Defaults to <see cref="Entries"/> when never set, so constructing a column from a single list
+    /// means "all of it is visible".
+    /// </para>
+    /// </remarks>
+    public ImmutableArray<Entry> AllEntries
+    {
+        get => allEntries ?? Entries;
+        init => allEntries = value;
+    }
+
+    /// <summary>Name of the entry under the cursor, or <c>null</c> when there is none.</summary>
+    public string? CursorName =>
+        Cursor >= 0 && Cursor < Entries.Length ? Entries[Cursor].Name : null;
+
+    /// <summary>
+    /// Replaces what the last read returned and re-derives the visible list, keeping the cursor on
+    /// the same <em>entry</em> rather than the same index.
+    /// </summary>
+    /// <remarks>
+    /// Following the index means a file appearing or disappearing above the cursor silently moves it
+    /// onto a different file - which then becomes what the next Delete or Enter acts on. Following
+    /// the name is the same principle the cursor memory uses, and re-deriving will need it anyway:
+    /// re-sorting moves every row.
+    /// </remarks>
+    public Column WithAllEntries(ImmutableArray<Entry> all)
+    {
+        var previousName = CursorName;
+        var visible = Derive(all);
+        return this with
+        {
+            AllEntries = all,
+            Entries = visible,
+            Cursor = ResolveCursor(visible, previousName, Cursor),
+        };
+    }
+
+    /// <summary>
+    /// The visible list for <paramref name="all"/>. Identity today - nothing narrows or reorders a
+    /// column yet; collapsed sections, hidden files and sort order all land here.
+    /// </summary>
+    private static ImmutableArray<Entry> Derive(ImmutableArray<Entry> all) => all;
+
+    private static int ResolveCursor(ImmutableArray<Entry> visible, string? previousName, int previousIndex)
+    {
+        if (visible.IsEmpty)
+        {
+            return -1;
+        }
+
+        if (previousName is not null)
+        {
+            for (var i = 0; i < visible.Length; i++)
+            {
+                if (string.Equals(visible[i].Name, previousName, StringComparison.Ordinal))
+                {
+                    return i;
+                }
+            }
+        }
+
+        // The entry is gone (deleted, renamed, filtered away). Falling back to the index keeps the
+        // cursor where it was on screen, which is what the user is looking at.
+        return Math.Clamp(previousIndex, 0, visible.Length - 1);
+    }
+}
 
 /// <summary>What the preview pane is currently showing.</summary>
 public enum PreviewKind
@@ -240,6 +327,15 @@ public sealed record AppState
                 violations.Add($"Columns[{i}].Load is Error but ErrorMessage is null.");
             }
 
+            // Entries is a view onto AllEntries: same objects, same relative order, nothing invented.
+            // Checked as a subsequence rather than by length, so it still holds once something
+            // narrows or reorders the view - and catches the failure that matters, a visible row
+            // that no read ever produced.
+            if (!IsSubsequenceOfAll(column))
+            {
+                violations.Add($"Columns[{i}].Entries is not a subsequence of AllEntries.");
+            }
+
             // There is deliberately no parent/child relationship checked between adjacent columns.
             // The old invariant required Columns[i].Path to start with Columns[i-1].Path, which was
             // only ever true because child locations were built by concatenating onto the parent.
@@ -261,5 +357,36 @@ public sealed record AppState
         }
 
         return violations;
+    }
+
+    /// <summary>
+    /// Whether <see cref="Column.Entries"/> is a subsequence of <see cref="Column.AllEntries"/> -
+    /// every visible row came from the read, in the order the read produced it.
+    /// </summary>
+    private static bool IsSubsequenceOfAll(Column column)
+    {
+        var all = column.AllEntries;
+        var visible = column.Entries;
+        if (visible.Length > all.Length)
+        {
+            return false;
+        }
+
+        // The overwhelmingly common case: nothing narrows the view, so both are the same array.
+        if (all == visible)
+        {
+            return true;
+        }
+
+        var next = 0;
+        foreach (var entry in all)
+        {
+            if (next < visible.Length && visible[next] == entry)
+            {
+                next++;
+            }
+        }
+
+        return next == visible.Length;
     }
 }

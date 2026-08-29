@@ -1736,6 +1736,79 @@ public class TransitionTests
     }
 
     [Fact]
+    public void DirectoryLoaded_keeps_the_cursor_on_the_same_entry_when_one_above_it_disappears()
+    {
+        var column = new Column(
+            new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 2, Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        // Dir was deleted externally. Index 2 now names nothing; the cursor should stay on File2.
+        var (next, _) = Transition.Apply(
+            state, new Msg.DirectoryLoaded(0, new Location.RealDirectory(@"C:\"), [File1, File2]));
+
+        Assert.Equal(1, next.Columns[0].Cursor);
+        Assert.Equal(File2.Name, next.Columns[0].Entries[next.Columns[0].Cursor].Name);
+    }
+
+    [Fact]
+    public void DirectoryLoaded_falls_back_to_the_index_when_the_cursor_entry_is_gone()
+    {
+        var column = new Column(
+            new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 1, Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        // File1 itself was deleted - there is no name to follow, so the cursor holds its position.
+        var (next, _) = Transition.Apply(
+            state, new Msg.DirectoryLoaded(0, new Location.RealDirectory(@"C:\"), [Dir, File2]));
+
+        Assert.Equal(1, next.Columns[0].Cursor);
+        Assert.Equal(File2.Name, next.Columns[0].Entries[1].Name);
+    }
+
+    [Fact]
+    public void A_column_built_from_one_list_treats_all_of_it_as_visible()
+    {
+        var column = new Column(
+            new Location.RealDirectory(@"C:\"), [Dir, File1], Cursor: 0, Load: LoadState.Loaded);
+
+        Assert.Equal(column.Entries, column.AllEntries);
+        Assert.Empty(new AppState { Columns = [column], FocusedColumn = 0 }.CheckInvariants());
+    }
+
+    [Fact]
+    public void A_visible_list_that_is_not_drawn_from_AllEntries_is_an_invariant_violation()
+    {
+        // Guards the rule the derived view rests on: a visible row must have come from a read.
+        var broken = new Column(
+            new Location.RealDirectory(@"C:\"), [Dir, File1], Cursor: 0, Load: LoadState.Loaded)
+        {
+            AllEntries = [Dir],
+        };
+
+        var violations = new AppState { Columns = [broken], FocusedColumn = 0 }.CheckInvariants();
+
+        Assert.Contains(violations, v => v.Contains("not a subsequence", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_mark_on_a_hidden_entry_survives_and_is_not_acted_on_while_hidden()
+    {
+        // Hand-built narrowed view: File1 is marked but not currently shown.
+        var column = new Column(
+            new Location.RealDirectory(@"C:\"), [Dir, File2], Cursor: 0, Load: LoadState.Loaded)
+        {
+            AllEntries = [Dir, File1 with { IsMarked = true }, File2],
+        };
+        var state = StateWithColumns(column);
+
+        var (next, effects) = Transition.Apply(state, new Msg.DeleteMarked(0, Permanent: false));
+
+        // Nothing visible is marked, so there is nothing to delete - the hidden mark is not acted on.
+        Assert.Empty(effects);
+        Assert.True(next.Columns[0].AllEntries[1].IsMarked);
+    }
+
+    [Fact]
     public void CursorMove_off_a_still_loading_preview_cancels_the_abandoned_generation()
     {
         var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 1, Load: LoadState.Loaded);
