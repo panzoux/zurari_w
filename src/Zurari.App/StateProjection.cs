@@ -21,7 +21,8 @@ public static class StateProjection
     /// </summary>
     public static IReadOnlyList<Controls.ColumnVm> Project(
         AppState state,
-        Func<Entry, ImageSource?>? iconResolver = null)
+        Func<Entry, ImageSource?>? iconResolver = null,
+        ProjectionCache? cache = null)
     {
         ArgumentNullException.ThrowIfNull(state);
 
@@ -35,19 +36,36 @@ public static class StateProjection
         var result = new Controls.ColumnVm[state.Columns.Length];
         for (var i = 0; i < state.Columns.Length; i++)
         {
-            result[i] = ProjectColumn(state.Columns[i], isFocused: i == state.FocusedColumn, iconResolver, cutPending);
+            result[i] = ProjectColumn(
+                state.Columns[i], isFocused: i == state.FocusedColumn, iconResolver, cutPending, cache, i, state.CutPending);
         }
+
+        cache?.Trim(state.Columns.Length);
 
         return result;
     }
 
     private static Controls.ColumnVm ProjectColumn(
-        Column column, bool isFocused, Func<Entry, ImageSource?>? iconResolver, HashSet<string>? cutPending)
+        Column column,
+        bool isFocused,
+        Func<Entry, ImageSource?>? iconResolver,
+        HashSet<string>? cutPending,
+        ProjectionCache? cache,
+        int columnIndex,
+        ImmutableArray<string> cutPendingKey)
     {
-        var entries = new Controls.EntryVm[column.Entries.Length];
-        for (var i = 0; i < column.Entries.Length; i++)
+        // Reusing the array instance is the whole point - see ProjectionCache. The ColumnVm around
+        // it is still rebuilt (its Title and CursorIndex do change), but that is one small object.
+        var entries = cache?.TryReuse(columnIndex, column, cutPendingKey);
+        if (entries is null)
         {
-            entries[i] = ProjectEntry(column.Entries[i], iconResolver, column.Location, cutPending);
+            entries = new Controls.EntryVm[column.Entries.Length];
+            for (var i = 0; i < column.Entries.Length; i++)
+            {
+                entries[i] = ProjectEntry(column.Entries[i], iconResolver, column.Location, cutPending);
+            }
+
+            cache?.Store(columnIndex, column, cutPendingKey, entries);
         }
 
         return new Controls.ColumnVm(

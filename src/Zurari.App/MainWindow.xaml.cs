@@ -30,6 +30,9 @@ public sealed partial class MainWindow : Window, IDisposable
     private readonly MessageLoop loop;
     private readonly ShellIconCache iconCache = new();
 
+    /// <summary>Lets a render reuse the row arrays it built last time - see <see cref="ProjectionCache"/>.</summary>
+    private readonly ProjectionCache projectionCache = new();
+
     /// <summary>
     /// The job strip's actual <c>ItemsSource</c>, assigned once in the constructor and never
     /// replaced - <see cref="RenderJobs"/> reconciles it in place (update/insert/remove/move) on
@@ -716,7 +719,7 @@ public sealed partial class MainWindow : Window, IDisposable
         // renders that have nothing to do with the browsed columns (Phase 5 bug B3).
         if (state.Columns != lastRenderedColumns || state.FocusedColumn != lastRenderedFocusedColumn)
         {
-            Browser.Columns = StateProjection.Project(state, e => iconCache.GetIcon(e.Kind, e.Name));
+            Browser.Columns = StateProjection.Project(state, e => iconCache.GetIcon(e.Kind, e.Name), projectionCache);
             lastRenderedColumns = state.Columns;
             lastRenderedFocusedColumn = state.FocusedColumn;
 

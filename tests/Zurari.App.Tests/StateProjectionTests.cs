@@ -257,4 +257,76 @@ public class StateProjectionTests
         Assert.True(vms[0].Entries[0].IsCut);
         Assert.False(vms[1].Entries[0].IsCut);
     }
+
+    /// <summary>
+    /// The property the whole cache exists for. Generic.xaml binds the ListBox's ItemsSource to
+    /// Column.Entries and WPF compares it by reference, so handing back the same array instance is
+    /// what stops a cursor move from tearing down and regenerating every realized container.
+    /// </summary>
+    [Fact]
+    public void A_cursor_move_reuses_the_projected_row_array()
+    {
+        var entries = new Entry[] { new("a.txt", EntryKind.File), new("b.txt", EntryKind.File) };
+        var column = new Column(new Location.RealDirectory(@"C:\"), [.. entries], Cursor: 0, Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+        var cache = new ProjectionCache();
+
+        var first = StateProjection.Project(state, null, cache);
+        var second = StateProjection.Project(StateWithColumns(column with { Cursor = 1 }), null, cache);
+
+        Assert.Same(first[0].Entries, second[0].Entries);
+
+        // The ColumnVm around it is still rebuilt, because the cursor really did move.
+        Assert.Equal(0, first[0].CursorIndex);
+        Assert.Equal(1, second[0].CursorIndex);
+    }
+
+    [Fact]
+    public void Changed_entries_do_not_reuse_the_projected_row_array()
+    {
+        var column = new Column(
+            new Location.RealDirectory(@"C:\"), [new Entry("a.txt", EntryKind.File)], Cursor: 0, Load: LoadState.Loaded);
+        var cache = new ProjectionCache();
+
+        var first = StateProjection.Project(StateWithColumns(column), null, cache);
+
+        // A mark lives on the Entry, so toggling one produces a new Entries array - and must produce
+        // new rows, or the mark would not render.
+        var marked = column with { Entries = [new Entry("a.txt", EntryKind.File, IsMarked: true)] };
+        var second = StateProjection.Project(StateWithColumns(marked), null, cache);
+
+        Assert.NotSame(first[0].Entries, second[0].Entries);
+        Assert.True(second[0].Entries[0].IsMarked);
+    }
+
+    [Fact]
+    public void A_changed_cut_set_does_not_reuse_the_projected_row_array()
+    {
+        var column = new Column(
+            new Location.RealDirectory(@"C:\"), [new Entry("a.txt", EntryKind.File)], Cursor: 0, Load: LoadState.Loaded);
+        var cache = new ProjectionCache();
+
+        var first = StateProjection.Project(StateWithColumns(column), null, cache);
+
+        // IsCut is derived from state.CutPending rather than from the Entry, so it is part of the
+        // key too - otherwise Ctrl+X would not dim the rows until something else invalidated them.
+        var cut = StateWithColumns(column) with { CutPending = [@"C:\a.txt"] };
+        var second = StateProjection.Project(cut, null, cache);
+
+        Assert.NotSame(first[0].Entries, second[0].Entries);
+        Assert.True(second[0].Entries[0].IsCut);
+    }
+
+    [Fact]
+    public void Projecting_without_a_cache_still_builds_fresh_rows()
+    {
+        var column = new Column(
+            new Location.RealDirectory(@"C:\"), [new Entry("a.txt", EntryKind.File)], Cursor: 0, Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        var first = StateProjection.Project(state);
+        var second = StateProjection.Project(state);
+
+        Assert.NotSame(first[0].Entries, second[0].Entries);
+    }
 }
