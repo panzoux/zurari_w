@@ -35,6 +35,22 @@ public sealed class WorkerRuntime : IDisposable
     /// </summary>
     private const int PreviewHexHeadBytes = 4096;
 
+    /// <summary>
+    /// How long a preview waits before touching the disk, so a cursor passing over a file does not
+    /// read it at all.
+    /// </summary>
+    /// <remarks>
+    /// Holding an arrow key produces a preview request per keystroke - around thirty a second - and
+    /// without this each one opens a file handle that is cancelled a moment later. On a network
+    /// share, an optical drive or anything else slow that is a lot of pointless seeking, competing
+    /// with the directory reads that navigation actually needs. Waiting a beat first means only the
+    /// file the cursor settles on is ever opened.
+    ///
+    /// Short enough to stay imperceptible on a deliberate single move (the pane shows 読み込み中…
+    /// meanwhile), long enough to skip the intermediate files of a held keypress.
+    /// </remarks>
+    private static readonly TimeSpan PreviewSettleDelay = TimeSpan.FromMilliseconds(100);
+
     /// <summary>How long <see cref="ExecuteLoadPreview"/> waits for each external thumbnailer
     /// attempt (see <see cref="VideoThumbnailer"/>) before giving up on that attempt - re-checked
     /// every few seconds rather than as one hard wait, so a slow decode of a large/slow-disk file
@@ -66,6 +82,12 @@ public sealed class WorkerRuntime : IDisposable
     /// <see cref="Effect.CancelPreview"/> order-independent - see <see cref="CancelInFlightPreview"/>.
     /// </summary>
     private int _previewGeneration = -1;
+
+    /// <summary>
+    /// Highest <see cref="Effect.LoadPreview.Generation"/> ever started, so an out-of-order request
+    /// cannot supersede a newer one - see <see cref="StartPreview"/>.
+    /// </summary>
+    private int _highestPreviewGeneration = -1;
 
     /// <summary>The in-flight preview, kept only so <see cref="Dispose"/> can wait for it to unwind.</summary>
     private Task? _previewTask;
@@ -196,12 +218,55 @@ public sealed class WorkerRuntime : IDisposable
                 return;
             }
 
+            // Generations only ever increase, so anything not newer than what we already started is
+            // stale and must not supersede it. Effects are submitted in order but drained from one
+            // channel by several workers, so two consecutive cursor moves can reach here reversed;
+            // letting the older one win would show the wrong file, and its result would then be
+            // discarded by Core's generation check - leaving the pane loading forever.
+            if (effect.Generation <= _highestPreviewGeneration)
+            {
+                return;
+            }
+
+            _highestPreviewGeneration = effect.Generation;
             CancelPreviewCtsUnderLock();
             cts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
             _previewCts = cts;
             _previewGeneration = effect.Generation;
             token = cts.Token;
-            _previewTask = Task.Run(() => ExecuteLoadPreview(effect, token), CancellationToken.None);
+            _previewTask = Task.Run(() => RunPreview(effect, cts, token), CancellationToken.None);
+        }
+    }
+
+    /// <summary>
+    /// Runs one preview and then disposes its <see cref="CancellationTokenSource"/>.
+    /// </summary>
+    /// <remarks>
+    /// Disposal belongs to the task, not to whoever cancels it. A cancelled token is still being
+    /// read by the task that owns it - <c>token.WaitHandle</c> in particular throws
+    /// <see cref="ObjectDisposedException"/> once the source is disposed, unlike
+    /// <c>IsCancellationRequested</c> - so disposing at cancellation time turned a superseded
+    /// preview into a spurious <see cref="Msg.PreviewFailed"/>. Cancelling merely signals; the task
+    /// cleans up when it is genuinely finished with the token.
+    /// </remarks>
+    private void RunPreview(Effect.LoadPreview effect, CancellationTokenSource cts, CancellationToken token)
+    {
+        try
+        {
+            ExecuteLoadPreview(effect, token);
+        }
+        finally
+        {
+            lock (_previewGate)
+            {
+                if (ReferenceEquals(_previewCts, cts))
+                {
+                    _previewCts = null;
+                    _previewGeneration = -1;
+                }
+
+                cts.Dispose();
+            }
         }
     }
 
@@ -242,14 +307,13 @@ public sealed class WorkerRuntime : IDisposable
 
         try
         {
+            // Signal only. The owning task disposes it - see RunPreview.
             previous.Cancel();
         }
         catch (ObjectDisposedException)
         {
-            // Already torn down by Dispose; nothing left to cancel.
+            // Its task already finished and cleaned up; nothing left to cancel.
         }
-
-        previous.Dispose();
     }
 
     private void ExecuteReadDirectory(Effect.ReadDirectory effect)
@@ -348,6 +412,13 @@ public sealed class WorkerRuntime : IDisposable
     {
         try
         {
+            // Settle first, before any I/O - see PreviewSettleDelay. WaitOne returns as soon as the
+            // token is signalled, so a superseded request wakes immediately and never opens the file.
+            if (token.WaitHandle.WaitOne(PreviewSettleDelay))
+            {
+                return;
+            }
+
             using var stream = new FileStream(
                 effect.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
 
@@ -622,6 +693,15 @@ public sealed class WorkerRuntime : IDisposable
         catch (AggregateException)
         {
             // A worker faulted while unwinding from cancellation; nothing more to do on Dispose.
+        }
+
+        lock (_previewGate)
+        {
+            // Normally already disposed by RunPreview, which owns it; this only matters when that
+            // task did not finish inside the budget above. Dispose is idempotent, and by now
+            // nothing is going to read the token.
+            _previewCts?.Dispose();
+            _previewCts = null;
         }
 
         _cts.Dispose();

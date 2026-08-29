@@ -414,6 +414,49 @@ public class LoadPreviewTests
     }
 
     /// <summary>
+    /// Files the cursor passes over during a held keypress are never opened at all.
+    /// </summary>
+    /// <remarks>
+    /// Each of these would otherwise open a handle and read its head before being superseded a few
+    /// milliseconds later. Only the file the cursor settles on should produce a result - and, more
+    /// to the point, only that one should touch the disk.
+    /// </remarks>
+    [Fact]
+    public void Rapid_successive_previews_only_load_the_one_the_cursor_settles_on()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var paths = new List<string>();
+            for (var i = 0; i < 6; i++)
+            {
+                var path = Path.Combine(dir, $"note{i}.txt");
+                File.WriteAllText(path, $"content {i}");
+                paths.Add(path);
+            }
+
+            var queue = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(queue.Enqueue);
+
+            for (var i = 0; i < paths.Count; i++)
+            {
+                runtime.Submit(new Effect.LoadPreview(i + 1, paths[i]));
+            }
+
+            var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
+            Assert.Equal(paths.Count, loaded.Generation);
+
+            // Give any straggler time to arrive, then confirm none did.
+            Thread.Sleep(300);
+            Assert.Empty(queue);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>
     /// A cancel that arrives after the load it was meant to precede must not kill it.
     /// </summary>
     /// <remarks>
