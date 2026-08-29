@@ -53,6 +53,7 @@ public sealed class WorkerRuntime : IDisposable
     private readonly CancellationTokenSource _cts;
     private readonly Task[] _workers;
     private readonly long _previewImageSizeLimitBytes;
+    private readonly ThumbnailCache _thumbnailCache;
 
     /// <summary>Guards <see cref="_previewCts"/> and <see cref="_previewTask"/>.</summary>
     private readonly object _previewGate = new();
@@ -87,7 +88,11 @@ public sealed class WorkerRuntime : IDisposable
     /// (test-only knob; production callers should omit it).
     /// </summary>
     public WorkerRuntime(
-        Action<Msg> post, int workerCount = 2, CancellationToken? external = null, long? previewImageSizeLimitBytes = null)
+        Action<Msg> post,
+        int workerCount = 2,
+        CancellationToken? external = null,
+        long? previewImageSizeLimitBytes = null,
+        ThumbnailCache? thumbnailCache = null)
     {
         ArgumentNullException.ThrowIfNull(post);
         if (workerCount < 1)
@@ -101,6 +106,7 @@ public sealed class WorkerRuntime : IDisposable
             ? CancellationTokenSource.CreateLinkedTokenSource(external.Value)
             : new CancellationTokenSource();
         _previewImageSizeLimitBytes = previewImageSizeLimitBytes ?? DefaultPreviewImageSizeLimitBytes;
+        _thumbnailCache = thumbnailCache ?? new ThumbnailCache();
 
         _workers = new Task[workerCount];
         for (var i = 0; i < workerCount; i++)
@@ -432,15 +438,53 @@ public sealed class WorkerRuntime : IDisposable
         PreviewMetadata baseMetadata,
         CancellationToken token)
     {
-        var outcome = VideoThumbnailer.TryCreateThumbnail(path, VideoThumbnailTimeout, token);
-        if (outcome.Bytes is not null)
+        if (_thumbnailCache.TryGet(path, out var cachedBytes, out var cachedFailure))
         {
-            var metadata = WithPixelInfo(baseMetadata, outcome.Bytes);
-            _post(new Msg.PreviewLoaded(effect.Generation, PreviewKind.Image, null, [.. outcome.Bytes], null, metadata));
+            if (cachedBytes is not null)
+            {
+                PostVideoThumbnail(effect, cachedBytes, baseMetadata);
+            }
+            else
+            {
+                PostVideoFallback(effect, detected, path, head, baseMetadata, cachedFailure);
+            }
+
             return;
         }
 
-        var label = $"{VideoLabel(detected, path)} ({outcome.FailureDetail})";
+        var outcome = VideoThumbnailer.TryCreateThumbnail(path, VideoThumbnailTimeout, token);
+        if (outcome.Bytes is not null)
+        {
+            _thumbnailCache.StoreSuccess(path, outcome.Bytes);
+            PostVideoThumbnail(effect, outcome.Bytes, baseMetadata);
+            return;
+        }
+
+        // Only a verdict about this file is worth remembering - a missing ffmpeg or a timeout says
+        // nothing about it, and caching either would keep failing after the cause went away.
+        if (outcome.Failure == ThumbnailFailure.FileRejected && outcome.FailureDetail is { } detail)
+        {
+            _thumbnailCache.StoreFailure(path, detail);
+        }
+
+        PostVideoFallback(effect, detected, path, head, baseMetadata, outcome.FailureDetail);
+    }
+
+    private void PostVideoThumbnail(Effect.LoadPreview effect, byte[] png, PreviewMetadata baseMetadata)
+    {
+        var metadata = WithPixelInfo(baseMetadata, png);
+        _post(new Msg.PreviewLoaded(effect.Generation, PreviewKind.Image, null, [.. png], null, metadata));
+    }
+
+    private void PostVideoFallback(
+        Effect.LoadPreview effect,
+        DetectedType detected,
+        string path,
+        byte[] head,
+        PreviewMetadata baseMetadata,
+        string? failureDetail)
+    {
+        var label = $"{VideoLabel(detected, path)} ({failureDetail})";
         _post(new Msg.PreviewLoaded(effect.Generation, PreviewKind.Binary, null, HexHead(head), label, baseMetadata));
     }
 

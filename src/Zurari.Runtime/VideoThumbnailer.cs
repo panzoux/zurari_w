@@ -42,7 +42,7 @@ internal static class VideoThumbnailer
         var ffmpeg = FfmpegPath.Value;
         if (ffmpeg is null)
         {
-            return ThumbnailOutcome.Failure("ffmpeg が見つかりません(PATH未登録)");
+            return ThumbnailOutcome.Unavailable("ffmpeg が見つかりません(PATH未登録)");
         }
 
         var tmpPng = Path.Combine(Path.GetTempPath(), "zurari-thumb-" + Guid.NewGuid().ToString("N") + ".png");
@@ -55,7 +55,7 @@ internal static class VideoThumbnailer
             // Cancellation is not a failure to report - the caller no longer wants this thumbnail.
             // It propagates so ExecuteLoadPreview can stay silent rather than posting a
             // PreviewFailed that would race the result which superseded it.
-            return ThumbnailOutcome.Failure($"予期しないエラー: {ex.GetType().Name}");
+            return ThumbnailOutcome.Unavailable($"予期しないエラー: {ex.GetType().Name}");
         }
         finally
         {
@@ -74,9 +74,19 @@ internal static class VideoThumbnailer
 
         // Very short clips can have nothing at 3s in - retry from the very first frame.
         var atFirstFrame = RunProcess(tool, BuildFfmpegArgs(videoPath, tmpPng, seekSeconds: 0), timeout, token);
-        return atFirstFrame.Success && HasContent(tmpPng)
-            ? ThumbnailOutcome.Success(File.ReadAllBytes(tmpPng))
-            : ThumbnailOutcome.Failure(DescribeFailure("ffmpeg", atFirstFrame));
+        if (atFirstFrame.Success && HasContent(tmpPng))
+        {
+            return ThumbnailOutcome.Success(File.ReadAllBytes(tmpPng));
+        }
+
+        var detail = DescribeFailure("ffmpeg", atFirstFrame);
+
+        // Only a verdict ffmpeg actually reached is about the file. A timeout may just mean a busy
+        // machine, and a start failure means ffmpeg itself is the problem - neither should be
+        // remembered against this file (see ThumbnailFailure).
+        return atFirstFrame.TimedOut || atFirstFrame.ExitCode is null
+            ? ThumbnailOutcome.Unavailable(detail)
+            : ThumbnailOutcome.FileRejected(detail);
     }
 
     private static string DescribeFailure(string tool, ProcessOutcome result)
@@ -269,9 +279,34 @@ internal static class VideoThumbnailer
 /// failure - shown directly in the Binary preview's label so the cause is visible without needing
 /// to dig through logs.
 /// </summary>
-internal readonly record struct ThumbnailOutcome(byte[]? Bytes, string? FailureDetail)
+internal readonly record struct ThumbnailOutcome(
+    byte[]? Bytes, string? FailureDetail, ThumbnailFailure Failure = ThumbnailFailure.None)
 {
     public static ThumbnailOutcome Success(byte[] bytes) => new(bytes, null);
 
-    public static ThumbnailOutcome Failure(string detail) => new(null, detail);
+    /// <summary>ffmpeg ran and could not get a frame out of this particular file.</summary>
+    public static ThumbnailOutcome FileRejected(string detail) => new(null, detail, ThumbnailFailure.FileRejected);
+
+    /// <summary>Something about the environment stopped us, not this file.</summary>
+    public static ThumbnailOutcome Unavailable(string detail) => new(null, detail, ThumbnailFailure.Unavailable);
+}
+
+/// <summary>Why a thumbnail could not be produced - see <see cref="ThumbnailOutcome"/>.</summary>
+/// <remarks>
+/// The distinction exists for caching. A file ffmpeg rejects will be rejected again as long as the
+/// file does not change, so that verdict is worth remembering; the alternative is paying the full
+/// timeout on every cursor landing. Everything else - ffmpeg missing from PATH, failing to start,
+/// or running out of time on a loaded machine - says nothing about the file and must not be
+/// remembered, or installing ffmpeg (or simply trying again on an idle machine) would not help.
+/// </remarks>
+internal enum ThumbnailFailure
+{
+    /// <summary>No failure: a thumbnail was produced.</summary>
+    None,
+
+    /// <summary>ffmpeg ran to completion and could not decode a frame from this file.</summary>
+    FileRejected,
+
+    /// <summary>ffmpeg was missing, failed to start, or timed out - not the file's fault.</summary>
+    Unavailable,
 }
