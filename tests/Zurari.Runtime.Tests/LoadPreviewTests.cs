@@ -414,6 +414,41 @@ public class LoadPreviewTests
     }
 
     /// <summary>
+    /// A cancel that arrives after the load it was meant to precede must not kill it.
+    /// </summary>
+    /// <remarks>
+    /// Transition emits CancelPreview(old) and LoadPreview(new) together, in that order, but they
+    /// are drained from one channel by several workers, so the cancel can execute second. Before
+    /// the generation check in CancelInFlightPreview this cancelled the *new* preview and the pane
+    /// sat on "loading" forever - found as an intermittent timeout in the test above, which submits
+    /// the same pair and lost the race roughly one run in four.
+    /// </remarks>
+    [Fact]
+    public void A_late_cancel_for_a_superseded_generation_does_not_kill_the_current_preview()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var path = Path.Combine(dir, "note.txt");
+            File.WriteAllText(path, "hello");
+
+            var queue = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(queue.Enqueue);
+
+            // Deliberately inverted relative to the order Transition emits them.
+            runtime.Submit(new Effect.LoadPreview(2, path));
+            runtime.Submit(new Effect.CancelPreview(1));
+
+            var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
+            Assert.Equal(2, loaded.Generation);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>
     /// Guards the wiring, not the stall. Preview used to execute on the worker pool, so a slow one
     /// (a cloud placeholder hydrating, or ffmpeg taking its full 20s) could occupy every worker and
     /// leave navigation queued behind it; it now runs on its own slot.

@@ -60,6 +60,12 @@ public sealed class WorkerRuntime : IDisposable
     /// <summary>Cancels the one in-flight preview, if any. Replaced each time a new one starts.</summary>
     private CancellationTokenSource? _previewCts;
 
+    /// <summary>
+    /// <see cref="Effect.LoadPreview.Generation"/> of the in-flight preview, or -1 when idle. Makes
+    /// <see cref="Effect.CancelPreview"/> order-independent - see <see cref="CancelInFlightPreview"/>.
+    /// </summary>
+    private int _previewGeneration = -1;
+
     /// <summary>The in-flight preview, kept only so <see cref="Dispose"/> can wait for it to unwind.</summary>
     private Task? _previewTask;
 
@@ -148,8 +154,8 @@ public sealed class WorkerRuntime : IDisposable
             case Effect.LoadPreview loadPreview:
                 StartPreview(loadPreview);
                 break;
-            case Effect.CancelPreview:
-                CancelInFlightPreview();
+            case Effect.CancelPreview cancelPreview:
+                CancelInFlightPreview(cancelPreview.Generation);
                 break;
         }
     }
@@ -187,16 +193,33 @@ public sealed class WorkerRuntime : IDisposable
             CancelPreviewCtsUnderLock();
             cts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
             _previewCts = cts;
+            _previewGeneration = effect.Generation;
             token = cts.Token;
             _previewTask = Task.Run(() => ExecuteLoadPreview(effect, token), CancellationToken.None);
         }
     }
 
-    /// <summary>Cancels the in-flight preview, if there is one. Safe to call when there is not.</summary>
-    private void CancelInFlightPreview()
+    /// <summary>
+    /// Cancels the in-flight preview, but only if it is still the one for
+    /// <paramref name="generation"/>. Safe to call when nothing is running.
+    /// </summary>
+    /// <remarks>
+    /// The generation check is what makes this order-independent, and it is load-bearing rather
+    /// than defensive. <c>Transition.ReconcilePreview</c> emits
+    /// <see cref="Effect.CancelPreview"/> and <see cref="Effect.LoadPreview"/> together, in that
+    /// order, but they are drained from one channel by several workers - so the cancel can be
+    /// executed *after* the load it was meant to precede. Cancelling whatever happens to be
+    /// current would then kill the new preview, and the pane would sit on "loading" forever.
+    /// </remarks>
+    private void CancelInFlightPreview(int generation)
     {
         lock (_previewGate)
         {
+            if (_previewGeneration != generation)
+            {
+                return;
+            }
+
             CancelPreviewCtsUnderLock();
         }
     }
@@ -205,6 +228,7 @@ public sealed class WorkerRuntime : IDisposable
     {
         var previous = _previewCts;
         _previewCts = null;
+        _previewGeneration = -1;
         if (previous is null)
         {
             return;
