@@ -71,7 +71,20 @@ public sealed class WorkerRuntime : IDisposable
     private readonly long _previewImageSizeLimitBytes;
     private readonly ThumbnailCache _thumbnailCache;
 
-    /// <summary>Guards <see cref="_previewCts"/> and <see cref="_previewTask"/>.</summary>
+    /// <summary>
+    /// Guards every <c>_preview*</c> field below. All four move together and are only ever read or
+    /// written under it.
+    /// </summary>
+    /// <remarks>
+    /// The invariant the pair of generation fields must satisfy: whenever
+    /// <see cref="_previewGeneration"/> is not -1 it equals <see cref="_highestPreviewGeneration"/>.
+    /// They differ only in what survives cancellation - the current generation is cleared when a
+    /// preview stops, the high-water mark is not, which is what makes a late, out-of-order request
+    /// recognisable as stale rather than as something new.
+    ///
+    /// Nothing may block while holding this lock. <see cref="RunPreview"/>'s finally takes it, so
+    /// waiting on a preview task from inside it would deadlock; see <see cref="Dispose"/>.
+    /// </remarks>
     private readonly object _previewGate = new();
 
     /// <summary>Cancels the one in-flight preview, if any. Replaced each time a new one starts.</summary>
@@ -688,6 +701,9 @@ public sealed class WorkerRuntime : IDisposable
             // The in-flight preview runs off the pool, so waiting on the workers does not cover it.
             // It is given its own budget to unwind: cancellation kills any ffmpeg it started, but
             // that still takes a moment.
+            //
+            // This wait MUST stay outside _previewGate: RunPreview's finally takes that lock, so
+            // waiting while holding it would deadlock against the very task being waited for.
             previewTask?.Wait(TimeSpan.FromSeconds(5));
         }
         catch (AggregateException)
@@ -695,15 +711,11 @@ public sealed class WorkerRuntime : IDisposable
             // A worker faulted while unwinding from cancellation; nothing more to do on Dispose.
         }
 
-        lock (_previewGate)
-        {
-            // Normally already disposed by RunPreview, which owns it; this only matters when that
-            // task did not finish inside the budget above. Dispose is idempotent, and by now
-            // nothing is going to read the token.
-            _previewCts?.Dispose();
-            _previewCts = null;
-        }
-
+        // _previewCts is deliberately not disposed here; see the CA2213 note in .editorconfig.
+        // Only the task that created it may dispose it, and only when it has stopped reading the
+        // token - a preview still unwinding after the budget above would otherwise see its token
+        // disposed mid-wait. Superseded previews are cancelled but not waited for; they hold
+        // nothing but their own token and die on their own.
         _cts.Dispose();
     }
 }

@@ -457,6 +457,49 @@ public class LoadPreviewTests
     }
 
     /// <summary>
+    /// An older request must never supersede a newer one, whichever order the workers pick them up.
+    /// </summary>
+    /// <remarks>
+    /// One worker on purpose. The bug is that two workers can reach StartPreview in the reverse of
+    /// the order the effects were submitted; a single worker drains the channel in order, so
+    /// submitting the newer one first reproduces exactly that arrival - deterministically, instead
+    /// of relying on losing a race. With two workers this passes about a third of the time even
+    /// without the guard, because the newer request often happens to start second anyway.
+    ///
+    /// Without the guard the older request takes over, and its result is then discarded by Core's
+    /// generation check - leaving the pane loading forever.
+    /// </remarks>
+    [Fact]
+    public void An_out_of_order_older_request_never_supersedes_a_newer_one()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var newer = Path.Combine(dir, "newer.txt");
+            var older = Path.Combine(dir, "older.txt");
+            File.WriteAllText(newer, "newer");
+            File.WriteAllText(older, "older");
+
+            var queue = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(queue.Enqueue, workerCount: 1);
+
+            runtime.Submit(new Effect.LoadPreview(9, newer));
+            runtime.Submit(new Effect.LoadPreview(4, older));
+
+            var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
+            Assert.Equal(9, loaded.Generation);
+            Assert.Equal("newer", loaded.Text);
+
+            Thread.Sleep(300);
+            Assert.Empty(queue);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>
     /// A cancel that arrives after the load it was meant to precede must not kill it.
     /// </summary>
     /// <remarks>

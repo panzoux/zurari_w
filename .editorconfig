@@ -69,3 +69,12 @@ dotnet_diagnostic.CA1031.severity = none
 # worker, so a broad catch around the whole attempt is intentional. Scoped to this file only.
 [src/Zurari.Runtime/VideoThumbnailer.cs]
 dotnet_diagnostic.CA1031.severity = none
+
+# WorkerRuntime._previewCts: owned by the task that created it, not by the field. Cancelling only
+# signals - the running preview is still reading the token (token.WaitHandle throws once the source
+# is disposed, unlike IsCancellationRequested), so RunPreview disposes it in its finally when it is
+# genuinely finished. Disposing it from Dispose() instead would either be dead code (Dispose cancels
+# first, which nulls the field and stops StartPreview from setting it again) or, if it ever did fire,
+# would tear the token out from under a preview still unwinding. Scoped to this file only.
+[src/Zurari.Runtime/WorkerRuntime.cs]
+dotnet_diagnostic.CA2213.severity = none
