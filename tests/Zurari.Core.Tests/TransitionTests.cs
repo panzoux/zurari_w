@@ -2168,6 +2168,40 @@ public class TransitionTests
 
         Assert.Equal([@"C:\new.txt"], next.CutPending);
     }
+    /// <summary>
+    /// Delete in the drive pane must never reach the recycle bin.
+    /// </summary>
+    /// <remarks>
+    /// This was real for one commit. Favorites arrived as <see cref="EntryKind.Directory"/> rows,
+    /// and <c>DeleteEntry</c> only refused <c>Drive</c> and <c>Header</c> — so Delete on ホーム
+    /// resolved to the profile path and sent <c>C:\Users\user</c> to the recycle bin. The pane holds
+    /// places, not files; nothing in it is a deletion target.
+    /// </remarks>
+    [Fact]
+    public void Delete_in_the_drive_pane_never_recycles_anything()
+    {
+        var column = new Column(
+            Location.Drives.Instance,
+            [
+                new Entry("お気に入り", EntryKind.Header, Group: "favorites"),
+                new Entry(@"C:\Users\user", EntryKind.Directory, Group: "favorites",
+                    Target: new Location.RealDirectory(@"C:\Users\user"), DisplayName: "ホーム"),
+                new Entry(@"C:\", EntryKind.Drive, Group: "drives", DisplayName: "Windows (C:)"),
+            ],
+            Cursor: 1,
+            Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        var (afterEntry, entryEffects) = Transition.Apply(state, new Msg.DeleteEntry(0, 1));
+        var (afterMarked, markedEffects) = Transition.Apply(state, new Msg.DeleteMarked(0, Permanent: false));
+        var (_, permanentEffects) = Transition.Apply(state, new Msg.DeleteEntry(0, 1, Permanent: true));
+
+        Assert.Empty(entryEffects);
+        Assert.Empty(markedEffects);
+        Assert.Empty(permanentEffects);
+        Assert.Equal(LoadState.Loaded, afterEntry.Columns[0].Load);
+        Assert.Equal(LoadState.Loaded, afterMarked.Columns[0].Load);
+    }
 }
 
 /// <summary>

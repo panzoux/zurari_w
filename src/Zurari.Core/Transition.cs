@@ -256,7 +256,7 @@ public static class Transition
         }
 
         var column = state.Columns[columnIndex];
-        if (entryIndex < 0 || entryIndex >= column.Entries.Length)
+        if (entryIndex < 0 || entryIndex >= column.Entries.Length || !AllowsDeletion(column))
         {
             return (state, NoEffects);
         }
@@ -310,6 +310,17 @@ public static class Transition
     /// Space free to mean the one thing it should mean in that pane: collapse the section.
     /// </remarks>
     private static bool AllowsMarks(Column column) => column.Location is not Location.Drives;
+
+    /// <summary>
+    /// Whether rows in <paramref name="column"/> can be deleted.
+    /// </summary>
+    /// <remarks>
+    /// The drive pane holds places, not files. A favorite is a pointer to a folder, and Delete on it
+    /// means "stop showing this here" - never "recycle what it points at". Leaving the ordinary path
+    /// open was briefly real: favorites arrive as Directory rows, so Delete on ホーム resolved to
+    /// the profile path and would have recycled the whole of <c>C:\Users\user</c>.
+    /// </remarks>
+    private static bool AllowsDeletion(Column column) => column.Location is not Location.Drives;
 
     private static AppState ToggleMark(AppState state, int columnIndex, int entryIndex)
     {
@@ -421,6 +432,11 @@ public static class Transition
         }
 
         var column = state.Columns[columnIndex];
+        if (!AllowsDeletion(column))
+        {
+            return (state, NoEffects);
+        }
+
         var targets = ImmutableArray.CreateBuilder<string>();
         foreach (var entry in column.Entries)
         {
