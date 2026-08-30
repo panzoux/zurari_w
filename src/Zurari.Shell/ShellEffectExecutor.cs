@@ -110,6 +110,9 @@ public sealed class ShellEffectExecutor : IDisposable
             case Effect.DeleteToRecycleBin deleteToRecycleBin:
                 ExecuteDeleteToRecycleBin(deleteToRecycleBin);
                 break;
+            case Effect.ReadDirectory { Location: Location.RecycleBin } readRecycleBin:
+                ExecuteReadRecycleBin(readRecycleBin);
+                break;
             case Effect.ShellCopyOrMove shellCopyOrMove:
                 ExecuteShellCopyOrMove(shellCopyOrMove);
                 break;
@@ -130,6 +133,54 @@ public sealed class ShellEffectExecutor : IDisposable
     /// <see cref="FileOperationInterop.FOF_ALLOWUNDO"/>, which is what routes the delete through the
     /// recycle bin in the first place - without it, <c>IFileOperation</c> deletes outright.
     /// </summary>
+    /// <summary>
+    /// Lists the recycle bin. The one listing that does not come from the filesystem, which is why
+    /// it is served here rather than by the Runtime.
+    /// </summary>
+    /// <remarks>
+    /// Items are reported as files even when what was deleted was a folder: nothing in the bin can
+    /// be opened in place, and reporting them as directories would invite Core to try. Restoring is
+    /// the way in, and that is not built yet.
+    /// </remarks>
+    private void ExecuteReadRecycleBin(Effect.ReadDirectory effect)
+    {
+        try
+        {
+            // The shell's display name for a deleted item is its full original path. That is the
+            // useful identity - two files called notes.txt from different folders are different
+            // items - but far too long to read as a row, so the row shows the file name and keeps
+            // the path as its Name. Same split as the drive pane, for the same reason.
+            var originals = RecycleBinFolder.Enumerate();
+            var labels = originals.Select(LastSegment).ToList();
+            var duplicated = labels
+                .GroupBy(l => l, StringComparer.Ordinal)
+                .Where(g => g.Count() > 1)
+                .Select(g => g.Key)
+                .ToHashSet(StringComparer.Ordinal);
+
+            var entries = originals
+                .Select((original, i) => new Entry(
+                    original,
+                    EntryKind.File,
+                    SizeBytes: -1,
+                    DisplayName: duplicated.Contains(labels[i]) ? original : labels[i]))
+                .ToImmutableArray();
+            post(new Msg.DirectoryLoaded(effect.ColumnIndex, effect.Location, entries));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            post(new Msg.DirectoryLoadFailed(effect.ColumnIndex, effect.Location, ex.Message));
+        }
+    }
+
+    /// <summary>The file name at the end of a deleted item's original path.</summary>
+    private static string LastSegment(string path)
+    {
+        var trimmed = path.TrimEnd('\\', '/');
+        var separator = trimmed.LastIndexOfAny(['\\', '/']);
+        return separator < 0 || separator == trimmed.Length - 1 ? trimmed : trimmed[(separator + 1)..];
+    }
+
     private void ExecuteDeleteToRecycleBin(Effect.DeleteToRecycleBin effect)
     {
         object? fileOperation = null;

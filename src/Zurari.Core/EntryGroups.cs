@@ -20,6 +20,9 @@ public static class EntryGroups
     /// <summary>Network locations - shares, whether the user added them or not.</summary>
     public const string Pinned = "pinned";
 
+    /// <summary>The recycle bin. Its own section, one row.</summary>
+    public const string Trash = "trash";
+
     /// <summary>
     /// Which section a place the user added belongs to, decided by the path rather than by how it
     /// was added.

@@ -90,7 +90,8 @@ public sealed partial class MainWindow : Window, IDisposable
 
         JobStrip.ItemsSource = jobRows;
 
-        runtime = new WorkerRuntime(post: PostToLoop, places: RootPlaces, settings: settingsStore);
+        runtime = new WorkerRuntime(
+            post: PostToLoop, places: RootPlaces, trash: TrashPlaceRow, settings: settingsStore);
         shellExecutor = new ShellEffectExecutor(post: PostToLoop);
         jobEngine = new JobEngine(post: PostToLoop);
         directoryWatcher = new DirectoryWatcher(post: PostToLoop);
@@ -146,6 +147,21 @@ public sealed partial class MainWindow : Window, IDisposable
     /// </summary>
     private static IReadOnlyList<RootPlace> RootPlaces() =>
         [.. Zurari.Shell.KnownFolders.UserPlaces().Select(f => new RootPlace(f.Path, f.Label))];
+
+    /// <summary>
+    /// The recycle bin row, labelled with what is in it. Resolved here because the totals come from
+    /// <c>SHQueryRecycleBin</c> and Runtime may not depend on Shell.
+    /// </summary>
+    private static TrashPlace TrashPlaceRow()
+    {
+        var summary = Zurari.Shell.RecycleBinFolder.Query();
+        return new TrashPlace(
+            summary.ItemCount <= 0
+                ? "ゴミ箱"
+                : string.Create(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    $"ゴミ箱 ({summary.ItemCount})"));
+    }
 
     /// <summary>Diagnostic-only: logs a window-level mouse transition (see ctor wiring).</summary>
     private void TraceWindowMouse(string kind, MouseButtonEventArgs e)

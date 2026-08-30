@@ -57,4 +57,22 @@ internal static class NativeMethods
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     public static extern int SHGetKnownFolderPath(
         in Guid rfid, uint dwFlags, IntPtr hToken, out IntPtr ppszPath);
+
+    /// <summary>How much is in the recycle bin, without enumerating it.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct SHQUERYRBINFO
+    {
+        public int cbSize;
+        public long i64Size;
+        public long i64NumItems;
+    }
+
+    /// <summary>
+    /// Totals for the recycle bin. <c>null</c> for the root path means every drive's bin at once,
+    /// which is what the pane shows.
+    /// </summary>
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    public static extern int SHQueryRecycleBinW(
+        [MarshalAs(UnmanagedType.LPWStr)] string? pszRootPath, ref SHQUERYRBINFO pSHQueryRBInfo);
 }

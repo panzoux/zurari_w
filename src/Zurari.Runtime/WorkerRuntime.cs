@@ -77,6 +77,9 @@ public sealed class WorkerRuntime : IDisposable
     /// </summary>
     private readonly Func<IReadOnlyList<RootPlace>>? _places;
 
+    /// <summary>Describes the recycle bin row, or null to leave the section out entirely.</summary>
+    private readonly Func<TrashPlace?>? _trash;
+
     /// <summary>Where pinned places are kept. Injected so tests do not touch the real settings file.</summary>
     private readonly UserSettingsStore _settings;
 
@@ -138,6 +141,7 @@ public sealed class WorkerRuntime : IDisposable
         long? previewImageSizeLimitBytes = null,
         ThumbnailCache? thumbnailCache = null,
         Func<IReadOnlyList<RootPlace>>? places = null,
+        Func<TrashPlace?>? trash = null,
         UserSettingsStore? settings = null)
     {
         ArgumentNullException.ThrowIfNull(post);
@@ -154,6 +158,7 @@ public sealed class WorkerRuntime : IDisposable
         _previewImageSizeLimitBytes = previewImageSizeLimitBytes ?? DefaultPreviewImageSizeLimitBytes;
         _thumbnailCache = thumbnailCache ?? new ThumbnailCache();
         _places = places;
+        _trash = trash;
         _settings = settings ?? new UserSettingsStore();
 
         _workers = new Task[workerCount];
@@ -402,6 +407,7 @@ public sealed class WorkerRuntime : IDisposable
         }
 
         AppendSection(builder, EntryGroups.Drives, "ドライブ", drives);
+        AppendSection(builder, EntryGroups.Trash, "ゴミ箱", ReadTrash());
         return builder.ToImmutable();
     }
 
@@ -474,6 +480,33 @@ public sealed class WorkerRuntime : IDisposable
                 DisplayName: LastSegment(path),
                 IsRemovable: true));
         }
+    }
+
+    /// <summary>
+    /// The recycle bin row: one entry pointing at <see cref="Location.RecycleBin"/>, or nothing at
+    /// all when the composition root did not supply one.
+    /// </summary>
+    /// <remarks>
+    /// A section of one, deliberately - it is a place of its own rather than a favorite, the way
+    /// Finder keeps Trash apart from everything else. Not removable: it is always there.
+    /// </remarks>
+    private List<Entry> ReadTrash()
+    {
+        if (_trash?.Invoke() is not { } trash)
+        {
+            return [];
+        }
+
+        return
+        [
+            new Entry(
+                "::recyclebin",
+                EntryKind.Directory,
+                SizeBytes: -1,
+                Group: EntryGroups.Trash,
+                Target: Location.RecycleBin.Instance,
+                DisplayName: trash.Label),
+        ];
     }
 
     /// <summary>The trailing folder or share name, which is what a pinned row reads as.</summary>

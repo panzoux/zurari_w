@@ -99,4 +99,35 @@ public abstract record Location
         /// <inheritdoc />
         public override string ChildPath(string entryName) => entryName;
     }
+
+    /// <summary>
+    /// The recycle bin. A shell namespace folder rather than a directory: it has no filesystem path,
+    /// and what it contains are deleted items that cannot be opened in place.
+    /// </summary>
+    /// <remarks>
+    /// The first location whose contents come from somewhere other than the filesystem, which is
+    /// what <see cref="Location"/> was introduced for. Reading it is Shell's work, not Runtime's -
+    /// see <c>EffectRouting</c>, which now routes a read by where it points rather than assuming
+    /// every listing is a directory.
+    /// </remarks>
+    public sealed record RecycleBin : Location
+    {
+        /// <summary>The single shared instance; records give value equality regardless.</summary>
+        public static RecycleBin Instance { get; } = new();
+
+        /// <inheritdoc />
+        public override string? FilesystemPath => null;
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// Unreachable in practice: deleted items are reported as files, and Core refuses to open a
+        /// file into a column. Returning this location rather than inventing one keeps that true if
+        /// the guard is ever loosened - a stray descent lands where it started instead of building
+        /// a chain of imaginary folders.
+        /// </remarks>
+        public override Location Child(string entryName) => this;
+
+        /// <inheritdoc />
+        public override string? ChildPath(string entryName) => null;
+    }
 }

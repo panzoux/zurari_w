@@ -45,6 +45,10 @@ public static class EffectRouting
         ArgumentNullException.ThrowIfNull(effect);
         return effect switch
         {
+            // Routed by where the read points, not just by the effect. Most listings are directories
+            // and belong to the Runtime; the recycle bin is a shell namespace folder with no path to
+            // enumerate, so only Shell can read it.
+            Effect.ReadDirectory { Location: Location.RecycleBin } => EffectTarget.Shell,
             Effect.ReadDirectory => EffectTarget.Runtime,
             Effect.SetPinned => EffectTarget.Runtime,
             Effect.LoadPreview => EffectTarget.Preview,

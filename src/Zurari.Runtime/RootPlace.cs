@@ -11,3 +11,13 @@ namespace Zurari.Runtime;
 /// folder requires.
 /// </remarks>
 public sealed record RootPlace(string Path, string Label);
+
+/// <summary>
+/// The recycle bin row, as the composition root describes it.
+/// </summary>
+/// <param name="Label">What the row reads, including how much is in the bin.</param>
+/// <remarks>
+/// Supplied rather than computed here for the same reason favorites are: the totals come from
+/// <c>SHQueryRecycleBin</c>, and Runtime is not allowed to depend on Shell.
+/// </remarks>
+public sealed record TrashPlace(string Label);
