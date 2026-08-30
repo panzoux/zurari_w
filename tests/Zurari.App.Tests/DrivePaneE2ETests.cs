@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.IO;
 using Zurari.App;
 using Zurari.Core;
 using Zurari.Runtime;
@@ -94,5 +95,53 @@ public class DrivePaneE2ETests
 
         Assert.Equal(laterHeader, loop.State.Columns[0].Cursor);
         Assert.Equal(EntryKind.Header, loop.State.Columns[0].Entries[laterHeader].Kind);
+    }
+
+    /// <summary>
+    /// Ctrl+B, all the way through: cursor on a folder, effect routed, settings written, pane redrawn.
+    /// </summary>
+    /// <remarks>
+    /// Routes the effect the way the app does rather than submitting it to the runtime directly.
+    /// That distinction is the whole point: Effect.SetPinned reached the runtime in every other
+    /// test and was dropped by the composition root in the running app.
+    /// </remarks>
+    [Fact]
+    public void Ctrl_B_on_a_folder_adds_it_and_the_pane_shows_it()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "zurari-e2e-" + Guid.NewGuid().ToString("N"));
+        var target = Path.Combine(dir, "panzoux");
+        Directory.CreateDirectory(target);
+        try
+        {
+            var store = new Zurari.Runtime.UserSettingsStore(Path.Combine(dir, "cfg"));
+            var queue = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(queue.Enqueue, settings: store);
+
+            // The real routing decision, not a direct submit.
+            var loop = new MessageLoop(
+                initial: new AppState
+                {
+                    Columns = [new Column(new Location.RealDirectory(dir), Entries: [])],
+                    FocusedColumn = 0,
+                },
+                runEffect: e =>
+                {
+                    Assert.Equal(EffectTarget.Runtime, EffectRouting.For(e));
+                    runtime.Submit(e);
+                });
+
+            loop.Dispatch(new Msg.Refresh());
+            DrainUntil(loop, queue, () => loop.State.Columns[0].Load == LoadState.Loaded, TimeSpan.FromSeconds(10));
+            Assert.Equal(0, loop.State.Columns[0].Cursor);
+
+            loop.Dispatch(new Msg.PinEntryAtCursor(0));
+            DrainUntil(loop, queue, () => store.Load().PinnedPaths?.Count > 0, TimeSpan.FromSeconds(10));
+
+            Assert.Equal([target], store.Load().PinnedPaths);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
     }
 }

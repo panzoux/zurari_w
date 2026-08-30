@@ -178,23 +178,35 @@ public sealed partial class MainWindow : Window, IDisposable
     /// than submitted immediately, since it is the one effect a fast cursor can otherwise flood
     /// the worker pool with (Phase 5 fix P1). Every other effect still flows straight through.
     /// </summary>
+    /// <summary>
+    /// Hands each effect to its executor. The routing decision lives in
+    /// <see cref="EffectRouting"/> so it can be tested - see its remarks for what a silently
+    /// unrouted effect cost.
+    /// </summary>
     private void RunEffect(Effect effect)
     {
-        switch (effect)
+        switch (EffectRouting.For(effect))
         {
-            case Effect.ReadDirectory _:
+            case EffectTarget.Runtime:
                 runtime.Submit(effect);
                 break;
-            case Effect.LoadPreview loadPreview:
-                SchedulePreviewLoad(loadPreview);
+            case EffectTarget.Preview:
+                if (effect is Effect.LoadPreview loadPreview)
+                {
+                    SchedulePreviewLoad(loadPreview);
+                }
+                else
+                {
+                    // A cancel must not be held by the debounce gate - it is what releases whatever
+                    // the gate is holding.
+                    runtime.Submit(effect);
+                }
+
                 break;
-            case Effect.DeleteToRecycleBin _:
-            case Effect.ShellCopyOrMove _:
+            case EffectTarget.Shell:
                 shellExecutor.Submit(effect);
                 break;
-            case Effect.RunFileJob _:
-            case Effect.CancelJob _:
-            case Effect.ResolveJobConflict _:
+            case EffectTarget.Jobs:
                 jobEngine.Submit(effect);
                 break;
         }
