@@ -43,7 +43,7 @@ public static class Transition
             Msg.ShellOpCompleted m => ShellOpCompleted(state, m.ColumnIndex, m.ColumnLocation, m.AffectedDirs),
             Msg.ShellOpFailed m => (ShellOpFailed(state, m.ColumnIndex, m.ColumnLocation, m.Error), NoEffects),
             Msg.ToggleMark m => (ToggleMark(state, m.ColumnIndex, m.EntryIndex), NoEffects),
-            Msg.ToggleMarkAtCursor m => (ToggleMarkAtCursor(state, m.ColumnIndex), NoEffects),
+            Msg.ToggleMarkAtCursor m => ToggleMarkAtCursor(state, m.ColumnIndex),
             Msg.ClearMarks m => (ClearMarks(state, m.ColumnIndex), NoEffects),
             Msg.DeleteMarked m => DeleteMarked(state, m.ColumnIndex, m.Permanent),
             Msg.MarkRange m => (MarkRange(state, m.ColumnIndex, m.FromIndex, m.ToIndex, m.Additive), NoEffects),
@@ -67,7 +67,8 @@ public static class Transition
             Msg.PinFocusedLocation m => PinFocusedLocation(state, m.ColumnIndex),
             Msg.PinEntryAtCursor m => PinEntryAtCursor(state, m.ColumnIndex),
             Msg.PlacesChanged => ReloadDrivePanes(state),
-            Msg.ToggleSection m => (ToggleSection(state, m.ColumnIndex, m.EntryIndex), NoEffects),
+            Msg.ToggleSection m => ToggleSection(state, m.ColumnIndex, m.EntryIndex),
+            Msg.CollapsedGroupsRestored m => (RestoreCollapsedGroups(state, m.ColumnIndex, m.Groups), NoEffects),
             _ => (state, NoEffects),
         };
     }
@@ -382,7 +383,55 @@ public static class Transition
     /// Collapses or expands the section headed by <paramref name="entryIndex"/>, leaving the cursor
     /// where it was.
     /// </summary>
-    private static AppState ToggleSection(AppState state, int columnIndex, int entryIndex)
+    private static (AppState, IReadOnlyList<Effect>) ToggleSection(AppState state, int columnIndex, int entryIndex)
+    {
+        if (!InRange(state, columnIndex))
+        {
+            return (state, NoEffects);
+        }
+
+        var column = state.Columns[columnIndex];
+        if (entryIndex < 0 || entryIndex >= column.Entries.Length)
+        {
+            return (state, NoEffects);
+        }
+
+        var entry = column.Entries[entryIndex];
+        return entry is { Kind: EntryKind.Header, Group: { } group }
+            ? Collapse(state, columnIndex, column, group)
+            : (state, NoEffects);
+    }
+
+    /// <summary>
+    /// Applies a section toggle and asks for the result to be remembered, so the pane comes back the
+    /// way it was left.
+    /// </summary>
+    /// <remarks>
+    /// Only the drive pane is persisted. It is the one pane whose sections are the same every run;
+    /// remembering a collapse in a listing that will not exist next time would be storage that can
+    /// never be used.
+    /// </remarks>
+    private static (AppState, IReadOnlyList<Effect>) Collapse(
+        AppState state, int columnIndex, Column column, string group)
+    {
+        var toggled = column.ToggleGroup(group);
+        var next = WithColumn(state, columnIndex, toggled);
+        return column.Location is Location.Drives
+            ? (next, new Effect[] { new Effect.SetCollapsedGroups([.. toggled.CollapsedGroups]) })
+            : (next, NoEffects);
+    }
+
+    /// <summary>
+    /// Re-collapses the sections the user had collapsed last time, once the drive pane has loaded.
+    /// </summary>
+    /// <remarks>
+    /// Silently ignores a group name that no longer matches any section - a stored setting is a
+    /// wish, not a claim about what exists, and <see cref="Column.WithView"/> simply hides nothing
+    /// for it. Restoring into a column that is not the drive pane would be meaningless, so it does
+    /// not happen.
+    /// </remarks>
+    private static AppState RestoreCollapsedGroups(
+        AppState state, int columnIndex, ImmutableArray<string> groups)
     {
         if (!InRange(state, columnIndex))
         {
@@ -390,14 +439,8 @@ public static class Transition
         }
 
         var column = state.Columns[columnIndex];
-        if (entryIndex < 0 || entryIndex >= column.Entries.Length)
-        {
-            return state;
-        }
-
-        var entry = column.Entries[entryIndex];
-        return entry is { Kind: EntryKind.Header, Group: { } group }
-            ? WithColumn(state, columnIndex, column.ToggleGroup(group))
+        return column.Location is Location.Drives
+            ? WithColumn(state, columnIndex, column.WithCollapsedGroups([.. groups]))
             : state;
     }
 
@@ -456,30 +499,30 @@ public static class Transition
     /// knows what the row is. The two meanings never compete: a header cannot be marked, and the one
     /// pane that has headers does not have marks either.
     /// </remarks>
-    private static AppState ToggleMarkAtCursor(AppState state, int columnIndex)
+    private static (AppState, IReadOnlyList<Effect>) ToggleMarkAtCursor(AppState state, int columnIndex)
     {
         if (!InRange(state, columnIndex))
         {
-            return state;
+            return (state, NoEffects);
         }
 
         var column = state.Columns[columnIndex];
         if (column.Cursor < 0 || column.Cursor >= column.Entries.Length)
         {
-            return state;
+            return (state, NoEffects);
         }
 
         var target = column.Entries[column.Cursor];
         if (target.Kind == EntryKind.Header)
         {
             return target.Group is { } group
-                ? WithColumn(state, columnIndex, column.ToggleGroup(group))
-                : state;
+                ? Collapse(state, columnIndex, column, group)
+                : (state, NoEffects);
         }
 
         if (!AllowsMarks(column))
         {
-            return state;
+            return (state, NoEffects);
         }
 
         var updated = WithMarkChange(
@@ -488,7 +531,7 @@ public static class Transition
         // Advancing past the row you just marked is what makes marking a run of files one keypress
         // each. Skips a header, which is never a mark target.
         var nextCursor = AdvancePastHeaders(updated.Entries, column.Cursor + 1);
-        return WithColumn(state, columnIndex, updated with { Cursor = nextCursor });
+        return (WithColumn(state, columnIndex, updated with { Cursor = nextCursor }), NoEffects);
     }
 
     /// <summary>

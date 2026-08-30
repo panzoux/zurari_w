@@ -109,4 +109,15 @@ public abstract record Effect
     /// pinning something already pinned is a no-op the user should still see settle.
     /// </remarks>
     public sealed record SetPinned(string Path, bool Pin) : Effect;
+
+    /// <summary>
+    /// Remembers which sections of the drive pane are collapsed, so they come back that way.
+    /// </summary>
+    /// <remarks>
+    /// Carries the whole set rather than the one section that just changed: the set is what gets
+    /// written, and sending it whole means a lost or reordered effect cannot leave the stored value
+    /// disagreeing with what is on screen. Reports nothing back - the collapse has already been
+    /// applied to the state that emitted this, so there is nothing to wait for.
+    /// </remarks>
+    public sealed record SetCollapsedGroups(ImmutableArray<string> Groups) : Effect;
 }

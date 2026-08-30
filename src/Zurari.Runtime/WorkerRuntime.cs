@@ -84,6 +84,13 @@ public sealed class WorkerRuntime : IDisposable
     private readonly UserSettingsStore _settings;
 
     /// <summary>
+    /// 1 once the stored collapsed sections have been handed to the state - see
+    /// <see cref="ExecuteReadDirectory"/>. Read from whichever worker picks up a drive-pane read, so
+    /// it is claimed with <see cref="Interlocked"/> rather than a plain test-and-set.
+    /// </summary>
+    private int _collapseRestored;
+
+    /// <summary>
     /// Guards every <c>_preview*</c> field below. All four move together and are only ever read or
     /// written under it.
     /// </summary>
@@ -215,6 +222,9 @@ public sealed class WorkerRuntime : IDisposable
                 break;
             case Effect.CancelPreview cancelPreview:
                 CancelInFlightPreview(cancelPreview.Generation);
+                break;
+            case Effect.SetCollapsedGroups setCollapsedGroups:
+                _settings.Save(_settings.Load() with { CollapsedGroups = [.. setCollapsedGroups.Groups] });
                 break;
             case Effect.SetPinned setPinned:
                 ExecuteSetPinned(setPinned);
@@ -362,6 +372,19 @@ public sealed class WorkerRuntime : IDisposable
                     $"No reader for location kind {effect.Location.GetType().Name}."),
             };
             _post(new Msg.DirectoryLoaded(effect.ColumnIndex, effect.Location, entries));
+
+            // Sections only exist in the drive pane, and only once its rows are in place - so this
+            // follows the load rather than riding along with it.
+            //
+            // Once only, per process. The stored set seeds the session; after that the state carries
+            // the collapse and a refresh preserves it, so re-reading the file would only introduce a
+            // race - collapse a section and hit F5 fast enough and the read could beat the write,
+            // putting the section back.
+            if (effect.Location is Location.Drives && Interlocked.Exchange(ref _collapseRestored, 1) == 0)
+            {
+                _post(new Msg.CollapsedGroupsRestored(
+                    effect.ColumnIndex, [.. _settings.Load().CollapsedGroups ?? []]));
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

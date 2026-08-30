@@ -324,4 +324,15 @@ public abstract record Msg
     /// clicking one section's toggle must not move the cursor out of another.
     /// </remarks>
     public sealed record ToggleSection(int ColumnIndex, int EntryIndex) : Msg;
+
+    /// <summary>
+    /// The sections that were collapsed when the app last ran, applied to a drive pane that has just
+    /// finished loading. Ignored for any other column.
+    /// </summary>
+    /// <remarks>
+    /// A separate message rather than a field on <see cref="DirectoryLoaded"/>: what is in a listing
+    /// and how much of it is showing are different questions, and only the one pane that has sections
+    /// has an answer to the second.
+    /// </remarks>
+    public sealed record CollapsedGroupsRestored(int ColumnIndex, ImmutableArray<string> Groups) : Msg;
 }

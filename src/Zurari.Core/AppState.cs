@@ -183,6 +183,14 @@ public sealed record Column(
     public Column WithAllEntries(ImmutableArray<Entry> all) => WithView(all, CollapsedGroups);
 
     /// <summary>
+    /// Replaces the whole set of collapsed sections and re-derives the visible list. Used to restore
+    /// what the user had collapsed when the app last ran; <see cref="ToggleGroup"/> is the
+    /// one-section-at-a-time version.
+    /// </summary>
+    public Column WithCollapsedGroups(ImmutableHashSet<string> collapsedGroups) =>
+        WithView(AllEntries, collapsedGroups);
+
+    /// <summary>
     /// The single place that writes <see cref="AllEntries"/>, <see cref="Entries"/> and
     /// <see cref="Cursor"/>, so they cannot drift apart.
     /// </summary>

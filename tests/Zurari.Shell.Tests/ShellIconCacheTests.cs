@@ -80,19 +80,46 @@ public class ShellIconCacheTests
         Assert.NotEqual(Pixels((BitmapSource)folder!), Pixels((BitmapSource)systemDrive!));
     }
 
-    /// <summary>The bin's own icon, which has no path to look up and so comes from the stock set.</summary>
+    /// <summary>
+    /// The bin has no path, so its icon comes from looking the real namespace item up. Asserting it
+    /// is the bin's icon and not a folder is the point: the first attempt used a stock icon chosen by
+    /// a bare integer, was one off in that list, and silently returned a perfectly valid folder icon.
+    /// </summary>
     [StaFact]
-    public void Recycle_bin_icon_differs_full_from_empty_and_is_cached()
+    public void The_recycle_bin_gets_the_shells_own_bin_icon()
     {
         var cache = new ShellIconCache();
 
-        var full = cache.GetRecycleBinIcon(hasItems: true);
-        var empty = cache.GetRecycleBinIcon(hasItems: false);
+        var bin = cache.GetShellNamespaceIcon(Location.RecycleBin.ParsingName, "empty");
+        var folder = cache.GetIcon(EntryKind.Directory, "sub");
 
-        Assert.NotNull(full);
-        Assert.NotNull(empty);
-        Assert.Same(full, cache.GetRecycleBinIcon(hasItems: true));
-        Assert.NotEqual(Pixels((BitmapSource)full!), Pixels((BitmapSource)empty!));
+        Assert.NotNull(bin);
+        Assert.NotNull(folder);
+        Assert.NotEqual(Pixels((BitmapSource)folder!), Pixels((BitmapSource)bin!));
+    }
+
+    /// <summary>
+    /// The variant is what makes emptying the bin change its icon: same name, different key, so the
+    /// shell is asked again instead of the cache answering with the full bin forever.
+    /// </summary>
+    [StaFact]
+    public void A_namespace_icon_is_cached_per_variant()
+    {
+        var cache = new ShellIconCache();
+
+        var first = cache.GetShellNamespaceIcon(Location.RecycleBin.ParsingName, "full");
+
+        Assert.NotNull(first);
+        Assert.Same(first, cache.GetShellNamespaceIcon(Location.RecycleBin.ParsingName, "full"));
+        Assert.NotSame(first, cache.GetShellNamespaceIcon(Location.RecycleBin.ParsingName, "empty"));
+    }
+
+    [StaFact]
+    public void A_name_the_shell_cannot_resolve_yields_no_icon_rather_than_throwing()
+    {
+        var cache = new ShellIconCache();
+
+        Assert.Null(cache.GetShellNamespaceIcon("::{00000000-0000-0000-0000-000000000000}", "x"));
     }
 
     /// <summary>Raw BGRA bytes of an icon, for comparing two icons by what they look like.</summary>

@@ -18,8 +18,8 @@ Phase 6 was sixteen loose checkboxes. Grilling turned it into decisions, and fou
 
 # Status
 
-Branch `phase6a-location-foundation`, 26 commits, **nothing merged to main** (see R-1).
-573 tests, `scripts/check.ps1` green.
+Branch `phase6a-location-foundation`, 28 commits, **nothing merged to main** (see R-1).
+584 tests, `scripts/check.ps1` green.
 
 | | Item | Status | Commit |
 |---|---|---|---|
@@ -38,7 +38,7 @@ Branch `phase6a-location-foundation`, 26 commits, **nothing merged to main** (se
 | 6d.4 | Pinned places (Ctrl+D pins, Delete unpins), persisted | `[x]` | `f76b684` |
 | 6d.5 | Trash as its own group, enumerable via the shell namespace | `[x]` | `3a1d56c` |
 | 6d.5a | ゴミ箱 usable: its own context menu, readable rows, real drive/bin icons | `[x]` | `0faeecd` |
-| 6d.6 | Collapse state persisted | `[ ]` | |
+| 6d.6 | Collapse state persisted | `[x]` | (this commit) |
 | 6d.7 | Drive / share capacity preview | `[ ]` | |
 | 6d.8 | ISO mount on activate, eject | `[ ]` | |
 | 6d.9 | Live refresh (`SHChangeNotifyRegister`) | `[ ]` | |
@@ -120,6 +120,19 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   not throw" and "empty implies empty" — all satisfied by `Enumerate()` returning `[]` from its
   catch block. A throwaway probe established the truth: 373 items in the bin, 373 returned,
   agreeing with `SHQueryRecycleBin`. The tests now assert both directions of that agreement.
+
+- **6d-10** `[x]` **The bin's icon was a folder with a badge on it - `SIID_RECYCLER` is 31, not 32.**
+  Reported as "ゴミ箱のアイコンは考えなおしてください". The stock-icon set is addressed by bare integers,
+  so being one off is completely silent: the call succeeds and returns a perfectly valid icon of
+  something else. A probe dumping ids 30-34 as PNGs settled it in one look.
+
+  Fixed by dropping the stock set entirely and asking the shell about the **actual bin**:
+  `SHParseDisplayName` on the CLSID, then `SHGetFileInfo` with `SHGFI_PIDL`. That route cannot be off
+  by one, it draws full or empty by itself (verified: the returned icon matches `SIID_RECYCLERFULL`
+  on a bin with 413 items in it), and it follows the user's theme. `SHGetStockIconInfo` and its
+  struct are gone. The item count survives only as the icon's **cache key**, so emptying the bin makes
+  the icon be looked up again. The test compares the bin's icon against the folder icon by pixels -
+  which is precisely the assertion that would have caught the original mistake.
 
 - **6d-8** `[x]` **Three things the drive pane got wrong, all reported from one screenshot.**
   1. **Every drive drew the generic folder icon.** `ShellIconCache` asked the shell for "an icon for

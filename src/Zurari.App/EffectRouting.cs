@@ -51,6 +51,7 @@ public static class EffectRouting
             Effect.ReadDirectory { Location: Location.RecycleBin } => EffectTarget.Shell,
             Effect.ReadDirectory => EffectTarget.Runtime,
             Effect.SetPinned => EffectTarget.Runtime,
+            Effect.SetCollapsedGroups => EffectTarget.Runtime,
             Effect.LoadPreview => EffectTarget.Preview,
             Effect.CancelPreview => EffectTarget.Preview,
             Effect.DeleteToRecycleBin => EffectTarget.Shell,

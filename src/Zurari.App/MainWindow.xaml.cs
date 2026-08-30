@@ -74,8 +74,9 @@ public sealed partial class MainWindow : Window, IDisposable
     private int lastDecodedImageGeneration = -1;
 
     /// <summary>
-    /// How many items <see cref="TrashPlaceRow"/> last saw in the recycle bin, so
-    /// <see cref="ResolveIcon"/> can pick the full or empty bin icon. Written from a worker thread.
+    /// How many items <see cref="TrashPlaceRow"/> last saw in the recycle bin. Only
+    /// <see cref="ResolveIcon"/>'s cache key, so emptying the bin re-asks the shell for its icon.
+    /// Written from a worker thread.
     /// </summary>
     private long trashItemCount;
 
@@ -185,13 +186,19 @@ public sealed partial class MainWindow : Window, IDisposable
     }
 
     /// <summary>
-    /// The icon for one row. Everything the shell can identify from a name goes through
-    /// <see cref="ShellIconCache.GetIcon"/>; the ゴミ箱 row cannot, since it has no path, so it takes
-    /// the shell's own stock bin icon - full or empty, matching what the row's label says.
+    /// The icon for one row. Everything the shell can identify from a file name goes through
+    /// <see cref="ShellIconCache.GetIcon"/>; the ゴミ箱 row has no path at all, so its icon comes from
+    /// looking the bin itself up in the shell namespace - which draws it full or empty to match.
     /// </summary>
+    /// <remarks>
+    /// The item count is the icon's cache variant, not what chooses it: the shell decides how a full
+    /// bin looks, and a changed count is simply the signal to ask again.
+    /// </remarks>
     private ImageSource? ResolveIcon(Entry entry) =>
         entry.Target is Location.RecycleBin
-            ? iconCache.GetRecycleBinIcon(Volatile.Read(ref trashItemCount) > 0)
+            ? iconCache.GetShellNamespaceIcon(
+                Location.RecycleBin.ParsingName,
+                Volatile.Read(ref trashItemCount) > 0 ? "full" : "empty")
             : iconCache.GetIcon(entry.Kind, entry.Name);
 
     /// <summary>Diagnostic-only: logs a window-level mouse transition (see ctor wiring).</summary>

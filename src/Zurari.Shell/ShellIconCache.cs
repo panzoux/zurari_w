@@ -21,6 +21,7 @@ public sealed class ShellIconCache
     private const string DirectoryKey = "dir";
     private const string DriveKey = "drive";
     private const string FileKeyPrefix = "file:";
+    private const string NamespaceKeyPrefix = "shell:";
 
     private readonly ConcurrentDictionary<string, ImageSource?> cache = new(StringComparer.Ordinal);
 
@@ -54,16 +55,28 @@ public sealed class ShellIconCache
     }
 
     /// <summary>
-    /// The recycle bin's own icon, full or empty as the shell draws it.
+    /// The icon the shell draws for a namespace item that has no filesystem path - the recycle bin
+    /// being the one this exists for. <paramref name="parsingName"/> is the shell's own name for it
+    /// (see <c>Location.ShellParsingName</c>).
     /// </summary>
+    /// <param name="parsingName">What the shell calls the item, e.g. the recycle bin's CLSID.</param>
+    /// <param name="variant">
+    /// Anything about the item that changes its icon without changing its name - for the bin, whether
+    /// it currently holds anything. Part of the cache key and nothing else: the icon itself always
+    /// comes from asking the shell about the real item, so it is whatever Explorer is showing. Pass a
+    /// value that changes when the icon should be looked up again.
+    /// </param>
     /// <remarks>
-    /// A stock icon rather than a path lookup: the bin has no path <c>SHGetFileInfo</c> accepts, and
-    /// the full/empty distinction is one the shell already makes.
+    /// Asking about the item beats picking a stock icon that looks similar. The stock set is
+    /// addressed by bare integers, and being one off in that list is silent - it hands back a
+    /// perfectly valid icon of something else entirely, which is exactly what happened here (the bin
+    /// rendered as a folder with a badge on it). This route cannot be off by one, and it follows the
+    /// user's theme and icon-pack choices for free.
     /// </remarks>
-    public ImageSource? GetRecycleBinIcon(bool hasItems) =>
+    public ImageSource? GetShellNamespaceIcon(string parsingName, string variant) =>
         cache.GetOrAdd(
-            hasItems ? "recyclebin:full" : "recyclebin:empty",
-            _ => ResolveStockIcon(hasItems ? NativeMethods.SIID_RECYCLERFULL : NativeMethods.SIID_RECYCLER));
+            NamespaceKeyPrefix + parsingName + "#" + variant,
+            _ => ResolveForShellName(parsingName));
 
     private static string SafeExtension(string? name)
     {
@@ -155,19 +168,35 @@ public sealed class ShellIconCache
         }
     }
 
-    /// <summary>One of the shell's own stock icons.</summary>
-    private static BitmapSource? ResolveStockIcon(uint stockIconId)
+    /// <summary>
+    /// Looks up the real shell item and takes its icon. Returns <c>null</c> if the name does not
+    /// resolve - an icon is cosmetic, so nothing here is worth an exception.
+    /// </summary>
+    private static BitmapSource? ResolveForShellName(string parsingName)
     {
         try
         {
-            var info = new NativeMethods.SHSTOCKICONINFO
+            var hr = ShellContextMenuInterop.SHParseDisplayName(parsingName, IntPtr.Zero, out var pidl, 0, out _);
+            if (hr != 0 || pidl == IntPtr.Zero)
             {
-                cbSize = Marshal.SizeOf<NativeMethods.SHSTOCKICONINFO>(),
-            };
+                return null;
+            }
 
-            var hr = NativeMethods.SHGetStockIconInfo(
-                stockIconId, NativeMethods.SHGSI_ICON | NativeMethods.SHGSI_SMALLICON, ref info);
-            return hr != 0 ? null : FromHIcon(info.hIcon);
+            try
+            {
+                var info = default(NativeMethods.SHFILEINFOW);
+                var handle = NativeMethods.SHGetFileInfoPidl(
+                    pidl,
+                    0,
+                    ref info,
+                    (uint)Marshal.SizeOf<NativeMethods.SHFILEINFOW>(),
+                    NativeMethods.SHGFI_PIDL | NativeMethods.SHGFI_ICON | NativeMethods.SHGFI_SMALLICON);
+                return handle == IntPtr.Zero ? null : FromHIcon(info.hIcon);
+            }
+            finally
+            {
+                ShellContextMenuInterop.CoTaskMemFree(pidl);
+            }
         }
         catch (Exception)
         {

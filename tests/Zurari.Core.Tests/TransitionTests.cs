@@ -1882,6 +1882,75 @@ public class TransitionTests
     }
 
     [Fact]
+    public void Collapsing_a_section_asks_for_the_whole_set_to_be_remembered()
+    {
+        var state = StateWithColumns(DrivePaneColumn(cursor: 0));
+
+        var (collapsed, effects) = Transition.Apply(state, new Msg.ToggleMarkAtCursor(0));
+
+        var effect = Assert.IsType<Effect.SetCollapsedGroups>(Assert.Single(effects));
+        Assert.Equal(["drives"], effect.Groups);
+
+        // Expanding it again must store the empty set, not simply stop mentioning it - otherwise the
+        // section would come back collapsed forever.
+        var (expanded, expandEffects) = Transition.Apply(collapsed, new Msg.ToggleMarkAtCursor(0));
+        Assert.Empty(Assert.IsType<Effect.SetCollapsedGroups>(Assert.Single(expandEffects)).Groups);
+        Assert.Empty(expanded.Columns[0].CollapsedGroups);
+    }
+
+    [Fact]
+    public void Clicking_a_section_toggle_persists_it_the_same_way_as_the_key_does()
+    {
+        var state = StateWithColumns(DrivePaneColumn(cursor: 4));
+
+        var (_, effects) = Transition.Apply(state, new Msg.ToggleSection(0, 0));
+
+        Assert.Equal(["drives"], Assert.IsType<Effect.SetCollapsedGroups>(Assert.Single(effects)).Groups);
+    }
+
+    [Fact]
+    public void Restoring_collapsed_groups_hides_those_sections_without_a_re_read()
+    {
+        var state = StateWithColumns(DrivePaneColumn(cursor: 0));
+
+        var (next, effects) = Transition.Apply(state, new Msg.CollapsedGroupsRestored(0, ["drives"]));
+
+        var column = next.Columns[0];
+        Assert.Equal(3, column.Entries.Length);
+        Assert.Equal(5, column.AllEntries.Length);
+        Assert.Equal(["drives"], column.CollapsedGroups);
+        Assert.Empty(effects);
+        Assert.Empty(next.CheckInvariants());
+    }
+
+    /// <summary>
+    /// A stored name is a wish, not a claim about what exists - a section that has since been removed
+    /// or renamed must not break the pane.
+    /// </summary>
+    [Fact]
+    public void Restoring_a_section_that_no_longer_exists_hides_nothing()
+    {
+        var state = StateWithColumns(DrivePaneColumn(cursor: 0));
+
+        var (next, _) = Transition.Apply(state, new Msg.CollapsedGroupsRestored(0, ["gone"]));
+
+        Assert.Equal(5, next.Columns[0].Entries.Length);
+        Assert.Empty(next.CheckInvariants());
+    }
+
+    [Fact]
+    public void Restoring_collapsed_groups_into_an_ordinary_directory_does_nothing()
+    {
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        var (next, _) = Transition.Apply(state, new Msg.CollapsedGroupsRestored(0, ["drives"]));
+
+        Assert.Empty(next.Columns[0].CollapsedGroups);
+        Assert.Equal(3, next.Columns[0].Entries.Length);
+    }
+
+    [Fact]
     public void A_collapsed_section_keeps_the_cursor_on_a_row_that_is_still_shown()
     {
         // Cursor on D:\, then the section it lives in is collapsed from elsewhere.
@@ -2561,6 +2630,8 @@ public class TransitionProperties
         GenColumnIndex.Select(i => (Msg)new Msg.PinFocusedLocation(i)),
         GenColumnIndex.Select(i => (Msg)new Msg.PinEntryAtCursor(i)),
         Gen.Select(GenColumnIndex, GenEntryIndex).Select(t => (Msg)new Msg.ToggleSection(t.Item1, t.Item2)),
+        Gen.Select(GenColumnIndex, Gen.OneOfConst("g1", "g2").List[0, 2])
+            .Select(t => (Msg)new Msg.CollapsedGroupsRestored(t.Item1, [.. t.Item2])),
         Gen.Const<Msg>(new Msg.PlacesChanged()));
 
     [Fact]
