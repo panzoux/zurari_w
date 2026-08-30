@@ -83,6 +83,9 @@ public sealed class ColumnBrowser : Control
     /// </summary>
     public event EventHandler<EntryClickedEventArgs>? EntryClicked;
 
+    /// <summary>A section header's hide/show control was clicked.</summary>
+    public event EventHandler<EntryClickedEventArgs>? SectionToggleRequested;
+
     /// <summary>Raised for Backspace / ← (the control does not special-case the root column).</summary>
     public event EventHandler<NavigateUpRequestedEventArgs>? NavigateUpRequested;
 
@@ -147,6 +150,7 @@ public sealed class ColumnBrowser : Control
             view.EntryPointerPressed += OnColumnEntryPointerPressed;
             view.EntryActivationRequested += OnColumnEntryActivationRequested;
             view.EntryClicked += OnColumnEntryClicked;
+            view.SectionToggleRequested += OnColumnSectionToggleRequested;
             view.EntryDragRequested += OnColumnEntryDragRequested;
             view.FileDropRequested += OnColumnFileDropRequested;
             view.MarkRangeRequested += OnColumnMarkRangeRequested;
@@ -261,6 +265,20 @@ public sealed class ColumnBrowser : Control
         }
 
         EntryClicked?.Invoke(this, new EntryClickedEventArgs(index, entryIndex));
+    }
+
+    private void OnColumnSectionToggleRequested(object? sender, int entryIndex)
+    {
+        if (sender is not ColumnView view || columnsPanel is null)
+        {
+            return;
+        }
+
+        var index = columnsPanel.Children.IndexOf(view);
+        if (index >= 0)
+        {
+            SectionToggleRequested?.Invoke(this, new EntryClickedEventArgs(index, entryIndex));
+        }
     }
 
     private void OnColumnEntryDragRequested(object? sender, int entryIndex)

@@ -302,4 +302,14 @@ public abstract record Msg
     /// <see cref="Zurari.Core.Location.Drives"/> column; no such column is a no-op.
     /// </summary>
     public sealed record PlacesChanged : Msg;
+
+    /// <summary>
+    /// Collapse or expand the section headed by <paramref name="EntryIndex"/>, from the mouse rather
+    /// than the cursor. Ignored unless that row is a header with a section to toggle.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from <see cref="ToggleMarkAtCursor"/>, which acts wherever the cursor happens to be:
+    /// clicking one section's toggle must not move the cursor out of another.
+    /// </remarks>
+    public sealed record ToggleSection(int ColumnIndex, int EntryIndex) : Msg;
 }

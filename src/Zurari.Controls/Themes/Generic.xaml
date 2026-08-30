@@ -190,12 +190,50 @@
                                                  the break above, not to the group it labels. Aligned
                                                  with the row icons so the pane keeps one left edge. -->
                                             <DataTemplate>
-                                                <TextBlock Text="{Binding Name}"
-                                                           FontSize="11"
-                                                           FontWeight="SemiBold"
-                                                           Foreground="Gray"
-                                                           Margin="0,8,0,0"
-                                                           TextTrimming="CharacterEllipsis" />
+                                                <DockPanel Margin="0,8,0,0">
+                                                    <!-- Revealed on hover only, so the pane is not
+                                                         permanently cluttered with controls. Its
+                                                         Click is caught by ColumnView, which turns
+                                                         it into a SectionToggleRequested event. -->
+                                                    <Button DockPanel.Dock="Right"
+                                                            x:Name="PART_SectionToggle"
+                                                            Content="{Binding SectionToggleText}"
+                                                            Focusable="False"
+                                                            Cursor="Hand"
+                                                            Margin="8,0,0,0"
+                                                            Visibility="Hidden">
+                                                        <Button.Template>
+                                                            <ControlTemplate TargetType="{x:Type Button}">
+                                                                <TextBlock x:Name="Label"
+                                                                           Text="{TemplateBinding Content}"
+                                                                           FontSize="11"
+                                                                           Foreground="Gray"
+                                                                           Background="Transparent" />
+                                                                <ControlTemplate.Triggers>
+                                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                                        <Setter TargetName="Label"
+                                                                                Property="TextDecorations"
+                                                                                Value="Underline" />
+                                                                    </Trigger>
+                                                                </ControlTemplate.Triggers>
+                                                            </ControlTemplate>
+                                                        </Button.Template>
+                                                    </Button>
+                                                    <TextBlock Text="{Binding Name}"
+                                                               FontSize="11"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="Gray"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                </DockPanel>
+                                                <DataTemplate.Triggers>
+                                                    <DataTrigger Value="True"
+                                                                 Binding="{Binding IsMouseOver,
+                                                                     RelativeSource={RelativeSource AncestorType={x:Type ListBoxItem}}}">
+                                                        <Setter TargetName="PART_SectionToggle"
+                                                                Property="Visibility"
+                                                                Value="Visible" />
+                                                    </DataTrigger>
+                                                </DataTemplate.Triggers>
                                             </DataTemplate>
                                         </local:EntryTemplateSelector.HeaderTemplate>
                                         <local:EntryTemplateSelector.EntryTemplate>

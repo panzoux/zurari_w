@@ -259,6 +259,9 @@ public sealed class ColumnView : Control
     /// </summary>
     internal event EventHandler<int>? EntryClicked;
 
+    /// <summary>The header at this index had its hide/show control clicked.</summary>
+    internal event EventHandler<int>? SectionToggleRequested;
+
     /// <summary>
     /// Raised once per left-button drag gesture that starts on an entry row and crosses the system
     /// drag threshold (<see cref="SystemParameters.MinimumHorizontalDragDistance"/> /
@@ -370,6 +373,7 @@ public sealed class ColumnView : Control
 
         if (List is not null)
         {
+            List.RemoveHandler(System.Windows.Controls.Primitives.ButtonBase.ClickEvent, new RoutedEventHandler(OnSectionToggleClicked));
             List.SelectionChanged -= OnListSelectionChanged;
             List.PreviewMouseDown -= OnListPreviewMouseDown;
             List.PreviewMouseMove -= OnListPreviewMouseMove;
@@ -379,6 +383,9 @@ public sealed class ColumnView : Control
         List = GetTemplateChild(ListPartName) as ListBox;
         if (List is not null)
         {
+            // Bubbles from the Button inside the header DataTemplate, which cannot be named and
+            // wired directly the way a template part can.
+            List.AddHandler(System.Windows.Controls.Primitives.ButtonBase.ClickEvent, new RoutedEventHandler(OnSectionToggleClicked));
             List.SelectionChanged += OnListSelectionChanged;
             List.PreviewMouseDown += OnListPreviewMouseDown;
             List.PreviewMouseMove += OnListPreviewMouseMove;
@@ -471,6 +478,28 @@ public sealed class ColumnView : Control
     /// caused by <see cref="SyncFromColumn"/> (e.g. a stray click, before
     /// input wiring lands in a later task) is reverted back to the VM cursor.
     /// </summary>
+    /// <summary>
+    /// Turns a click on a header's hide/show control into <see cref="SectionToggleRequested"/> for
+    /// that row.
+    /// </summary>
+    /// <remarks>
+    /// Handled here rather than reported as an ordinary row click, so that toggling one section does
+    /// not drag the cursor out of another. Marked handled to stop it also arriving as a row press.
+    /// </remarks>
+    private void OnSectionToggleClicked(object sender, RoutedEventArgs e)
+    {
+        if (List is null || e.OriginalSource is not DependencyObject source)
+        {
+            return;
+        }
+
+        if (FindEntryIndex(source) is { } index)
+        {
+            SectionToggleRequested?.Invoke(this, index);
+            e.Handled = true;
+        }
+    }
+
     private void OnListSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (suppressSelectionChanged || List is null)

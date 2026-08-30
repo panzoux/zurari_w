@@ -66,6 +66,7 @@ public static class Transition
             Msg.ExternalDirectoryChanged m => ExternalDirectoryChanged(state, m.Path),
             Msg.PinFocusedLocation m => PinFocusedLocation(state, m.ColumnIndex),
             Msg.PlacesChanged => ReloadDrivePanes(state),
+            Msg.ToggleSection m => (ToggleSection(state, m.ColumnIndex, m.EntryIndex), NoEffects),
             _ => (state, NoEffects),
         };
     }
@@ -347,6 +348,29 @@ public static class Transition
         }
 
         return (state, [new Effect.SetPinned(path, Pin: true)]);
+    }
+
+    /// <summary>
+    /// Collapses or expands the section headed by <paramref name="entryIndex"/>, leaving the cursor
+    /// where it was.
+    /// </summary>
+    private static AppState ToggleSection(AppState state, int columnIndex, int entryIndex)
+    {
+        if (!InRange(state, columnIndex))
+        {
+            return state;
+        }
+
+        var column = state.Columns[columnIndex];
+        if (entryIndex < 0 || entryIndex >= column.Entries.Length)
+        {
+            return state;
+        }
+
+        var entry = column.Entries[entryIndex];
+        return entry is { Kind: EntryKind.Header, Group: { } group }
+            ? WithColumn(state, columnIndex, column.ToggleGroup(group))
+            : state;
     }
 
     /// <summary>

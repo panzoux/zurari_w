@@ -59,6 +59,55 @@ public class EntryTemplateSelectorTests
         Assert.Equal(1, VirtualizationTests.CountVisualChildren<Image>(rowContainer!));
     }
 
+    /// <summary>
+    /// The hover control exists in the realized header, carries the right word, and reports its row.
+    /// </summary>
+    /// <remarks>
+    /// It is wired through a Button inside a DataTemplate, caught by bubbling because a templated
+    /// child cannot be named and hooked the way a template part can - so nothing here is checked by
+    /// the compiler.
+    /// </remarks>
+    [StaFact]
+    public void A_header_carries_a_hide_show_control_that_reports_its_row()
+    {
+        var columns = new[]
+        {
+            new ColumnVm(
+                "ドライブ",
+                [
+                    new EntryVm("お気に入り", EntryKind.Header, false, null, null),
+                    new EntryVm("ホーム", EntryKind.Directory, false, null, null),
+                    new EntryVm("ドライブ", EntryKind.Header, false, null, null, IsSectionCollapsed: true),
+                ],
+                CursorIndex: 1,
+                IsFocused: true),
+        };
+
+        var browser = new ColumnBrowser { Columns = columns };
+        using var window = new TestWindow(browser);
+        TestWindow.DoEvents();
+
+        var list = FindVisualChild<ListBox>(browser)!;
+        var expanded = (ListBoxItem)list.ItemContainerGenerator.ContainerFromIndex(0);
+        var collapsed = (ListBoxItem)list.ItemContainerGenerator.ContainerFromIndex(2);
+
+        var expandedButton = FindVisualChild<Button>(expanded);
+        var collapsedButton = FindVisualChild<Button>(collapsed);
+        Assert.NotNull(expandedButton);
+        Assert.NotNull(collapsedButton);
+        Assert.Equal("非表示", expandedButton!.Content);
+        Assert.Equal("表示", collapsedButton!.Content);
+
+        // Ordinary rows have no such control.
+        Assert.Null(FindVisualChild<Button>((ListBoxItem)list.ItemContainerGenerator.ContainerFromIndex(1)));
+
+        int? reported = null;
+        browser.SectionToggleRequested += (_, e) => reported = e.EntryIndex;
+        collapsedButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+
+        Assert.Equal(2, reported);
+    }
+
     private static T? FindVisualChild<T>(DependencyObject root)
         where T : DependencyObject
     {

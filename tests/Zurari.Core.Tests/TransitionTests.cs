@@ -2414,6 +2414,7 @@ public class TransitionProperties
         Gen.Select(GenJobId, GenConflictDecision).Select(t => (Msg)new Msg.JobConflictResolved(t.Item1, t.Item2)),
         GenPath.Select(p => (Msg)new Msg.ExternalDirectoryChanged(p)),
         GenColumnIndex.Select(i => (Msg)new Msg.PinFocusedLocation(i)),
+        Gen.Select(GenColumnIndex, GenEntryIndex).Select(t => (Msg)new Msg.ToggleSection(t.Item1, t.Item2)),
         Gen.Const<Msg>(new Msg.PlacesChanged()));
 
     [Fact]

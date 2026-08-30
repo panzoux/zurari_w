@@ -62,7 +62,8 @@ public static class StateProjection
             entries = new Controls.EntryVm[column.Entries.Length];
             for (var i = 0; i < column.Entries.Length; i++)
             {
-                entries[i] = ProjectEntry(column.Entries[i], iconResolver, column.Location, cutPending);
+                entries[i] = ProjectEntry(
+                    column.Entries[i], iconResolver, column.Location, cutPending, column.CollapsedGroups);
             }
 
             cache?.Store(columnIndex, column, cutPendingKey, entries);
@@ -106,9 +107,14 @@ public static class StateProjection
     }
 
     private static Controls.EntryVm ProjectEntry(
-        Entry entry, Func<Entry, ImageSource?>? iconResolver, Location columnLocation, HashSet<string>? cutPending)
+        Entry entry,
+        Func<Entry, ImageSource?>? iconResolver,
+        Location columnLocation,
+        HashSet<string>? cutPending,
+        ImmutableHashSet<string> collapsedGroups)
     {
-        // A header is a label, not a place: no path, no icon, no size or date column.
+        // A header is a label, not a place: no path, no icon, no size or date column. It does carry
+        // whether its section is collapsed, which is what its hover control reads.
         if (entry.Kind == EntryKind.Header)
         {
             return new(
@@ -116,7 +122,8 @@ public static class StateProjection
                 Kind: Controls.EntryKind.Header,
                 IsMarked: false,
                 SizeText: null,
-                DateText: null);
+                DateText: null,
+                IsSectionCollapsed: entry.Group is { } group && collapsedGroups.Contains(group));
         }
 
         var fullPath = entry.Target is { } target

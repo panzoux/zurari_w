@@ -108,6 +108,7 @@ public sealed partial class MainWindow : Window, IDisposable
         Browser.MarkRangeRequested += (_, e) => Dispatch(
             new Msg.MarkRange(e.ColumnIndex, e.FromIndex, e.ToIndex, e.Additive));
         Browser.RubberBandStarted += OnRubberBandStarted;
+        Browser.SectionToggleRequested += (_, e) => Dispatch(new Msg.ToggleSection(e.ColumnIndex, e.EntryIndex));
 
         // Restore the persisted preview-pane width (clamped: the XAML Min/star sizing keeps it
         // on-screen even if the saved value is larger than the current window).

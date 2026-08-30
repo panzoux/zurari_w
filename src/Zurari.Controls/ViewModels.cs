@@ -32,7 +32,16 @@ public sealed record EntryVm(
     string? SizeText,
     string? DateText,
     ImageSource? Icon = null,
-    bool IsCut = false);
+    bool IsCut = false,
+    bool IsSectionCollapsed = false)
+{
+    /// <summary>
+    /// What a header's hover control reads: "hide" while the section is showing, "show" once it is
+    /// collapsed. Empty for anything that is not a header, so the control simply has no text.
+    /// </summary>
+    public string SectionToggleText =>
+        Kind != EntryKind.Header ? string.Empty : IsSectionCollapsed ? "表示" : "非表示";
+}
 
 /// <summary>
 /// One column (the contents of one directory). Immutable snapshot.

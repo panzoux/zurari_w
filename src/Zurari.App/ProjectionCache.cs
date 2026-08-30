@@ -36,6 +36,7 @@ public sealed class ProjectionCache
         ImmutableArray<Core.Entry> Entries,
         Location Location,
         ImmutableArray<string> CutPending,
+        ImmutableHashSet<string> CollapsedGroups,
         Controls.EntryVm[] Vms);
 
     /// <summary>
@@ -53,6 +54,7 @@ public sealed class ProjectionCache
         return cached.Vms is not null
             && cached.Entries == column.Entries
             && cached.CutPending == cutPending
+            && ReferenceEquals(cached.CollapsedGroups, column.CollapsedGroups)
             && cached.Location == column.Location
             ? cached.Vms
             : null;
@@ -71,7 +73,7 @@ public sealed class ProjectionCache
             System.Array.Resize(ref memo, index + 1);
         }
 
-        memo[index] = new Entry(column.Entries, column.Location, cutPending, vms);
+        memo[index] = new Entry(column.Entries, column.Location, cutPending, column.CollapsedGroups, vms);
     }
 
     /// <summary>
