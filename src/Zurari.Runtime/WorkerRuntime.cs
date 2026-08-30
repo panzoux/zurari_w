@@ -380,7 +380,8 @@ public sealed class WorkerRuntime : IDisposable
         // Disambiguated across both sections at once, not within each. Two rows reading the same
         // are confusing wherever they sit, and a favorite can easily collide with a pinned folder.
         var favorites = ReadFavorites();
-        var pinned = ReadPinned();
+        var pinned = new List<Entry>();
+        ReadAddedPlaces(favorites, pinned);
         DisambiguateLabels(favorites, pinned);
 
         AppendSection(builder, EntryGroups.Favorites, "お気に入り", favorites);
@@ -422,8 +423,10 @@ public sealed class WorkerRuntime : IDisposable
         // Case-insensitive, since Windows paths are - pinning C:\Data twice under different casing
         // would otherwise produce two rows for one folder.
         var index = pinned.FindIndex(p => string.Equals(p, effect.Path, StringComparison.OrdinalIgnoreCase));
-        if (effect.Pin && index < 0)
+        if (effect.Pin && index < 0 && Directory.Exists(effect.Path))
         {
+            // Only folders. Dropping a mixed selection onto the pane is normal, and the files in it
+            // are simply not places - storing them would leave rows that can never appear.
             pinned.Add(effect.Path);
         }
         else if (!effect.Pin && index >= 0)
@@ -443,9 +446,8 @@ public sealed class WorkerRuntime : IDisposable
     /// normal state of a laptop away from its network, and silently forgetting the pin because the
     /// machine was offline once would be worse than showing nothing that day.
     /// </remarks>
-    private List<Entry> ReadPinned()
+    private void ReadAddedPlaces(List<Entry> favorites, List<Entry> pinned)
     {
-        var pinned = new List<Entry>();
         foreach (var path in _settings.Load().PinnedPaths ?? [])
         {
             if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
@@ -453,16 +455,20 @@ public sealed class WorkerRuntime : IDisposable
                 continue;
             }
 
-            pinned.Add(new Entry(
+            // The section follows the path, not which key added it. A UNC path is a network place
+            // wherever the user was standing when they added it, and a local folder is a favorite -
+            // so the two headers stay honest without the user having to choose the right key.
+            var group = EntryGroups.ForPath(path);
+            var isNetwork = group == EntryGroups.Pinned;
+            (isNetwork ? pinned : favorites).Add(new Entry(
                 path,
                 EntryKind.Directory,
                 SizeBytes: -1,
-                Group: EntryGroups.Pinned,
+                Group: group,
                 Target: new Location.RealDirectory(path),
-                DisplayName: LastSegment(path)));
+                DisplayName: LastSegment(path),
+                IsRemovable: true));
         }
-
-        return pinned;
     }
 
     /// <summary>The trailing folder or share name, which is what a pinned row reads as.</summary>

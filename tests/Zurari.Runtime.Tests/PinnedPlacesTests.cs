@@ -39,7 +39,7 @@ public class PinnedPlacesTests
     }
 
     [Fact]
-    public void Pinning_a_folder_puts_it_in_the_network_section_and_persists_it()
+    public void Adding_a_local_folder_puts_it_in_the_favorites_section_and_persists_it()
     {
         var dir = CreateTempDir();
         try
@@ -58,11 +58,14 @@ public class PinnedPlacesTests
             Assert.Equal([target], store.Load().PinnedPaths);
 
             var entries = ReadRoot(runtime, queue);
-            var pinned = entries.Where(e => e.Group == EntryGroups.Pinned).ToList();
-            Assert.Equal(EntryKind.Header, pinned[0].Kind);
-            Assert.Equal("ネットワーク", pinned[0].Name);
-            Assert.Equal(target, pinned[1].Name);
-            Assert.Equal("share", pinned[1].Label);
+            // A local folder is a favorite; only a UNC path lands in ネットワーク. See
+            // EntryGroups.ForPath - the section follows the path, not the gesture that added it.
+            var added = entries.Where(e => e.Group == EntryGroups.Favorites).ToList();
+            Assert.Equal(EntryKind.Header, added[0].Kind);
+            Assert.Equal("お気に入り", added[0].Name);
+            Assert.Equal(target, added[1].Name);
+            Assert.True(added[1].IsRemovable);
+            Assert.Equal("share", added[1].Label);
         }
         finally
         {
@@ -89,7 +92,7 @@ public class PinnedPlacesTests
             WaitFor<Msg.PlacesChanged>(queue, TimeSpan.FromSeconds(10));
 
             Assert.Empty(store.Load().PinnedPaths!);
-            Assert.DoesNotContain(ReadRoot(runtime, queue), e => e.Group == EntryGroups.Pinned);
+            Assert.DoesNotContain(ReadRoot(runtime, queue), e => e.IsRemovable);
         }
         finally
         {
@@ -139,7 +142,7 @@ public class PinnedPlacesTests
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: store);
 
-            Assert.DoesNotContain(ReadRoot(runtime, queue), e => e.Group == EntryGroups.Pinned);
+            Assert.DoesNotContain(ReadRoot(runtime, queue), e => e.IsRemovable);
 
             // Not forgotten: a laptop away from its network is the normal case, and dropping the pin
             // because the share was unreachable once would be worse than showing nothing today.
@@ -152,7 +155,7 @@ public class PinnedPlacesTests
     }
 
     [Fact]
-    public void A_pinned_folder_colliding_with_a_favorite_is_qualified_with_its_path()
+    public void An_added_folder_colliding_with_a_known_one_is_qualified_with_its_path()
     {
         var dir = CreateTempDir();
         try
@@ -173,13 +176,21 @@ public class PinnedPlacesTests
 
             var entries = ReadRoot(runtime, queue);
 
-            // Disambiguation spans both sections - a collision is confusing wherever it sits.
+            // Both are local folders, so both sit in お気に入り: the known one and the added one.
+            // Neither may read as a bare "shared-name" when the other is right beside it.
+            var labels = entries
+                .Where(e => e.Group == EntryGroups.Favorites && e.Kind != EntryKind.Header)
+                .Select(e => e.Label)
+                .ToList();
+
+            Assert.Contains($"shared-name ({favorite})", labels);
+            Assert.Contains($"shared-name ({pinned})", labels);
+            Assert.DoesNotContain("shared-name", labels);
+
+            // Only the one the user added can be taken away again.
             Assert.Equal(
-                $"shared-name ({favorite})",
-                entries.Single(e => e.Group == EntryGroups.Favorites && e.Kind != EntryKind.Header).Label);
-            Assert.Equal(
-                $"shared-name ({pinned})",
-                entries.Single(e => e.Group == EntryGroups.Pinned && e.Kind != EntryKind.Header).Label);
+                pinned,
+                entries.Single(e => e.IsRemovable).Name);
         }
         finally
         {

@@ -1055,17 +1055,74 @@ public class TransitionTests
         Assert.Equal(@"C:\", effect.DestPath);
     }
 
+    /// <summary>
+    /// Dropping into the drive pane adds places, rather than doing nothing.
+    /// </summary>
+    /// <remarks>
+    /// Reversed deliberately: this used to assert the drop was ignored, which is what made dragging
+    /// a folder onto the お気に入り header appear broken. There is nowhere in this pane to copy
+    /// *to*, so the only thing a drop can sensibly mean is "keep this here".
+    /// </remarks>
     [Fact]
-    public void DropFiles_onto_root_column_background_is_ignored()
+    public void DropFiles_onto_the_drive_pane_adds_the_dropped_places()
     {
         var state = StateWithColumns(new Column(Location.Drives.Instance, [Drive], Cursor: 0, Load: LoadState.Loaded));
-        ImmutableArray<string> paths = [@"C:\src\a.txt"];
+        ImmutableArray<string> paths = [@"C:\src", @"\\srv\share"];
 
         var (next, effects) = Transition.Apply(
             state, new Msg.DropFiles(0, TargetEntryIndex: -1, paths, ShiftHeld: false, CtrlHeld: false));
 
         Assert.Equal(state, next);
-        Assert.Empty(effects);
+        Assert.Collection(
+            effects,
+            e => Assert.Equal(new Effect.SetPinned(@"C:\src", Pin: true), e),
+            e => Assert.Equal(new Effect.SetPinned(@"\\srv\share", Pin: true), e));
+    }
+
+    [Fact]
+    public void DropFiles_onto_a_header_adds_the_dropped_places_too()
+    {
+        var state = StateWithColumns(DrivePaneColumn());
+        ImmutableArray<string> paths = [@"C:\src"];
+
+        // Index 0 is a header - a label, not a place to copy into.
+        var (_, effects) = Transition.Apply(
+            state, new Msg.DropFiles(0, TargetEntryIndex: 0, paths, ShiftHeld: false, CtrlHeld: false));
+
+        Assert.Equal(new Effect.SetPinned(@"C:\src", Pin: true), Assert.Single(effects));
+    }
+
+    [Fact]
+    public void DropFiles_onto_a_row_inside_the_drive_pane_still_copies_into_it()
+    {
+        // Only the pane itself and its headers mean "keep this here"; a folder row is a destination
+        // like any other.
+        var column = new Column(
+            Location.Drives.Instance,
+            [
+                new Entry("お気に入り", EntryKind.Header, Group: EntryGroups.Favorites),
+                new Entry(@"C:\Users\user", EntryKind.Directory, Group: EntryGroups.Favorites,
+                    Target: new Location.RealDirectory(@"C:\Users\user"), DisplayName: "ホーム"),
+            ],
+            Cursor: 1,
+            Load: LoadState.Loaded);
+        ImmutableArray<string> paths = [@"D:\src\a.txt"];
+
+        var (_, effects) = Transition.Apply(
+            StateWithColumns(column), new Msg.DropFiles(0, TargetEntryIndex: 1, paths, ShiftHeld: false, CtrlHeld: false));
+
+        var copy = Assert.IsType<Effect.ShellCopyOrMove>(Assert.Single(effects));
+        Assert.Equal(@"C:\Users\user", copy.DestPath);
+    }
+
+    [Fact]
+    public void A_UNC_path_is_a_network_place_and_anything_else_is_a_favorite()
+    {
+        // The rule one gesture relies on: the section follows the path, not the key that added it.
+        Assert.Equal(EntryGroups.Pinned, EntryGroups.ForPath(@"\\srv\share"));
+        Assert.Equal(EntryGroups.Pinned, EntryGroups.ForPath(@"\\srv\share\deep\folder"));
+        Assert.Equal(EntryGroups.Favorites, EntryGroups.ForPath(@"C:\work"));
+        Assert.Equal(EntryGroups.Favorites, EntryGroups.ForPath(@"D:\"));
     }
 
     [Fact]
@@ -2200,7 +2257,8 @@ public class TransitionTests
             [
                 new Entry("ネットワーク", EntryKind.Header, Group: EntryGroups.Pinned),
                 new Entry(@"\\srv\share", EntryKind.Directory, Group: EntryGroups.Pinned,
-                    Target: new Location.RealDirectory(@"\\srv\share"), DisplayName: "share"),
+                    Target: new Location.RealDirectory(@"\\srv\share"), DisplayName: "share",
+                    IsRemovable: true),
             ],
             Cursor: 1,
             Load: LoadState.Loaded);

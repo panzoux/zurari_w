@@ -266,11 +266,11 @@ public static class Transition
 
         var entry = column.Entries[entryIndex];
 
-        // In the drive pane Delete removes the row, never what it points at. Only a pinned place is
-        // the user's to remove; a drive or a known folder is simply there.
+        // In the drive pane Delete removes the row, never what it points at. Only something the user
+        // added is theirs to remove; a drive or a known folder is simply there.
         if (!AllowsDeletion(column))
         {
-            return entry.Group == EntryGroups.Pinned && entry.Kind != EntryKind.Header
+            return entry.IsRemovable
                 ? (state, new Effect[] { new Effect.SetPinned(entry.Name, Pin: false) })
                 : (state, NoEffects);
         }
@@ -592,6 +592,15 @@ public static class Transition
             return (state, NoEffects);
         }
 
+        // Dropping into the drive pane adds places rather than copying files - there is nowhere in
+        // it to copy *to*. Dropping onto a row inside it still means that row, so a folder dragged
+        // onto a favorite is copied into it as anywhere else; only the pane itself and its headers
+        // mean "put this here".
+        if (column.Location is Location.Drives && IsPaneBackgroundOrHeader(column, targetEntryIndex))
+        {
+            return (state, [.. paths.Select(p => new Effect.SetPinned(p, Pin: true))]);
+        }
+
         var dest = ResolveDropDest(column, targetEntryIndex);
         if (dest is null)
         {
@@ -616,6 +625,15 @@ public static class Transition
     /// column's own path - unless the column has no filesystem path of its own (the drive list)
     /// and no container row was targeted, which means nothing (returns null).
     /// </summary>
+    /// <summary>
+    /// Whether a drop at <paramref name="targetEntryIndex"/> landed on the pane itself rather than
+    /// on one of its rows - the background, or a section header, which is a label and not a place.
+    /// </summary>
+    private static bool IsPaneBackgroundOrHeader(Column column, int targetEntryIndex) =>
+        targetEntryIndex < 0
+        || targetEntryIndex >= column.Entries.Length
+        || column.Entries[targetEntryIndex].Kind == EntryKind.Header;
+
     private static string? ResolveDropDest(Column column, int targetEntryIndex)
     {
         if (targetEntryIndex >= 0 && targetEntryIndex < column.Entries.Length)

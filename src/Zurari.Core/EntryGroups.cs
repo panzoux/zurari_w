@@ -17,6 +17,19 @@ public static class EntryGroups
     /// <summary>The machine's drives.</summary>
     public const string Drives = "drives";
 
-    /// <summary>Network locations the user pinned. The only rows in this pane that can be removed.</summary>
+    /// <summary>Network locations - shares, whether the user added them or not.</summary>
     public const string Pinned = "pinned";
+
+    /// <summary>
+    /// Which section a place the user added belongs to, decided by the path rather than by how it
+    /// was added.
+    /// </summary>
+    /// <remarks>
+    /// A UNC path is a network location wherever the user happened to be standing when they added
+    /// it, and a local folder is a favorite. Deciding from the path means one gesture serves both
+    /// sections and the headers cannot start lying - which a second "add to favorites" key would
+    /// allow, by letting a share be filed under お気に入り.
+    /// </remarks>
+    public static string ForPath(string path) =>
+        path is not null && path.StartsWith(@"\\", StringComparison.Ordinal) ? Pinned : Favorites;
 }

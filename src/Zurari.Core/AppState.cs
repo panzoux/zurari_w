@@ -61,6 +61,12 @@ public enum LoadState
 /// rather than presentation: a section-aware operation needs it, and the header rows themselves
 /// carry it so a collapse knows what it is hiding.
 /// </param>
+/// <param name="IsRemovable">
+/// Whether the user put this row here and can take it away again. True for anything they added to
+/// the drive pane, false for what is simply there - a drive, or a known folder like Downloads.
+/// Independent of <see cref="Group"/>: an added folder sits in お気に入り alongside the known ones
+/// and is still removable, while they are not.
+/// </param>
 /// <param name="Kind">What kind of item this is.</param>
 /// <param name="SizeBytes">Size in bytes, or -1 when unknown/not applicable (directories, drives).</param>
 /// <param name="Modified">Last-modified timestamp, or <c>default(DateTime)</c> when unknown.</param>
@@ -79,7 +85,8 @@ public sealed record Entry(
     bool IsMarked = false,
     Location? Target = null,
     string? DisplayName = null,
-    string? Group = null)
+    string? Group = null,
+    bool IsRemovable = false)
 {
     /// <summary>What to render for this entry - <see cref="DisplayName"/> when it has one.</summary>
     public string Label => DisplayName ?? Name;
