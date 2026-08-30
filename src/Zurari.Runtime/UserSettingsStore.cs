@@ -3,7 +3,11 @@ using System.Text.Json;
 namespace Zurari.Runtime;
 
 /// <summary>Persisted user preferences. All values optional; absent means "use the default".</summary>
-public sealed record UserSettings(double? PreviewWidth = null);
+/// <param name="PreviewWidth">Width of the preview pane, in device-independent pixels.</param>
+/// <param name="PinnedPaths">Places the user pinned into the drive pane, in the order added.</param>
+public sealed record UserSettings(
+    double? PreviewWidth = null,
+    IReadOnlyList<string>? PinnedPaths = null);
 
 /// <summary>
 /// Loads and saves <see cref="UserSettings"/> as JSON, by default under <c>%APPDATA%\zurari</c>.

@@ -64,6 +64,8 @@ public static class Transition
             Msg.JobConflictsFound m => (JobConflictsFound(state, m.JobId, m.ConflictCount), NoEffects),
             Msg.JobConflictResolved m => JobConflictResolved(state, m.JobId, m.Decision),
             Msg.ExternalDirectoryChanged m => ExternalDirectoryChanged(state, m.Path),
+            Msg.PinFocusedLocation m => PinFocusedLocation(state, m.ColumnIndex),
+            Msg.PlacesChanged => ReloadDrivePanes(state),
             _ => (state, NoEffects),
         };
     }
@@ -256,12 +258,22 @@ public static class Transition
         }
 
         var column = state.Columns[columnIndex];
-        if (entryIndex < 0 || entryIndex >= column.Entries.Length || !AllowsDeletion(column))
+        if (entryIndex < 0 || entryIndex >= column.Entries.Length)
         {
             return (state, NoEffects);
         }
 
         var entry = column.Entries[entryIndex];
+
+        // In the drive pane Delete removes the row, never what it points at. Only a pinned place is
+        // the user's to remove; a drive or a known folder is simply there.
+        if (!AllowsDeletion(column))
+        {
+            return entry.Group == EntryGroups.Pinned && entry.Kind != EntryKind.Header
+                ? (state, new Effect[] { new Effect.SetPinned(entry.Name, Pin: false) })
+                : (state, NoEffects);
+        }
+
         if (entry.Kind is EntryKind.Drive or EntryKind.Header)
         {
             return (state, NoEffects);
@@ -321,6 +333,43 @@ public static class Transition
     /// the profile path and would have recycled the whole of <c>C:\Users\user</c>.
     /// </remarks>
     private static bool AllowsDeletion(Column column) => column.Location is not Location.Drives;
+
+    /// <summary>
+    /// Pins whatever <paramref name="columnIndex"/> is showing. A column with no filesystem path -
+    /// the drive pane itself - has nothing to pin.
+    /// </summary>
+    private static (AppState, IReadOnlyList<Effect>) PinFocusedLocation(AppState state, int columnIndex)
+    {
+        if (!InRange(state, columnIndex) ||
+            state.Columns[columnIndex].Location.FilesystemPath is not { } path)
+        {
+            return (state, NoEffects);
+        }
+
+        return (state, [new Effect.SetPinned(path, Pin: true)]);
+    }
+
+    /// <summary>
+    /// Re-reads every column showing the drive pane, after the pinned places changed underneath it.
+    /// </summary>
+    private static (AppState, IReadOnlyList<Effect>) ReloadDrivePanes(AppState state)
+    {
+        var columns = state.Columns;
+        var newColumns = columns;
+        var effects = new List<Effect>();
+        for (var i = 0; i < columns.Length; i++)
+        {
+            if (columns[i].Location is not Location.Drives)
+            {
+                continue;
+            }
+
+            newColumns = newColumns.SetItem(i, columns[i] with { Load = LoadState.Loading });
+            effects.Add(new Effect.ReadDirectory(i, columns[i].Location));
+        }
+
+        return (state with { Columns = newColumns }, effects);
+    }
 
     private static AppState ToggleMark(AppState state, int columnIndex, int entryIndex)
     {

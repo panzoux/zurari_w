@@ -90,7 +90,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
         JobStrip.ItemsSource = jobRows;
 
-        runtime = new WorkerRuntime(post: PostToLoop, places: RootPlaces);
+        runtime = new WorkerRuntime(post: PostToLoop, places: RootPlaces, settings: settingsStore);
         shellExecutor = new ShellEffectExecutor(post: PostToLoop);
         jobEngine = new JobEngine(post: PostToLoop);
         directoryWatcher = new DirectoryWatcher(post: PostToLoop);
@@ -502,6 +502,13 @@ public sealed partial class MainWindow : Window, IDisposable
         else if (e.Key == Key.Space && Keyboard.Modifiers == ModifierKeys.None)
         {
             Dispatch(new Msg.ToggleMarkAtCursor(loop.State.FocusedColumn));
+            e.Handled = true;
+        }
+        else if (e.Key == Key.D && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            // Ctrl+D pins the location this column is showing into the drive pane, the way a browser
+            // bookmarks the current page. Delete on the pinned row removes it again.
+            Dispatch(new Msg.PinFocusedLocation(loop.State.FocusedColumn));
             e.Handled = true;
         }
         else if (e.Key == Key.Escape)

@@ -77,6 +77,9 @@ public sealed class WorkerRuntime : IDisposable
     /// </summary>
     private readonly Func<IReadOnlyList<RootPlace>>? _places;
 
+    /// <summary>Where pinned places are kept. Injected so tests do not touch the real settings file.</summary>
+    private readonly UserSettingsStore _settings;
+
     /// <summary>
     /// Guards every <c>_preview*</c> field below. All four move together and are only ever read or
     /// written under it.
@@ -134,7 +137,8 @@ public sealed class WorkerRuntime : IDisposable
         CancellationToken? external = null,
         long? previewImageSizeLimitBytes = null,
         ThumbnailCache? thumbnailCache = null,
-        Func<IReadOnlyList<RootPlace>>? places = null)
+        Func<IReadOnlyList<RootPlace>>? places = null,
+        UserSettingsStore? settings = null)
     {
         ArgumentNullException.ThrowIfNull(post);
         if (workerCount < 1)
@@ -150,6 +154,7 @@ public sealed class WorkerRuntime : IDisposable
         _previewImageSizeLimitBytes = previewImageSizeLimitBytes ?? DefaultPreviewImageSizeLimitBytes;
         _thumbnailCache = thumbnailCache ?? new ThumbnailCache();
         _places = places;
+        _settings = settings ?? new UserSettingsStore();
 
         _workers = new Task[workerCount];
         for (var i = 0; i < workerCount; i++)
@@ -205,6 +210,9 @@ public sealed class WorkerRuntime : IDisposable
                 break;
             case Effect.CancelPreview cancelPreview:
                 CancelInFlightPreview(cancelPreview.Generation);
+                break;
+            case Effect.SetPinned setPinned:
+                ExecuteSetPinned(setPinned);
                 break;
         }
     }
@@ -356,9 +364,6 @@ public sealed class WorkerRuntime : IDisposable
         }
     }
 
-    /// <summary>Section identifiers for the drive pane. Stable keys; the labels are the header rows.</summary>
-    private const string FavoritesGroup = "favorites";
-    private const string DrivesGroup = "drives";
 
     /// <summary>
     /// Builds the drive pane: a header row per section, followed by that section's places.
@@ -372,7 +377,14 @@ public sealed class WorkerRuntime : IDisposable
     {
         var builder = ImmutableArray.CreateBuilder<Entry>();
 
-        AppendSection(builder, FavoritesGroup, "お気に入り", ReadFavorites());
+        // Disambiguated across both sections at once, not within each. Two rows reading the same
+        // are confusing wherever they sit, and a favorite can easily collide with a pinned folder.
+        var favorites = ReadFavorites();
+        var pinned = ReadPinned();
+        DisambiguateLabels(favorites, pinned);
+
+        AppendSection(builder, EntryGroups.Favorites, "お気に入り", favorites);
+        AppendSection(builder, EntryGroups.Pinned, "ネットワーク", pinned);
 
         var drives = new List<Entry>();
         foreach (var drive in DriveInfo.GetDrives())
@@ -384,12 +396,81 @@ public sealed class WorkerRuntime : IDisposable
                 drive.Name,
                 EntryKind.Drive,
                 SizeBytes: -1,
-                Group: DrivesGroup,
+                Group: EntryGroups.Drives,
                 DisplayName: DescribeDrive(drive)));
         }
 
-        AppendSection(builder, DrivesGroup, "ドライブ", drives);
+        AppendSection(builder, EntryGroups.Drives, "ドライブ", drives);
         return builder.ToImmutable();
+    }
+
+    /// <summary>
+    /// Adds or removes a pinned place and reports the change, so the pane re-reads.
+    /// </summary>
+    /// <remarks>
+    /// Reports even when nothing changed. Pinning something already pinned is a no-op to the
+    /// settings file, but the user pressed a key and should see the pane settle rather than wonder
+    /// whether it registered.
+    /// </remarks>
+    private void ExecuteSetPinned(Effect.SetPinned effect)
+    {
+        var settings = _settings.Load();
+        var pinned = settings.PinnedPaths is { } existing
+            ? new List<string>(existing)
+            : new List<string>();
+
+        // Case-insensitive, since Windows paths are - pinning C:\Data twice under different casing
+        // would otherwise produce two rows for one folder.
+        var index = pinned.FindIndex(p => string.Equals(p, effect.Path, StringComparison.OrdinalIgnoreCase));
+        if (effect.Pin && index < 0)
+        {
+            pinned.Add(effect.Path);
+        }
+        else if (!effect.Pin && index >= 0)
+        {
+            pinned.RemoveAt(index);
+        }
+
+        _settings.Save(settings with { PinnedPaths = [.. pinned] });
+        _post(new Msg.PlacesChanged());
+    }
+
+    /// <summary>
+    /// The pinned section: places the user added, minus any that have since gone away.
+    /// </summary>
+    /// <remarks>
+    /// A pin that no longer resolves is skipped rather than removed. An unreachable share is the
+    /// normal state of a laptop away from its network, and silently forgetting the pin because the
+    /// machine was offline once would be worse than showing nothing that day.
+    /// </remarks>
+    private List<Entry> ReadPinned()
+    {
+        var pinned = new List<Entry>();
+        foreach (var path in _settings.Load().PinnedPaths ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+            {
+                continue;
+            }
+
+            pinned.Add(new Entry(
+                path,
+                EntryKind.Directory,
+                SizeBytes: -1,
+                Group: EntryGroups.Pinned,
+                Target: new Location.RealDirectory(path),
+                DisplayName: LastSegment(path)));
+        }
+
+        return pinned;
+    }
+
+    /// <summary>The trailing folder or share name, which is what a pinned row reads as.</summary>
+    private static string LastSegment(string path)
+    {
+        var trimmed = path.TrimEnd('\\', '/');
+        var separator = trimmed.LastIndexOfAny(['\\', '/']);
+        return separator < 0 || separator == trimmed.Length - 1 ? trimmed : trimmed[(separator + 1)..];
     }
 
     /// <summary>
@@ -422,12 +503,11 @@ public sealed class WorkerRuntime : IDisposable
                 place.Path,
                 EntryKind.Directory,
                 SizeBytes: -1,
-                Group: FavoritesGroup,
+                Group: EntryGroups.Favorites,
                 Target: new Location.RealDirectory(place.Path),
                 DisplayName: place.Label));
         }
 
-        DisambiguateLabels(favorites);
         return favorites;
     }
 
@@ -440,19 +520,25 @@ public sealed class WorkerRuntime : IDisposable
     /// <c>fol1 (\\testsv\test\fol1)</c>. This is the one pane where duplicates are possible at all -
     /// a directory listing cannot contain two entries with the same name.
     /// </remarks>
-    private static void DisambiguateLabels(List<Entry> rows)
+    private static void DisambiguateLabels(params List<Entry>[] sections)
     {
         var counts = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (var row in rows)
+        foreach (var rows in sections)
         {
-            counts[row.Label] = counts.TryGetValue(row.Label, out var n) ? n + 1 : 1;
+            foreach (var row in rows)
+            {
+                counts[row.Label] = counts.TryGetValue(row.Label, out var n) ? n + 1 : 1;
+            }
         }
 
-        for (var i = 0; i < rows.Count; i++)
+        foreach (var rows in sections)
         {
-            if (counts[rows[i].Label] > 1)
+            for (var i = 0; i < rows.Count; i++)
             {
-                rows[i] = rows[i] with { DisplayName = $"{rows[i].Label} ({rows[i].Name})" };
+                if (counts[rows[i].Label] > 1)
+                {
+                    rows[i] = rows[i] with { DisplayName = $"{rows[i].Label} ({rows[i].Name})" };
+                }
             }
         }
     }

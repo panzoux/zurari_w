@@ -2168,6 +2168,92 @@ public class TransitionTests
 
         Assert.Equal([@"C:\new.txt"], next.CutPending);
     }
+    [Fact]
+    public void Ctrl_D_pins_the_location_the_focused_column_is_showing()
+    {
+        var state = StateWithColumns(
+            new Column(new Location.RealDirectory(@"C:\work"), [File1], Cursor: 0, Load: LoadState.Loaded));
+
+        var (_, effects) = Transition.Apply(state, new Msg.PinFocusedLocation(0));
+
+        var pin = Assert.IsType<Effect.SetPinned>(Assert.Single(effects));
+        Assert.Equal(@"C:\work", pin.Path);
+        Assert.True(pin.Pin);
+    }
+
+    [Fact]
+    public void The_drive_pane_cannot_pin_itself()
+    {
+        // It has no filesystem path, so there is nothing to pin.
+        var state = StateWithColumns(DrivePaneColumn());
+
+        var (_, effects) = Transition.Apply(state, new Msg.PinFocusedLocation(0));
+
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void Delete_on_a_pinned_row_unpins_it_rather_than_touching_the_folder()
+    {
+        var column = new Column(
+            Location.Drives.Instance,
+            [
+                new Entry("ネットワーク", EntryKind.Header, Group: EntryGroups.Pinned),
+                new Entry(@"\\srv\share", EntryKind.Directory, Group: EntryGroups.Pinned,
+                    Target: new Location.RealDirectory(@"\\srv\share"), DisplayName: "share"),
+            ],
+            Cursor: 1,
+            Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        var (_, effects) = Transition.Apply(state, new Msg.DeleteEntry(0, 1));
+
+        var unpin = Assert.IsType<Effect.SetPinned>(Assert.Single(effects));
+        Assert.Equal(@"\\srv\share", unpin.Path);
+        Assert.False(unpin.Pin);
+    }
+
+    [Fact]
+    public void Delete_on_a_favorite_removes_nothing_at_all()
+    {
+        // Only a pinned place is the user's to remove; a known folder is simply there.
+        var column = new Column(
+            Location.Drives.Instance,
+            [
+                new Entry("お気に入り", EntryKind.Header, Group: EntryGroups.Favorites),
+                new Entry(@"C:\Users\user", EntryKind.Directory, Group: EntryGroups.Favorites,
+                    Target: new Location.RealDirectory(@"C:\Users\user"), DisplayName: "ホーム"),
+            ],
+            Cursor: 1,
+            Load: LoadState.Loaded);
+
+        var (_, effects) = Transition.Apply(StateWithColumns(column), new Msg.DeleteEntry(0, 1));
+
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void PlacesChanged_re_reads_only_the_drive_panes()
+    {
+        var state = new AppState
+        {
+            Columns =
+            [
+                DrivePaneColumn(),
+                new Column(new Location.RealDirectory(@"C:\work"), [File1], Cursor: 0, Load: LoadState.Loaded),
+            ],
+            FocusedColumn = 0,
+        };
+
+        var (next, effects) = Transition.Apply(state, new Msg.PlacesChanged());
+
+        var read = Assert.IsType<Effect.ReadDirectory>(Assert.Single(effects));
+        Assert.Equal(0, read.ColumnIndex);
+        Assert.Equal(Location.Drives.Instance, read.Location);
+        Assert.Equal(LoadState.Loading, next.Columns[0].Load);
+        Assert.Equal(LoadState.Loaded, next.Columns[1].Load);
+    }
+
     /// <summary>
     /// Delete in the drive pane must never reach the recycle bin.
     /// </summary>
@@ -2326,7 +2412,9 @@ public class TransitionProperties
         GenPaths.Select(paths => (Msg)new Msg.SetCutPending(paths)),
         Gen.Select(GenJobId, Gen.Int[0, 5]).Select(t => (Msg)new Msg.JobConflictsFound(t.Item1, t.Item2)),
         Gen.Select(GenJobId, GenConflictDecision).Select(t => (Msg)new Msg.JobConflictResolved(t.Item1, t.Item2)),
-        GenPath.Select(p => (Msg)new Msg.ExternalDirectoryChanged(p)));
+        GenPath.Select(p => (Msg)new Msg.ExternalDirectoryChanged(p)),
+        GenColumnIndex.Select(i => (Msg)new Msg.PinFocusedLocation(i)),
+        Gen.Const<Msg>(new Msg.PlacesChanged()));
 
     [Fact]
     public void Any_msg_sequence_yields_valid_state_and_effects()

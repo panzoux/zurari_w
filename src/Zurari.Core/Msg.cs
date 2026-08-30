@@ -289,4 +289,17 @@ public abstract record Msg
     /// not special-cased away.
     /// </summary>
     public sealed record ExternalDirectoryChanged(string Path) : Msg;
+
+    /// <summary>
+    /// Pin the location <paramref name="ColumnIndex"/> is showing, so it appears in the drive pane's
+    /// network section. Ignored for a column with no filesystem path of its own - the drive pane
+    /// cannot pin itself.
+    /// </summary>
+    public sealed record PinFocusedLocation(int ColumnIndex) : Msg;
+
+    /// <summary>
+    /// The pinned places changed, so any column showing the drive pane is stale. Re-reads every
+    /// <see cref="Zurari.Core.Location.Drives"/> column; no such column is a no-op.
+    /// </summary>
+    public sealed record PlacesChanged : Msg;
 }

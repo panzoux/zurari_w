@@ -99,4 +99,14 @@ public abstract record Effect
     /// </para>
     /// </remarks>
     public sealed record CancelPreview(int Generation) : Effect;
+
+    /// <summary>
+    /// Adds <paramref name="Path"/> to the drive pane's pinned places, or removes it when
+    /// <paramref name="Pin"/> is <c>false</c>. Persisted, so it survives a restart.
+    /// </summary>
+    /// <remarks>
+    /// Reports back as <see cref="Msg.PlacesChanged"/> whether or not anything actually changed -
+    /// pinning something already pinned is a no-op the user should still see settle.
+    /// </remarks>
+    public sealed record SetPinned(string Path, bool Pin) : Effect;
 }
