@@ -1784,6 +1784,43 @@ public class TransitionTests
         Assert.Equal(@"C:\a.txt", effect.Path);
     }
 
+    /// <summary>
+    /// A file in the recycle bin is read from where the bin keeps it, but described by where it came
+    /// from - the only readable thing about it, since the bin's own name for it is $R00L0W8.txt.
+    /// </summary>
+    [Fact]
+    public void CursorMove_onto_a_deleted_file_carries_where_it_came_from_into_the_preview()
+    {
+        var deleted = new Entry(
+            @"C:\$Recycle.Bin\S-1-5-21-1\$R00L0W8.txt",
+            EntryKind.File,
+            DisplayName: "notes.txt",
+            OriginalPath: @"D:\projects\notes.txt");
+        var column = new Column(
+            Location.RecycleBin.Instance,
+            [Dir, deleted],
+            Cursor: 0,
+            Load: LoadState.Loaded);
+        var state = StateWithColumns(column);
+
+        var (next, effects) = Transition.Apply(state, new Msg.CursorDown(0));
+
+        Assert.Equal(@"C:\$Recycle.Bin\S-1-5-21-1\$R00L0W8.txt", next.Preview.Path);
+        Assert.Equal(@"D:\projects\notes.txt", next.Preview.OriginalPath);
+        var effect = Assert.IsType<Effect.LoadPreview>(Assert.Single(effects));
+        Assert.Equal(@"C:\$Recycle.Bin\S-1-5-21-1\$R00L0W8.txt", effect.Path);
+    }
+
+    [Fact]
+    public void An_ordinary_file_has_no_original_path_in_the_preview()
+    {
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+
+        var (next, _) = Transition.Apply(StateWithColumns(column), new Msg.CursorDown(0));
+
+        Assert.Null(next.Preview.OriginalPath);
+    }
+
     [Fact]
     public void CursorMove_onto_a_directory_clears_the_preview_and_emits_no_effect()
     {
@@ -2462,8 +2499,12 @@ public class TransitionProperties
     /// against a list that is genuinely shorter than the one it came from.
     /// </summary>
     private static Gen<Entry> GenEntry =>
-        Gen.Select(Gen.OneOfConst("a", "b", "c"), GenEntryKind, Gen.OneOfConst("g1", "g2"))
-            .Select(t => new Entry(t.Item1, t.Item2, Group: t.Item3));
+        Gen.Select(
+                Gen.OneOfConst("a", "b", "c"),
+                GenEntryKind,
+                Gen.OneOfConst("g1", "g2"),
+                Gen.OneOfConst<string?>(null, @"D:\somewhere"))
+            .Select(t => new Entry(t.Item1, t.Item2, Group: t.Item3, OriginalPath: t.Item4));
 
     private static Gen<ImmutableArray<Entry>> GenEntries =>
         GenEntry.List[0, 3].Select(list => list.ToImmutableArray());

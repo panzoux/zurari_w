@@ -1081,8 +1081,8 @@ public static class Transition
     private static (AppState, IReadOnlyList<Effect>) ReconcilePreview(
         AppState oldState, AppState newState, IReadOnlyList<Effect> effects)
     {
-        var oldTarget = ResolveCursorFileTarget(oldState);
-        var newTarget = ResolveCursorFileTarget(newState);
+        var oldTarget = ResolveCursorFileTarget(oldState).Path;
+        var (newTarget, originalPath) = ResolveCursorFileTarget(newState);
         if (string.Equals(oldTarget, newTarget, StringComparison.Ordinal))
         {
             return (newState, effects);
@@ -1105,7 +1105,10 @@ public static class Transition
         var loading = newState with
         {
             Preview = new PreviewState(
-                nextGeneration, newTarget, PreviewKind.Loading, Text: null, ImageBytes: [], Error: null),
+                nextGeneration, newTarget, PreviewKind.Loading, Text: null, ImageBytes: [], Error: null)
+            {
+                OriginalPath = originalPath,
+            },
         };
 
         var withPreviewEffect = Append(effects, abandoned, new Effect.LoadPreview(nextGeneration, newTarget));
@@ -1133,30 +1136,31 @@ public static class Transition
     }
 
     /// <summary>
-    /// Full path of the File-kind entry under <paramref name="state"/>'s focused column's cursor,
-    /// or <c>null</c> when the focused column is out of range, empty, its cursor is on a
-    /// Directory/Drive, or its cursor is -1.
+    /// The File-kind entry under <paramref name="state"/>'s focused column's cursor: the full path
+    /// to read, and <see cref="Entry.OriginalPath"/> when the row carries one. Both <c>null</c> when
+    /// the focused column is out of range, empty, its cursor is on a Directory/Drive/Header, or its
+    /// cursor is -1.
     /// </summary>
-    private static string? ResolveCursorFileTarget(AppState state)
+    private static (string? Path, string? OriginalPath) ResolveCursorFileTarget(AppState state)
     {
         if (!InRange(state, state.FocusedColumn))
         {
-            return null;
+            return (null, null);
         }
 
         var column = state.Columns[state.FocusedColumn];
         if (column.Cursor < 0 || column.Cursor >= column.Entries.Length)
         {
-            return null;
+            return (null, null);
         }
 
         var entry = column.Entries[column.Cursor];
         if (entry.Kind != EntryKind.File)
         {
-            return null;
+            return (null, null);
         }
 
-        return EntryPath(column, entry);
+        return (EntryPath(column, entry), entry.OriginalPath);
     }
 
     private static AppState PreviewLoaded(

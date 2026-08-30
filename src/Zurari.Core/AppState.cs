@@ -61,6 +61,11 @@ public enum LoadState
 /// rather than presentation: a section-aware operation needs it, and the header rows themselves
 /// carry it so a collapse knows what it is hiding.
 /// </param>
+/// <param name="OriginalPath">
+/// Where a deleted item used to live, for rows in the recycle bin. The row is named by where the
+/// item is *now* - the shell's parsing name, which is what any operation on it needs - so this is
+/// the only place the thing a person recognises survives.
+/// </param>
 /// <param name="IsRemovable">
 /// Whether the user put this row here and can take it away again. True for anything they added to
 /// the drive pane, false for what is simply there - a drive, or a known folder like Downloads.
@@ -86,7 +91,8 @@ public sealed record Entry(
     Location? Target = null,
     string? DisplayName = null,
     string? Group = null,
-    bool IsRemovable = false)
+    bool IsRemovable = false,
+    string? OriginalPath = null)
 {
     /// <summary>What to render for this entry - <see cref="DisplayName"/> when it has one.</summary>
     public string Label => DisplayName ?? Name;
@@ -316,6 +322,17 @@ public sealed record PreviewState(
     string? Error,
     PreviewMetadata? Metadata = null)
 {
+    /// <summary>
+    /// Where the previewed file used to live, before it was deleted - set only for rows in the
+    /// recycle bin, <c>null</c> everywhere else.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Path"/> for such a row is the bin's own storage name
+    /// (<c>C:\$Recycle.Bin\S-1-5-...\$R...</c>), which is what has to be read but says nothing about
+    /// what the file is. This is the only thing that does, so the pane leads with it.
+    /// </remarks>
+    public string? OriginalPath { get; init; }
+
     /// <summary>Starting state: no file selected, generation 0.</summary>
     public static PreviewState Initial { get; } = new(
         Generation: 0, Path: null, Kind: PreviewKind.None, Text: null, ImageBytes: [], Error: null, Metadata: null);

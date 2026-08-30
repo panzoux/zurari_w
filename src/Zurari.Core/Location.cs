@@ -43,6 +43,19 @@ public abstract record Location
     public abstract string? FilesystemPath { get; }
 
     /// <summary>
+    /// What the Windows shell namespace calls this location, for handing to a shell API that takes a
+    /// display name - the context menu is the one that matters here. Defaults to
+    /// <see cref="FilesystemPath"/>, since for a real directory the two are the same string.
+    /// </summary>
+    /// <remarks>
+    /// Kept apart from <see cref="FilesystemPath"/> rather than folded into it: a caller that wants a
+    /// path wants to open, watch or copy something, and must still see <c>null</c> for a location
+    /// that has no path. Only a caller that is going to hand the string straight to the shell should
+    /// ask here.
+    /// </remarks>
+    public virtual string? ShellParsingName => FilesystemPath;
+
+    /// <summary>
     /// Where opening the row named <paramref name="entryName"/> leads, when that row does not carry
     /// an explicit <see cref="Entry.Target"/> of its own.
     /// </summary>
@@ -112,11 +125,22 @@ public abstract record Location
     /// </remarks>
     public sealed record RecycleBin : Location
     {
+        /// <summary>
+        /// The recycle bin's shell CLSID, which is how the namespace names it. There is no path
+        /// equivalent - the bin is not one directory but a per-drive, per-SID set of them - so this
+        /// is the only string a shell API will accept for the bin as a whole, and what makes
+        /// "ゴミ箱を空にする" reachable from the row's own context menu.
+        /// </summary>
+        public const string ParsingName = "::{645FF040-5081-101B-9F08-00AA002F954E}";
+
         /// <summary>The single shared instance; records give value equality regardless.</summary>
         public static RecycleBin Instance { get; } = new();
 
         /// <inheritdoc />
         public override string? FilesystemPath => null;
+
+        /// <inheritdoc />
+        public override string? ShellParsingName => ParsingName;
 
         /// <inheritdoc />
         /// <remarks>

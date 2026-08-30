@@ -32,16 +32,38 @@ public sealed class ShellIconCache
     /// </summary>
     public ImageSource? GetIcon(EntryKind kind, string name)
     {
+        // A drive resolves from its own path rather than from attributes. Asking for "a directory"
+        // returns the generic folder icon for every drive alike - which is what the pane showed:
+        // C:, D: and an optical drive all as folders. The shell has a distinct icon per drive type
+        // (and per volume, for one with its own icon), and only the real path gets it.
+        if (kind == EntryKind.Drive)
+        {
+            return string.IsNullOrEmpty(name)
+                ? cache.GetOrAdd(DriveKey, _ => Resolve(kind, string.Empty))
+                : cache.GetOrAdd(DriveKey + name, _ => ResolveForPath(name));
+        }
+
         var extension = kind == EntryKind.File ? SafeExtension(name) : string.Empty;
         var key = kind switch
         {
             EntryKind.Directory => DirectoryKey,
-            EntryKind.Drive => DriveKey,
             _ => FileKeyPrefix + extension,
         };
 
         return cache.GetOrAdd(key, _ => Resolve(kind, extension));
     }
+
+    /// <summary>
+    /// The recycle bin's own icon, full or empty as the shell draws it.
+    /// </summary>
+    /// <remarks>
+    /// A stock icon rather than a path lookup: the bin has no path <c>SHGetFileInfo</c> accepts, and
+    /// the full/empty distinction is one the shell already makes.
+    /// </remarks>
+    public ImageSource? GetRecycleBinIcon(bool hasItems) =>
+        cache.GetOrAdd(
+            hasItems ? "recyclebin:full" : "recyclebin:empty",
+            _ => ResolveStockIcon(hasItems ? NativeMethods.SIID_RECYCLERFULL : NativeMethods.SIID_RECYCLER));
 
     private static string SafeExtension(string? name)
     {
@@ -105,6 +127,72 @@ public sealed class ShellIconCache
             // Icons are cosmetic, never load-bearing: any interop failure (invalid probe path,
             // COM error, out-of-resources) degrades to "no icon" rather than propagating.
             return null;
+        }
+    }
+
+    /// <summary>
+    /// The icon the shell shows for a real path, looked up from the item itself rather than from
+    /// assumed attributes. Used for drives, where the type of volume is the whole point.
+    /// </summary>
+    private static BitmapSource? ResolveForPath(string path)
+    {
+        try
+        {
+            var info = default(NativeMethods.SHFILEINFOW);
+            var handle = NativeMethods.SHGetFileInfoW(
+                path,
+                0,
+                ref info,
+                (uint)Marshal.SizeOf<NativeMethods.SHFILEINFOW>(),
+                NativeMethods.SHGFI_ICON | NativeMethods.SHGFI_SMALLICON);
+
+            return handle == IntPtr.Zero ? null : FromHIcon(info.hIcon);
+        }
+        catch (Exception)
+        {
+            // A drive that went away between listing and drawing is not worth an error.
+            return null;
+        }
+    }
+
+    /// <summary>One of the shell's own stock icons.</summary>
+    private static BitmapSource? ResolveStockIcon(uint stockIconId)
+    {
+        try
+        {
+            var info = new NativeMethods.SHSTOCKICONINFO
+            {
+                cbSize = Marshal.SizeOf<NativeMethods.SHSTOCKICONINFO>(),
+            };
+
+            var hr = NativeMethods.SHGetStockIconInfo(
+                stockIconId, NativeMethods.SHGSI_ICON | NativeMethods.SHGSI_SMALLICON, ref info);
+            return hr != 0 ? null : FromHIcon(info.hIcon);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Converts a shell icon handle into a frozen bitmap and releases the handle.</summary>
+    private static BitmapSource? FromHIcon(IntPtr hIcon)
+    {
+        if (hIcon == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        try
+        {
+            var source = Imaging.CreateBitmapSourceFromHIcon(
+                hIcon, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+            source.Freeze();
+            return source;
+        }
+        finally
+        {
+            NativeMethods.DestroyIcon(hIcon);
         }
     }
 }

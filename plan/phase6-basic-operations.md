@@ -18,8 +18,8 @@ Phase 6 was sixteen loose checkboxes. Grilling turned it into decisions, and fou
 
 # Status
 
-Branch `phase6a-location-foundation`, 25 commits, **nothing merged to main** (see R-1).
-549 tests, `scripts/check.ps1` green.
+Branch `phase6a-location-foundation`, 26 commits, **nothing merged to main** (see R-1).
+573 tests, `scripts/check.ps1` green.
 
 | | Item | Status | Commit |
 |---|---|---|---|
@@ -37,6 +37,7 @@ Branch `phase6a-location-foundation`, 25 commits, **nothing merged to main** (se
 | 6d.3 | Favorites section (`SHGetKnownFolderPath`; labels qualified on collision) | `[x]` | `2ae7810` |
 | 6d.4 | Pinned places (Ctrl+D pins, Delete unpins), persisted | `[x]` | `f76b684` |
 | 6d.5 | Trash as its own group, enumerable via the shell namespace | `[x]` | `3a1d56c` |
+| 6d.5a | ゴミ箱 usable: its own context menu, readable rows, real drive/bin icons | `[x]` | (this commit) |
 | 6d.6 | Collapse state persisted | `[ ]` | |
 | 6d.7 | Drive / share capacity preview | `[ ]` | |
 | 6d.8 | ISO mount on activate, eject | `[ ]` | |
@@ -119,6 +120,31 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   not throw" and "empty implies empty" — all satisfied by `Enumerate()` returning `[]` from its
   catch block. A throwaway probe established the truth: 373 items in the bin, 373 returned,
   agreeing with `SHQueryRecycleBin`. The tests now assert both directions of that agreement.
+
+- **6d-8** `[x]` **Three things the drive pane got wrong, all reported from one screenshot.**
+  1. **Every drive drew the generic folder icon.** `ShellIconCache` asked the shell for "an icon for
+     something with the directory attribute", which is the folder icon by definition - so a fixed
+     disk, an optical drive and a USB stick were indistinguishable. Drives now resolve from their own
+     path, cached per drive. The test compares *pixels*, not references: two HICONs are never the
+     same instance, so a reference check would have passed either way. Verified it fails without the
+     fix.
+  2. **The ゴミ箱 row had no context menu**, so ゴミ箱を空にする was unreachable. Its `Location` has no
+     filesystem path, so `ResolveFullPath` returned `null` and the menu was skipped before anything
+     was drawn. `Location.ShellParsingName` is the fix - the bin's CLSID (`::{645FF040-...}`), kept
+     separate from `FilesystemPath` so a caller that wants a *path* still correctly sees nothing. A
+     test resolves the CLSID through `SHParseDisplayName` for real.
+  3. **The menu key did nothing anywhere.** Now `Apps` and `Shift+F10` open the same menu as a
+     right-click, anchored under the cursor row (`ColumnBrowser.TryGetRowScreenRect`). Right-click
+     and keyboard share one `ShowContextMenu`, so they cannot drift.
+- **6d-9** `[x]` **The bin listing was a wall of identical truncated paths.** Rows were labelled by
+  the *original* path whenever two labels collided - a rule borrowed from the drive pane, where
+  collisions are rare. In a bin of 393 items nearly every name collides, so nearly every row became a
+  path, end-trimmed by WPF down to the same `C:\Users\user\AppData\Local...`. Two changes: a row is
+  now always labelled by its original **file name**, and the original **path** moved to
+  `Entry.OriginalPath` -> `PreviewState.OriginalPath` -> the preview header, above the name.
+  `TextTrim` (ported from rwf's `smart_truncate`/`shorten_path`) shortens from the middle;
+  `TextFitter` finds the budget by bisection against the realized control's own typeface, since WPF's
+  own trimming only cuts the end - the very thing that made the rows unreadable.
 
 - **6d-5** `[x]` **Delete on a favorite would have recycled the folder it pointed at.** Favorites
   arrived in `2ae7810` as `EntryKind.Directory` rows in the Drives column, and `DeleteEntry` only

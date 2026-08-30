@@ -46,6 +46,39 @@ public class PreviewProjectionTests
     }
 
     [Fact]
+    public void Recycle_bin_file_is_named_and_placed_by_where_it_came_from()
+    {
+        // What the bin stores it as says nothing; what the user deleted is the only readable thing.
+        var preview = new PreviewState(
+            3,
+            @"C:\$Recycle.Bin\S-1-5-21-1\$R00L0W8.txt",
+            PreviewKind.Text,
+            "body",
+            [],
+            null)
+        {
+            OriginalPath = @"C:\Users\someone\Documents\notes.txt",
+        };
+        var state = StateWithPreview(preview);
+
+        var vm = StateProjection.ProjectPreview(state);
+
+        Assert.Equal("notes.txt", vm.FileName);
+        Assert.Equal(@"C:\Users\someone\Documents", vm.OriginalDirectory);
+    }
+
+    [Fact]
+    public void A_file_outside_the_bin_has_no_original_directory()
+    {
+        var preview = new PreviewState(1, @"C:\Users\someone\notes.txt", PreviewKind.Text, "body", [], null);
+
+        var vm = StateProjection.ProjectPreview(StateWithPreview(preview));
+
+        Assert.Equal("notes.txt", vm.FileName);
+        Assert.Null(vm.OriginalDirectory);
+    }
+
+    [Fact]
     public void Image_kind_projects_the_image_bytes()
     {
         ImmutableArray<byte> bytes = [1, 2, 3];

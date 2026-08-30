@@ -95,4 +95,17 @@ public class RecycleBinFolderTests
             ShellContextMenuTestAccess.CanResolve(item.Original),
             "the original path must NOT resolve - if it did, this whole indirection would be pointless");
     }
+
+    /// <summary>
+    /// The bin row itself has to be nameable too, or its context menu - the only place ゴミ箱を空にする
+    /// lives - cannot be built. It has no filesystem path, so the CLSID is the whole answer.
+    /// </summary>
+    [Fact]
+    public void The_bin_itself_resolves_by_its_shell_name()
+    {
+        Assert.NotNull(Location.RecycleBin.Instance.ShellParsingName);
+        Assert.True(
+            ShellContextMenuTestAccess.CanResolve(Location.RecycleBin.Instance.ShellParsingName!),
+            "the recycle bin's own parsing name must resolve");
+    }
 }

@@ -136,25 +136,23 @@ public sealed class ShellEffectExecutor : IDisposable
     {
         try
         {
-            // A row is named by the shell's parsing name, which is where the item actually lives now
-            // (C:\$Recycle.Bin\S-1-5-…\$R…). That is what every operation on it needs - the context
-            // menu, and reading it for a preview - because the original path stopped existing when
-            // it was deleted. What a person recognises is the original, so that supplies the label:
-            // the file's name, or the whole original path when two rows would otherwise read alike.
-            var items = RecycleBinFolder.EnumerateParsingNames();
-            var labels = items.Select(i => LastSegment(i.Original)).ToList();
-            var duplicated = labels
-                .GroupBy(l => l, StringComparer.Ordinal)
-                .Where(g => g.Count() > 1)
-                .Select(g => g.Key)
-                .ToHashSet(StringComparer.Ordinal);
-
-            var entries = items
-                .Select((item, i) => new Entry(
+            // A row is named by the shell's parsing name - where the item lives now
+            // (C:\$Recycle.Bin\S-1-5-...\$R...) - because that is what every operation on it needs:
+            // the context menu, and opening it for a preview. The original path stopped existing
+            // when the item was deleted.
+            //
+            // The label is the original file's name, always - never a qualified path. Qualifying
+            // duplicates the way the drive pane does was actively worse here: in a bin of hundreds
+            // nearly every name collides, so nearly every row turned into an end-truncated path and
+            // the whole list read as identical. Where it came from goes to OriginalPath, which the
+            // preview shows in full.
+            var entries = RecycleBinFolder.EnumerateParsingNames()
+                .Select(item => new Entry(
                     item.Parsing,
                     item.IsFolder ? EntryKind.Directory : EntryKind.File,
                     SizeBytes: -1,
-                    DisplayName: duplicated.Contains(labels[i]) ? item.Original : labels[i]))
+                    DisplayName: LastSegment(item.Original),
+                    OriginalPath: item.Original))
                 .ToImmutableArray();
             post(new Msg.DirectoryLoaded(effect.ColumnIndex, effect.Location, entries));
         }

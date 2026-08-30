@@ -6,6 +6,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Zurari.Controls;
@@ -73,6 +74,17 @@ public sealed partial class MainWindow : Window, IDisposable
     private int lastDecodedImageGeneration = -1;
 
     /// <summary>
+    /// How many items <see cref="TrashPlaceRow"/> last saw in the recycle bin, so
+    /// <see cref="ResolveIcon"/> can pick the full or empty bin icon. Written from a worker thread.
+    /// </summary>
+    private long trashItemCount;
+
+    /// <summary>The preview header's two lines, kept so a pane resize can re-fit them - see <see cref="FitPreviewHeader"/>.</summary>
+    private string? previewFileName;
+
+    private string? previewOriginalDirectory;
+
+    /// <summary>
     /// How long <see cref="RunEffect"/> holds the latest <see cref="Effect.LoadPreview"/> before
     /// submitting it (Phase 5 fix P1). Every newer <c>LoadPreview</c> replaces the held one and
     /// restarts <see cref="previewDebounceTimer"/>, so a fast cursor never queues more than one
@@ -124,6 +136,10 @@ public sealed partial class MainWindow : Window, IDisposable
             Dispose();
         };
         Loaded += (_, _) => Browser.Focus();
+
+        // The header's two lines are shortened to fit, so a resize has to re-shorten them - the
+        // splitter drag is the whole reason the preview pane's width is not a constant.
+        PreviewPane.SizeChanged += (_, _) => FitPreviewHeader();
         KeyDown += OnWindowKeyDown;
 
         if (ColumnBrowser.InputTraceEnabled)
@@ -152,9 +168,14 @@ public sealed partial class MainWindow : Window, IDisposable
     /// The recycle bin row, labelled with what is in it. Resolved here because the totals come from
     /// <c>SHQueryRecycleBin</c> and Runtime may not depend on Shell.
     /// </summary>
-    private static TrashPlace TrashPlaceRow()
+    private TrashPlace TrashPlaceRow()
     {
         var summary = Zurari.Shell.RecycleBinFolder.Query();
+
+        // Runs on a worker thread; ResolveIcon reads it on the UI thread. Volatile rather than a
+        // lock: a stale read costs a full/empty bin icon for one render, and the next read fixes it.
+        Volatile.Write(ref trashItemCount, summary.ItemCount);
+
         return new TrashPlace(
             summary.ItemCount <= 0
                 ? "ゴミ箱"
@@ -162,6 +183,16 @@ public sealed partial class MainWindow : Window, IDisposable
                     System.Globalization.CultureInfo.InvariantCulture,
                     $"ゴミ箱 ({summary.ItemCount})"));
     }
+
+    /// <summary>
+    /// The icon for one row. Everything the shell can identify from a name goes through
+    /// <see cref="ShellIconCache.GetIcon"/>; the ゴミ箱 row cannot, since it has no path, so it takes
+    /// the shell's own stock bin icon - full or empty, matching what the row's label says.
+    /// </summary>
+    private ImageSource? ResolveIcon(Entry entry) =>
+        entry.Target is Location.RecycleBin
+            ? iconCache.GetRecycleBinIcon(Volatile.Read(ref trashItemCount) > 0)
+            : iconCache.GetIcon(entry.Kind, entry.Name);
 
     /// <summary>Diagnostic-only: logs a window-level mouse transition (see ctor wiring).</summary>
     private void TraceWindowMouse(string kind, MouseButtonEventArgs e)
@@ -327,20 +358,34 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
-        var fullPath = ResolveFullPath(e.ColumnIndex, e.EntryIndex);
-        if (fullPath is null)
+        ShowContextMenu(e.ColumnIndex, e.EntryIndex, e.ScreenPosition);
+    }
+
+    /// <summary>
+    /// Opens the shell context menu for one row at <paramref name="screenPosition"/>, on the row's
+    /// whole marked set when it is part of one. Does nothing for a row the shell cannot name.
+    /// </summary>
+    /// <remarks>
+    /// Reached both by right-click and by the menu key (see <c>OnBrowserPreviewKeyDown</c>), so the
+    /// two cannot drift apart. Names come from <see cref="ResolveShellName"/> rather than
+    /// <see cref="ResolveFullPath"/>: the recycle-bin row has no filesystem path at all, and it is
+    /// the row whose menu - "ゴミ箱を空にする" - there is no other way to reach.
+    /// </remarks>
+    private void ShowContextMenu(int columnIndex, int entryIndex, Point screenPosition)
+    {
+        if (ResolveShellName(columnIndex, entryIndex) is not { } shellName)
         {
             return;
         }
 
-        var paths = IsEntryMarked(e.ColumnIndex, e.EntryIndex) ? ResolveMarkedFullPaths(e.ColumnIndex) : [fullPath];
+        var paths = IsEntryMarked(columnIndex, entryIndex) ? ResolveMarkedFullPaths(columnIndex) : [shellName];
         if (paths.Count == 0)
         {
-            paths = [fullPath];
+            paths = [shellName];
         }
 
         var ownerHwnd = new WindowInteropHelper(this).Handle;
-        if (ShellContextMenu.Show(ownerHwnd, paths, (int)e.ScreenPosition.X, (int)e.ScreenPosition.Y))
+        if (ShellContextMenu.Show(ownerHwnd, paths, (int)screenPosition.X, (int)screenPosition.Y))
         {
             Dispatch(new Msg.Refresh());
         }
@@ -472,6 +517,34 @@ public sealed partial class MainWindow : Window, IDisposable
         return entry.Target is { } target ? target.FilesystemPath : column.Location.ChildPath(entry.Name);
     }
 
+    /// <summary>
+    /// What the shell namespace calls the row at these indices - a filesystem path for almost
+    /// everything, the bin's CLSID for the ゴミ箱 row. <c>null</c> when the indices no longer match
+    /// the current state, or the row is not something the shell can name at all (a section header).
+    /// </summary>
+    private string? ResolveShellName(int columnIndex, int entryIndex)
+    {
+        var state = loop.State;
+        if (columnIndex < 0 || columnIndex >= state.Columns.Length)
+        {
+            return null;
+        }
+
+        var column = state.Columns[columnIndex];
+        if (entryIndex < 0 || entryIndex >= column.Entries.Length)
+        {
+            return null;
+        }
+
+        var entry = column.Entries[entryIndex];
+        if (entry.Kind == Core.EntryKind.Header)
+        {
+            return null;
+        }
+
+        return entry.Target is { } target ? target.ShellParsingName : column.Location.ChildPath(entry.Name);
+    }
+
     private bool IsEntryMarked(int columnIndex, int entryIndex)
     {
         var state = loop.State;
@@ -512,6 +585,32 @@ public sealed partial class MainWindow : Window, IDisposable
         return result;
     }
 
+    /// <summary>
+    /// Opens the context menu for the focused column's cursor row, anchored under that row's
+    /// bottom-left corner the way Windows places a menu-key menu.
+    /// </summary>
+    /// <remarks>
+    /// The keyboard route to the shell menu. It is the only route for the ゴミ箱 row on a machine
+    /// driven from the keyboard, and 空にする lives nowhere else.
+    /// </remarks>
+    private void ShowContextMenuAtCursor()
+    {
+        var state = loop.State;
+        var columnIndex = state.FocusedColumn;
+        if (columnIndex < 0 || columnIndex >= state.Columns.Length)
+        {
+            return;
+        }
+
+        var cursor = state.Columns[columnIndex].Cursor;
+        if (cursor < 0 || Browser.TryGetRowScreenRect(columnIndex, cursor) is not { } rowRect)
+        {
+            return;
+        }
+
+        ShowContextMenu(columnIndex, cursor, new Point(rowRect.Left, rowRect.Bottom));
+    }
+
     private void OnWindowKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.F5 || (e.Key == Key.R && Keyboard.Modifiers == ModifierKeys.Control))
@@ -545,6 +644,11 @@ public sealed partial class MainWindow : Window, IDisposable
             // Ctrl+D pins the location this column is showing into the drive pane, the way a browser
             // bookmarks the current page. Delete on the pinned row removes it again.
             Dispatch(new Msg.PinFocusedLocation(loop.State.FocusedColumn));
+            e.Handled = true;
+        }
+        else if (e.Key is Key.Apps || (e.Key == Key.F10 && Keyboard.Modifiers == ModifierKeys.Shift))
+        {
+            ShowContextMenuAtCursor();
             e.Handled = true;
         }
         else if (e.Key == Key.Escape)
@@ -774,7 +878,7 @@ public sealed partial class MainWindow : Window, IDisposable
         // renders that have nothing to do with the browsed columns (Phase 5 bug B3).
         if (state.Columns != lastRenderedColumns || state.FocusedColumn != lastRenderedFocusedColumn)
         {
-            Browser.Columns = StateProjection.Project(state, e => iconCache.GetIcon(e.Kind, e.Name), projectionCache);
+            Browser.Columns = StateProjection.Project(state, ResolveIcon, projectionCache);
             lastRenderedColumns = state.Columns;
             lastRenderedFocusedColumn = state.FocusedColumn;
 
@@ -900,10 +1004,30 @@ public sealed partial class MainWindow : Window, IDisposable
     /// a display-formatting choice) - cached by <see cref="lastDecodedImageGeneration"/> so it only
     /// runs once per distinct preview, not on every unrelated re-render.
     /// </summary>
+    /// <summary>
+    /// Renders the preview header - the folder a deleted file came from, then its name - shortening
+    /// each from the middle to fit the pane's current width.
+    /// </summary>
+    /// <remarks>
+    /// Called both when the preview changes and when the pane is resized, so it reads its text from
+    /// <see cref="previewFileName"/>/<see cref="previewOriginalDirectory"/> rather than taking it as
+    /// an argument: a resize has no new state to project from.
+    /// </remarks>
+    private void FitPreviewHeader()
+    {
+        var width = PreviewPane.ActualWidth;
+        TextFitter.Fit(PreviewFileName, previewFileName, width, TextTrim.Middle);
+        TextFitter.Fit(PreviewOriginalPath, previewOriginalDirectory, width, TextTrim.Path);
+        PreviewOriginalPath.Visibility =
+            string.IsNullOrEmpty(previewOriginalDirectory) ? Visibility.Collapsed : Visibility.Visible;
+    }
+
     private void RenderPreview(AppState state)
     {
         var vm = StateProjection.ProjectPreview(state);
-        PreviewFileName.Text = vm.FileName ?? string.Empty;
+        previewFileName = vm.FileName;
+        previewOriginalDirectory = vm.OriginalDirectory;
+        FitPreviewHeader();
 
         PreviewMetadataBlock.Text = vm.MetadataText;
         PreviewMetadataBlock.Visibility =

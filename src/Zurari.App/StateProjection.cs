@@ -106,6 +106,14 @@ public static class StateProjection
         return separatorIndex < 0 ? trimmed : trimmed[(separatorIndex + 1)..];
     }
 
+    /// <summary>Everything before the last segment of <paramref name="path"/>, without its trailing separator.</summary>
+    private static string ParentPath(string path)
+    {
+        var trimmed = path.TrimEnd('\\', '/');
+        var separatorIndex = trimmed.LastIndexOfAny(['\\', '/']);
+        return separatorIndex <= 0 ? string.Empty : trimmed[..separatorIndex];
+    }
+
     private static Controls.EntryVm ProjectEntry(
         Entry entry,
         Func<Entry, ImageSource?>? iconResolver,
@@ -272,7 +280,17 @@ public static class StateProjection
     /// Mirrors <see cref="PreviewState.Generation"/> so the renderer can cache the last
     /// <c>BitmapImage</c> it decoded and skip re-decoding on an unrelated re-render.
     /// </param>
-    /// <param name="FileName">Last path segment of <see cref="PreviewState.Path"/>, or <c>null</c> when <see cref="Kind"/> is <see cref="PreviewKind.None"/>.</param>
+    /// <param name="FileName">
+    /// The name to show for the previewed file, or <c>null</c> when <see cref="Kind"/> is
+    /// <see cref="PreviewKind.None"/>. Normally the last segment of <see cref="PreviewState.Path"/>;
+    /// for a file in the recycle bin, the name it had before it was deleted, since the bin's own
+    /// storage name (<c>$R00L0W8.txt</c>) identifies nothing.
+    /// </param>
+    /// <param name="OriginalDirectory">
+    /// The folder a deleted file came out of, or <c>null</c> for anything not in the recycle bin.
+    /// Shown above the name: in a bin of hundreds it is often the only thing telling two identically
+    /// named files apart.
+    /// </param>
     /// <param name="Kind">What to render.</param>
     /// <param name="Text">
     /// Decoded text body when <see cref="Kind"/> is <see cref="PreviewKind.Text"/>. When
@@ -292,6 +310,7 @@ public static class StateProjection
     public sealed record PreviewVm(
         int Generation,
         string? FileName,
+        string? OriginalDirectory,
         PreviewKind Kind,
         string? Text,
         ImmutableArray<byte> ImageBytes,
@@ -307,10 +326,15 @@ public static class StateProjection
         ArgumentNullException.ThrowIfNull(state);
 
         var preview = state.Preview;
-        var fileName = preview.Path is null ? null : LastPathSegment(preview.Path);
+
+        // A deleted file is named and placed by where it came from, not by where the bin keeps it.
+        var displayPath = preview.OriginalPath ?? preview.Path;
+        var fileName = displayPath is null ? null : LastPathSegment(displayPath);
+        var originalDirectory = preview.OriginalPath is null ? null : ParentPath(preview.OriginalPath);
         var text = preview.Kind == PreviewKind.Binary ? FormatBinaryText(preview) : preview.Text;
         var metadataText = FormatMetadata(preview);
-        return new PreviewVm(preview.Generation, fileName, preview.Kind, text, preview.ImageBytes, preview.Error, metadataText);
+        return new PreviewVm(
+            preview.Generation, fileName, originalDirectory, preview.Kind, text, preview.ImageBytes, preview.Error, metadataText);
     }
 
     /// <summary>

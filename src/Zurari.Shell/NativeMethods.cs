@@ -75,4 +75,27 @@ internal static class NativeMethods
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     public static extern int SHQueryRecycleBinW(
         [MarshalAs(UnmanagedType.LPWStr)] string? pszRootPath, ref SHQUERYRBINFO pSHQueryRBInfo);
+
+    public const uint SIID_RECYCLER = 32;
+    public const uint SIID_RECYCLERFULL = 33;
+    public const uint SHGSI_ICON = 0x000000100;
+    public const uint SHGSI_SMALLICON = 0x000000001;
+
+    /// <summary>Shell stock icon info - see <c>SHGetStockIconInfo</c>.</summary>
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct SHSTOCKICONINFO
+    {
+        public int cbSize;
+        public IntPtr hIcon;
+        public int iSysImageIndex;
+        public int iIcon;
+
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+        public string szPath;
+    }
+
+    /// <summary>One of the shell's built-in icons, such as the recycle bin.</summary>
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    public static extern int SHGetStockIconInfo(uint siid, uint uFlags, ref SHSTOCKICONINFO psii);
 }

@@ -456,6 +456,20 @@ public sealed class ColumnBrowser : Control
             this, new CursorMoveRequestedEventArgs(columnIndex, move, GetVisibleRowCount(columnIndex)));
     }
 
+    /// <summary>
+    /// Screen rectangle of one row, for placing a context menu raised by the menu key rather than by
+    /// a click. <c>null</c> when that column or row is not currently realized.
+    /// </summary>
+    public Rect? TryGetRowScreenRect(int columnIndex, int entryIndex)
+    {
+        if (columnsPanel is null || columnIndex < 0 || columnIndex >= columnsPanel.Children.Count)
+        {
+            return null;
+        }
+
+        return (columnsPanel.Children[columnIndex] as ColumnView)?.TryGetRowScreenRect(entryIndex);
+    }
+
     private int GetVisibleRowCount(int columnIndex)
     {
         if (columnsPanel is null || columnIndex < 0 || columnIndex >= columnsPanel.Children.Count)

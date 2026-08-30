@@ -1265,6 +1265,24 @@ public sealed class ColumnView : Control
     }
 
     /// <summary>
+    /// Screen coordinates of the row at <paramref name="entryIndex"/>, for anchoring a context menu
+    /// raised from the keyboard. <c>null</c> when the row is not realized - it has been scrolled out
+    /// of view, or the list has not been measured yet.
+    /// </summary>
+    internal Rect? TryGetRowScreenRect(int entryIndex)
+    {
+        if (List?.ItemContainerGenerator.ContainerFromIndex(entryIndex) is not ListBoxItem item
+            || !item.IsVisible)
+        {
+            return null;
+        }
+
+        var topLeft = item.PointToScreen(new Point(0, 0));
+        var bottomRight = item.PointToScreen(new Point(item.ActualWidth, item.ActualHeight));
+        return new Rect(topLeft, bottomRight);
+    }
+
+    /// <summary>
     /// Estimates how many rows currently fit in the list's viewport, for the
     /// PageUp/PageDown hint in <see cref="CursorMoveRequestedEventArgs"/>. Returns 0 when
     /// it cannot be determined (no items realized yet, or the viewport has not been measured).
