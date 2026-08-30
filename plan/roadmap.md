@@ -2,7 +2,7 @@
 
 **作成**: 2026-07-20
 **現状**: Phase 0〜5 完了(main = `b561d45`)。Phase 6 は `phase6a-location-foundation` ブランチで進行中 —
-28 コミット / 584 テスト green / **main 未マージ**。進捗の詳細は Phase 6 計画の Status 表と Records を見ること
+30 コミット / 587 テスト green / **main 未マージ**。進捗の詳細は Phase 6 計画の Status 表と Records を見ること
 **コンセプト**: zurari(TUI版, 別名 zrr)の multi-column UX を Windows GUI へ。
 アーキテクチャは rwf(Rust版)の純粋 Transition パターンの C# 移植。
 

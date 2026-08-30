@@ -18,8 +18,8 @@ Phase 6 was sixteen loose checkboxes. Grilling turned it into decisions, and fou
 
 # Status
 
-Branch `phase6a-location-foundation`, 28 commits, **nothing merged to main** (see R-1).
-584 tests, `scripts/check.ps1` green.
+Branch `phase6a-location-foundation`, 30 commits, **nothing merged to main** (see R-1).
+587 tests, `scripts/check.ps1` green.
 
 | | Item | Status | Commit |
 |---|---|---|---|
@@ -120,6 +120,25 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   not throw" and "empty implies empty" — all satisfied by `Enumerate()` returning `[]` from its
   catch block. A throwaway probe established the truth: 373 items in the bin, 373 returned,
   agreeing with `SHQueryRecycleBin`. The tests now assert both directions of that agreement.
+
+- **6d-11** `[x]` **Nothing was ever restored, because closing the window erased it.** Reported as
+  "it doesn't restore on startup. favorites neither". Confirmed from the user's own
+  `%APPDATA%\zurari\settings.json`: `"PinnedPaths": null`, in a session where a folder had definitely
+  been pinned.
+
+  `MainWindow`'s `Closed` handler saved `new UserSettings(PreviewWidth: …)` - a **fresh** record. The
+  store writes the file wholesale, so every close threw away every pinned place and collapsed
+  section, keeping only the pane width. The save half of persistence had tests; the restore half was
+  only ever asserted as "the value reached the file", which is where the missing half hid.
+
+  Three changes: `UserSettingsStore.Update(change)` does read-modify-write and is what every caller
+  now uses; `Save` is **internal**, so no caller outside the store can erase the file by holding one
+  value; and an end-to-end test runs three sessions over one settings directory - pin, restart,
+  collapse, restart - asserting the pinned row and the collapsed section are both there on the way
+  back. Nothing short of that test would have caught this.
+
+  **The user's own pins are gone and have to be re-added** - the file recorded `null`, so there is
+  nothing to recover.
 
 - **6d-10** `[x]` **The bin's icon was a folder with a badge on it - `SIID_RECYCLER` is 31, not 32.**
   Reported as "ゴミ箱のアイコンは考えなおしてください". The stock-icon set is addressed by bare integers,

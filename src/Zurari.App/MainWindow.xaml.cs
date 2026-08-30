@@ -133,7 +133,9 @@ public sealed partial class MainWindow : Window, IDisposable
 
         Closed += (_, _) =>
         {
-            settingsStore.Save(new UserSettings(PreviewWidth: PreviewColumn.ActualWidth));
+            // Update, not Save: a bare Save writes the whole file, so saving just the width threw
+            // away every pinned place and collapsed section on the way out of the app.
+            settingsStore.Update(s => s with { PreviewWidth = PreviewColumn.ActualWidth });
             Dispose();
         };
         Loaded += (_, _) => Browser.Focus();

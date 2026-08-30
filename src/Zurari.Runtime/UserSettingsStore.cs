@@ -90,8 +90,32 @@ public sealed class UserSettingsStore
         }
     }
 
-    /// <summary>Writes <paramref name="settings"/>, replacing whatever was stored. Best effort.</summary>
-    public void Save(UserSettings settings)
+    /// <summary>
+    /// Changes one preference and writes the result, leaving every other stored value alone.
+    /// </summary>
+    /// <remarks>
+    /// The way to save a single preference. <see cref="Save"/> replaces the whole file, so a caller
+    /// holding only the value it cares about silently erases the rest - which is exactly what
+    /// happened: closing the window saved the preview width as a fresh record, and every pinned
+    /// place and collapsed section the user had disappeared with it. Read-modify-write here means
+    /// the caller cannot forget the fields it does not know about.
+    /// </remarks>
+    public void Update(Func<UserSettings, UserSettings> change)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+        Save(change(Load()));
+    }
+
+    /// <summary>
+    /// Writes <paramref name="settings"/>, replacing whatever was stored. Best effort.
+    /// </summary>
+    /// <remarks>
+    /// Internal, so that <see cref="Update"/> is the only way to write a preference from anywhere
+    /// else. This replaces the file wholesale: a caller holding one value erases every other, which
+    /// is not a mistake worth leaving available - it is the one that lost every pinned place and
+    /// collapsed section each time the window closed.
+    /// </remarks>
+    internal void Save(UserSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
         if (SettingsPath is not { } path)

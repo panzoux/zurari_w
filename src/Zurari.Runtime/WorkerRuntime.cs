@@ -224,7 +224,7 @@ public sealed class WorkerRuntime : IDisposable
                 CancelInFlightPreview(cancelPreview.Generation);
                 break;
             case Effect.SetCollapsedGroups setCollapsedGroups:
-                _settings.Save(_settings.Load() with { CollapsedGroups = [.. setCollapsedGroups.Groups] });
+                _settings.Update(s => s with { CollapsedGroups = [.. setCollapsedGroups.Groups] });
                 break;
             case Effect.SetPinned setPinned:
                 ExecuteSetPinned(setPinned);
@@ -463,7 +463,7 @@ public sealed class WorkerRuntime : IDisposable
             pinned.RemoveAt(index);
         }
 
-        _settings.Save(settings with { PinnedPaths = [.. pinned] });
+        _settings.Update(s => s with { PinnedPaths = [.. pinned] });
         _post(new Msg.PlacesChanged());
     }
 

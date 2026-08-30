@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.IO;
+using System.Linq;
 using Zurari.App;
 using Zurari.Core;
 using Zurari.Runtime;
@@ -144,4 +145,111 @@ public class DrivePaneE2ETests
             Directory.Delete(dir, recursive: true);
         }
     }
+
+    /// <summary>
+    /// A restart, twice over: pin a folder and collapse a section in one session, then start a fresh
+    /// runtime and loop over the same settings and check both came back.
+    /// </summary>
+    /// <remarks>
+    /// Persistence had been asserted only as "the value reached the file". That is half the claim,
+    /// and the missing half is where it broke - closing the window wrote the preview width as a
+    /// fresh record and erased everything else, so nothing ever came back.
+    /// </remarks>
+    [StaFact]
+    public void What_was_pinned_and_collapsed_comes_back_on_the_next_launch()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "zurari-restart-" + Guid.NewGuid().ToString("N"));
+        var target = Path.Combine(dir, "panzoux");
+        Directory.CreateDirectory(target);
+        var settingsDir = Path.Combine(dir, "cfg");
+        try
+        {
+            var store = new Zurari.Runtime.UserSettingsStore(settingsDir);
+
+            // --- first session ---
+            {
+                var queue = new ConcurrentQueue<Msg>();
+                using var runtime = new WorkerRuntime(queue.Enqueue, settings: store);
+                var loop = NewLoop(runtime, new Location.RealDirectory(dir));
+
+                loop.Dispatch(new Msg.Refresh());
+                DrainUntil(loop, queue, () => loop.State.Columns[0].Load == LoadState.Loaded, TimeSpan.FromSeconds(10));
+
+                loop.Dispatch(new Msg.PinEntryAtCursor(0));
+                DrainUntil(loop, queue, () => store.Load().PinnedPaths?.Count > 0, TimeSpan.FromSeconds(10));
+            }
+
+            // Closing the window. Saving one preference must not erase the others.
+            store.Update(s => s with { PreviewWidth = 280 });
+
+            // --- second session: a cold start against the same settings ---
+            {
+                var queue = new ConcurrentQueue<Msg>();
+                using var runtime = new WorkerRuntime(queue.Enqueue, settings: new Zurari.Runtime.UserSettingsStore(settingsDir));
+                var loop = NewLoop(runtime, Location.Drives.Instance);
+
+                loop.Dispatch(new Msg.Refresh());
+                DrainUntil(
+                    loop,
+                    queue,
+                    () => loop.State.Columns[0].Load == LoadState.Loaded
+                        && loop.State.Columns[0].Entries.Any(e => e.Name == target),
+                    TimeSpan.FromSeconds(10));
+
+                var pinned = loop.State.Columns[0].Entries.Single(e => e.Name == target);
+                Assert.True(pinned.IsRemovable);
+                Assert.Equal("panzoux", pinned.Label);
+
+                // Collapse ドライブ specifically, not just the first header - the pinned row lives
+                // under お気に入り, and collapsing that would hide the very thing session three checks.
+                var header = loop.State.Columns[0].Entries.ToList()
+                    .FindIndex(e => e.Kind == EntryKind.Header && e.Group == EntryGroups.Drives);
+                loop.Dispatch(new Msg.ToggleSection(0, header));
+                DrainUntil(loop, queue, () => store.Load().CollapsedGroups?.Count > 0, TimeSpan.FromSeconds(10));
+                Assert.Equal([EntryGroups.Drives], store.Load().CollapsedGroups);
+            }
+
+            store.Update(s => s with { PreviewWidth = 300 });
+
+            // --- third session: the collapse has to come back too ---
+            {
+                var queue = new ConcurrentQueue<Msg>();
+                using var runtime = new WorkerRuntime(queue.Enqueue, settings: new Zurari.Runtime.UserSettingsStore(settingsDir));
+                var loop = NewLoop(runtime, Location.Drives.Instance);
+
+                loop.Dispatch(new Msg.Refresh());
+                DrainUntil(
+                    loop,
+                    queue,
+                    () => !loop.State.Columns[0].CollapsedGroups.IsEmpty,
+                    TimeSpan.FromSeconds(10));
+
+                var column = loop.State.Columns[0];
+                Assert.Equal([EntryGroups.Drives], column.CollapsedGroups);
+                Assert.DoesNotContain(column.Entries, e => e.Kind == EntryKind.Drive);
+                Assert.Contains(column.AllEntries, e => e.Kind == EntryKind.Drive);
+
+                // The pin is in a section that was left open, so it is on screen.
+                Assert.Contains(column.Entries, e => e.Name == target);
+            }
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>A loop wired exactly as <c>MainWindow</c> wires it - routing included.</summary>
+    private static MessageLoop NewLoop(WorkerRuntime runtime, Location start) =>
+        new(
+            initial: new AppState
+            {
+                Columns = [new Column(start, Entries: [])],
+                FocusedColumn = 0,
+            },
+            runEffect: e =>
+            {
+                Assert.Equal(EffectTarget.Runtime, EffectRouting.For(e));
+                runtime.Submit(e);
+            });
 }

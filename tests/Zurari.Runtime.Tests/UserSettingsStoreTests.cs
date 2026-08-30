@@ -29,6 +29,53 @@ public class UserSettingsStoreTests
         }
     }
 
+    /// <summary>
+    /// The bug this exists for: closing the window saved the preview width as a fresh record, so
+    /// every pinned place and collapsed section was erased on the way out. Nothing caught it because
+    /// no test ever wrote two preferences from two different callers.
+    /// </summary>
+    [Fact]
+    public void Updating_one_preference_leaves_the_others_alone()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var store = new UserSettingsStore(Path.Combine(dir, "settings"));
+            store.Save(new UserSettings(PinnedPaths: [@"C:\work"], CollapsedGroups: ["drives"]));
+
+            store.Update(s => s with { PreviewWidth = 321.5 });
+
+            var reloaded = new UserSettingsStore(Path.Combine(dir, "settings")).Load();
+            Assert.Equal(321.5, reloaded.PreviewWidth);
+            Assert.Equal([@"C:\work"], reloaded.PinnedPaths);
+            Assert.Equal(["drives"], reloaded.CollapsedGroups);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Updating_before_anything_was_saved_starts_from_defaults()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var store = new UserSettingsStore(Path.Combine(dir, "settings"));
+
+            store.Update(s => s with { PreviewWidth = 200 });
+
+            var reloaded = new UserSettingsStore(Path.Combine(dir, "settings")).Load();
+            Assert.Equal(200, reloaded.PreviewWidth);
+            Assert.Null(reloaded.PinnedPaths);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     [Fact]
     public void Load_returns_defaults_when_nothing_was_ever_saved()
     {
