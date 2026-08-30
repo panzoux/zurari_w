@@ -37,7 +37,7 @@ Branch `phase6a-location-foundation`, 26 commits, **nothing merged to main** (se
 | 6d.3 | Favorites section (`SHGetKnownFolderPath`; labels qualified on collision) | `[x]` | `2ae7810` |
 | 6d.4 | Pinned places (Ctrl+D pins, Delete unpins), persisted | `[x]` | `f76b684` |
 | 6d.5 | Trash as its own group, enumerable via the shell namespace | `[x]` | `3a1d56c` |
-| 6d.5a | ゴミ箱 usable: its own context menu, readable rows, real drive/bin icons | `[x]` | (this commit) |
+| 6d.5a | ゴミ箱 usable: its own context menu, readable rows, real drive/bin icons | `[x]` | `0faeecd` |
 | 6d.6 | Collapse state persisted | `[ ]` | |
 | 6d.7 | Drive / share capacity preview | `[ ]` | |
 | 6d.8 | ISO mount on activate, eject | `[ ]` | |
