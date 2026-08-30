@@ -1,7 +1,8 @@
 # zurari_w 開発ロードマップ
 
 **作成**: 2026-07-20
-**現状**: Phase 0〜5 完了、main マージ済み(HEAD `b561d45`、全471テスト green)
+**現状**: Phase 0〜5 完了(main = `b561d45`)。Phase 6 は `phase6a-location-foundation` ブランチで進行中 —
+25 コミット / 549 テスト green / **main 未マージ**。進捗の詳細は Phase 6 計画の Status 表と Records を見ること
 **コンセプト**: zurari(TUI版, 別名 zrr)の multi-column UX を Windows GUI へ。
 アーキテクチャは rwf(Rust版)の純粋 Transition パターンの C# 移植。
 
@@ -25,7 +26,7 @@
 | 3 | 実ファイルシステム接続 | `[x]` | [phase3-real-filesystem.md](phase3-real-filesystem.md) | `StateProjection`、composition root、ヘッドレス E2E |
 | 4 | Windows シェル統合 | `[x]` | [phase4-shell-integration.md](phase4-shell-integration.md) | アイコン、ゴミ箱、IContextMenu、Explorer DnD、複数選択 |
 | 5 | 内製ジョブエンジン + プレビュー | `[x]` | [phase5-jobs-and-preview.md](phase5-jobs-and-preview.md) | JobEngine(進捗/キャンセル/競合確認)、Ctrl+C/X/V、プレビュー(メタ/HEX/動画) |
-| 6 | 基本操作の穴埋め + プレビュー刷新 | `[~]` | [phase6-basic-operations.md](phase6-basic-operations.md) | 6a: `Location` 基盤(Phase 8 を前倒し統合、`2b74c1a`) |
+| 6 | 基本操作の穴埋め + プレビュー刷新 | `[~]` | [phase6-basic-operations.md](phase6-basic-operations.md) | 6a `Location` 基盤 / 6b 生リスト+派生ビュー / 6c プレビューのキャンセル+サムネイルキャッシュ / 6d ドライブペイン(セクション・お気に入り・ピン・ゴミ箱) / 6e-bis カーソル移動の高速化。詳細は phase6 計画の Status 表 |
 | 7 | 二画面分割 + 検索・ジャンプ系 | `[ ]` | [phase7-dual-pane-and-search.md](phase7-dual-pane-and-search.md) | — |
 | 8 | 仮想ロケーション基盤 | `[x]` | [phase8-virtual-locations.md](phase8-virtual-locations.md) | **Phase 6a として実施済み**(`2b74c1a`)。`Location` 型、`Entry.Target`、包含不変条件の削除 |
 | 9 | アーカイブ操作 | `[ ]` | [phase9-archives.md](phase9-archives.md) | — |
@@ -95,7 +96,7 @@ zurari_w に未実装のもの。影響度は日常操作への効き方。
 | ファイルを開く(既定アプリ) | Ctrl+Enter | 大 | Phase 6 |
 | 新規フォルダ作成 | Shift+K | 大 | Phase 6 |
 | リネーム | あり | 大 | Phase 6 |
-| **ドライブのプレビュー** | あり | 大 | Phase 6 |
+| **ドライブのプレビュー** | あり | 大 | Phase 6d.7(未着手) |
 | プレビュー on/off トグル | Shift+V | 中 | Phase 6 |
 | カーソルメモリ(ディレクトリ毎に選択位置を記憶) | あり | 中 | Phase 6 |
 | リンク/ジャンクションの判別・リンク先表示・**循環防止** | あり | 中 | Phase 6 |

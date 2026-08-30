@@ -69,4 +69,30 @@ public class RecycleBinFolderTests
 
         Assert.Equal(first, second);
     }
+
+    /// <summary>
+    /// A bin row's name is something the shell can resolve, which is what the context menu needs.
+    /// </summary>
+    /// <remarks>
+    /// The original path cannot serve: it stopped existing when the item was deleted, so
+    /// SHParseDisplayName fails on it and ShellContextMenu.Show bails before drawing anything. That
+    /// is exactly why right-clicking a deleted item did nothing. The parsing name resolves, so the
+    /// menu - including Restore - can be built from it.
+    /// </remarks>
+    [Fact]
+    public void A_parsing_name_resolves_where_the_original_path_no_longer_can()
+    {
+        var items = RecycleBinFolder.EnumerateParsingNames();
+        if (items.Count == 0)
+        {
+            return; // nothing deleted on this machine; nothing to resolve.
+        }
+
+        var item = items[0];
+
+        Assert.True(ShellContextMenuTestAccess.CanResolve(item.Parsing), "the parsing name must resolve");
+        Assert.False(
+            ShellContextMenuTestAccess.CanResolve(item.Original),
+            "the original path must NOT resolve - if it did, this whole indirection would be pointless");
+    }
 }

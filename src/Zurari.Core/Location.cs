@@ -120,14 +120,19 @@ public abstract record Location
 
         /// <inheritdoc />
         /// <remarks>
-        /// Unreachable in practice: deleted items are reported as files, and Core refuses to open a
-        /// file into a column. Returning this location rather than inventing one keeps that true if
-        /// the guard is ever loosened - a stray descent lands where it started instead of building
-        /// a chain of imaginary folders.
+        /// A deleted folder can be opened and browsed. Its rows name it by the shell's parsing name,
+        /// which turns out to be a real path into the per-SID bin, so the folder underneath is an
+        /// ordinary directory from there on.
         /// </remarks>
-        public override Location Child(string entryName) => this;
+        public override Location Child(string entryName) => new RealDirectory(entryName);
 
         /// <inheritdoc />
-        public override string? ChildPath(string entryName) => null;
+        /// <remarks>
+        /// The item's own path, not the one it was deleted from. A row here is named by the shell's
+        /// parsing name - <c>C:\$Recycle.Bin\S-1-5-…\$R…</c> - which is what every shell operation
+        /// on the item needs, and what the original path can no longer provide, having stopped
+        /// existing the moment it was deleted.
+        /// </remarks>
+        public override string ChildPath(string entryName) => entryName;
     }
 }

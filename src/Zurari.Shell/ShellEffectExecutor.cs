@@ -124,46 +124,37 @@ public sealed class ShellEffectExecutor : IDisposable
     }
 
     /// <summary>
-    /// Moves every path in <see cref="Effect.DeleteToRecycleBin.Targets"/> to the recycle bin as a
-    /// single batch: one <c>IShellItem</c> plus <c>DeleteItem</c> call per target, then one
-    /// <c>PerformOperations</c>. If any target fails to parse (or any <c>DeleteItem</c> call
-    /// fails), the whole batch is reported failed with that target's message - none of the queued
-    /// deletes have been performed yet at that point, since <c>PerformOperations</c> has not run.
-    /// <see cref="Effect.DeleteToRecycleBin.Permanent"/> (Shift+Delete) omits
-    /// <see cref="FileOperationInterop.FOF_ALLOWUNDO"/>, which is what routes the delete through the
-    /// recycle bin in the first place - without it, <c>IFileOperation</c> deletes outright.
-    /// </summary>
-    /// <summary>
     /// Lists the recycle bin. The one listing that does not come from the filesystem, which is why
     /// it is served here rather than by the Runtime.
     /// </summary>
     /// <remarks>
-    /// Items are reported as files even when what was deleted was a folder: nothing in the bin can
-    /// be opened in place, and reporting them as directories would invite Core to try. Restoring is
-    /// the way in, and that is not built yet.
+    /// A deleted folder is reported as a directory and can be browsed, since the parsing name is a
+    /// real path. Restoring is still the way to get something back; that is the shell context menu's
+    /// job, which now works here because the row carries a name the shell can resolve.
     /// </remarks>
     private void ExecuteReadRecycleBin(Effect.ReadDirectory effect)
     {
         try
         {
-            // The shell's display name for a deleted item is its full original path. That is the
-            // useful identity - two files called notes.txt from different folders are different
-            // items - but far too long to read as a row, so the row shows the file name and keeps
-            // the path as its Name. Same split as the drive pane, for the same reason.
-            var originals = RecycleBinFolder.Enumerate();
-            var labels = originals.Select(LastSegment).ToList();
+            // A row is named by the shell's parsing name, which is where the item actually lives now
+            // (C:\$Recycle.Bin\S-1-5-…\$R…). That is what every operation on it needs - the context
+            // menu, and reading it for a preview - because the original path stopped existing when
+            // it was deleted. What a person recognises is the original, so that supplies the label:
+            // the file's name, or the whole original path when two rows would otherwise read alike.
+            var items = RecycleBinFolder.EnumerateParsingNames();
+            var labels = items.Select(i => LastSegment(i.Original)).ToList();
             var duplicated = labels
                 .GroupBy(l => l, StringComparer.Ordinal)
                 .Where(g => g.Count() > 1)
                 .Select(g => g.Key)
                 .ToHashSet(StringComparer.Ordinal);
 
-            var entries = originals
-                .Select((original, i) => new Entry(
-                    original,
-                    EntryKind.File,
+            var entries = items
+                .Select((item, i) => new Entry(
+                    item.Parsing,
+                    item.IsFolder ? EntryKind.Directory : EntryKind.File,
                     SizeBytes: -1,
-                    DisplayName: duplicated.Contains(labels[i]) ? original : labels[i]))
+                    DisplayName: duplicated.Contains(labels[i]) ? item.Original : labels[i]))
                 .ToImmutableArray();
             post(new Msg.DirectoryLoaded(effect.ColumnIndex, effect.Location, entries));
         }
@@ -181,6 +172,16 @@ public sealed class ShellEffectExecutor : IDisposable
         return separator < 0 || separator == trimmed.Length - 1 ? trimmed : trimmed[(separator + 1)..];
     }
 
+    /// <summary>
+    /// Moves every path in <see cref="Effect.DeleteToRecycleBin.Targets"/> to the recycle bin as a
+    /// single batch: one <c>IShellItem</c> plus <c>DeleteItem</c> call per target, then one
+    /// <c>PerformOperations</c>. If any target fails to parse (or any <c>DeleteItem</c> call
+    /// fails), the whole batch is reported failed with that target's message - none of the queued
+    /// deletes have been performed yet at that point, since <c>PerformOperations</c> has not run.
+    /// <see cref="Effect.DeleteToRecycleBin.Permanent"/> (Shift+Delete) omits
+    /// <see cref="FileOperationInterop.FOF_ALLOWUNDO"/>, which is what routes the delete through the
+    /// recycle bin in the first place - without it, <c>IFileOperation</c> deletes outright.
+    /// </summary>
     private void ExecuteDeleteToRecycleBin(Effect.DeleteToRecycleBin effect)
     {
         object? fileOperation = null;

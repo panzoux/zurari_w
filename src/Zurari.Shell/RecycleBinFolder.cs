@@ -30,6 +30,12 @@ public static class RecycleBinFolder
     /// <summary>SIGDN_NORMALDISPLAY - the name as Explorer shows it.</summary>
     private const uint SigdnNormalDisplay = 0;
 
+    /// <summary>SFGAO_FOLDER - whether the item is a container.</summary>
+    private const uint SfgaoFolder = 0x20000000;
+
+    /// <summary>SIGDN_DESKTOPABSOLUTEPARSING - a name the shell can resolve back to the item.</summary>
+    private const uint SigdnDesktopAbsoluteParsing = 0x80028000;
+
     /// <summary>
     /// Item count and total size. Cheap - the shell keeps these, so nothing is enumerated.
     /// </summary>
@@ -56,7 +62,11 @@ public static class RecycleBinFolder
     /// <c>IShellItem2</c> property keys, which is a second slab of interop; a listing you can look
     /// at is worth more than nothing while that is outstanding.
     /// </remarks>
-    public static IReadOnlyList<string> Enumerate()
+    public static IReadOnlyList<RecycleBinItem> EnumerateParsingNames() => Read();
+
+    public static IReadOnlyList<string> Enumerate() => [.. Read().Select(i => i.Original)];
+
+    private static List<RecycleBinItem> Read()
     {
         IEnumShellItems? enumerator = null;
         var handle = IntPtr.Zero;
@@ -76,7 +86,7 @@ public static class RecycleBinFolder
             }
 
             enumerator = (IEnumShellItems)Marshal.GetObjectForIUnknown(handle);
-            return ReadNames(enumerator);
+            return ReadItems(enumerator);
         }
         catch (Exception ex) when (ex is COMException or InvalidCastException or DllNotFoundException)
         {
@@ -98,37 +108,57 @@ public static class RecycleBinFolder
         }
     }
 
-    private static List<string> ReadNames(IEnumShellItems enumerator)
+    private static List<RecycleBinItem> ReadItems(IEnumShellItems enumerator)
     {
-        var names = new List<string>();
+        var items = new List<RecycleBinItem>();
         while (enumerator.Next(1, out var item, out var fetched) == 0 && fetched == 1 && item is not null)
         {
-            var namePtr = IntPtr.Zero;
             try
             {
-                if (item.GetDisplayName(SigdnNormalDisplay, out namePtr) == 0 && namePtr != IntPtr.Zero)
+                var original = DisplayName(item, SigdnNormalDisplay);
+                var parsing = DisplayName(item, SigdnDesktopAbsoluteParsing);
+                if (!string.IsNullOrEmpty(original) && !string.IsNullOrEmpty(parsing))
                 {
-                    var name = Marshal.PtrToStringUni(namePtr);
-                    if (!string.IsNullOrEmpty(name))
-                    {
-                        names.Add(name);
-                    }
+                    _ = item.GetAttributes(SfgaoFolder, out var attributes);
+                    items.Add(new RecycleBinItem(parsing, original, (attributes & SfgaoFolder) != 0));
                 }
             }
             finally
             {
-                if (namePtr != IntPtr.Zero)
-                {
-                    ShellContextMenuInterop.CoTaskMemFree(namePtr);
-                }
-
                 Marshal.ReleaseComObject(item);
             }
         }
 
-        return names;
+        return items;
+    }
+
+    private static string? DisplayName(FileOperationInterop.IShellItem item, uint kind)
+    {
+        var ptr = IntPtr.Zero;
+        try
+        {
+            return item.GetDisplayName(kind, out ptr) == 0 && ptr != IntPtr.Zero
+                ? Marshal.PtrToStringUni(ptr)
+                : null;
+        }
+        finally
+        {
+            if (ptr != IntPtr.Zero)
+            {
+                ShellContextMenuInterop.CoTaskMemFree(ptr);
+            }
+        }
     }
 }
+
+/// <summary>One item in the recycle bin, under both the names the shell has for it.</summary>
+/// <param name="Parsing">
+/// A name the shell can resolve back to this item (<c>SIGDN_DESKTOPABSOLUTEPARSING</c>). What any
+/// operation on it has to be given - the original path is gone, so it resolves to nothing.
+/// </param>
+/// <param name="Original">Where the item used to live, which is what a person recognises it by.</param>
+/// <param name="IsFolder">Whether a folder was deleted rather than a file.</param>
+public readonly record struct RecycleBinItem(string Parsing, string Original, bool IsFolder);
 
 /// <summary>Enumerator over a shell folder's children, obtained via <c>BHID_EnumItems</c>.</summary>
 [ComImport]
