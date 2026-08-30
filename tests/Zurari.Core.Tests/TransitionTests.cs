@@ -2239,6 +2239,52 @@ public class TransitionTests
     }
 
     [Fact]
+    public void Ctrl_B_adds_the_folder_under_the_cursor_without_entering_it()
+    {
+        var column = new Column(
+            new Location.RealDirectory(@"C:\work"), [Dir, File1], Cursor: 0, Load: LoadState.Loaded);
+
+        var (_, effects) = Transition.Apply(StateWithColumns(column), new Msg.PinEntryAtCursor(0));
+
+        var add = Assert.IsType<Effect.SetPinned>(Assert.Single(effects));
+
+        // The folder pointed at, resolved against the column it sits in - not the column itself.
+        Assert.Equal(@"C:\work\sub", add.Path);
+        Assert.True(add.Pin);
+    }
+
+    [Fact]
+    public void Ctrl_B_on_a_file_adds_nothing()
+    {
+        // A file is not a place. Only a row you could open is.
+        var column = new Column(
+            new Location.RealDirectory(@"C:\work"), [Dir, File1], Cursor: 1, Load: LoadState.Loaded);
+
+        var (_, effects) = Transition.Apply(StateWithColumns(column), new Msg.PinEntryAtCursor(0));
+
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void Ctrl_B_on_a_header_adds_nothing()
+    {
+        var (_, effects) = Transition.Apply(
+            StateWithColumns(DrivePaneColumn(cursor: 0)), new Msg.PinEntryAtCursor(0));
+
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void Ctrl_B_on_a_drive_row_adds_that_drive()
+    {
+        var (_, effects) = Transition.Apply(
+            StateWithColumns(DrivePaneColumn(cursor: 1)), new Msg.PinEntryAtCursor(0));
+
+        var add = Assert.IsType<Effect.SetPinned>(Assert.Single(effects));
+        Assert.Equal(@"C:\", add.Path);
+    }
+
+    [Fact]
     public void The_drive_pane_cannot_pin_itself()
     {
         // It has no filesystem path, so there is nothing to pin.
@@ -2472,6 +2518,7 @@ public class TransitionProperties
         Gen.Select(GenJobId, GenConflictDecision).Select(t => (Msg)new Msg.JobConflictResolved(t.Item1, t.Item2)),
         GenPath.Select(p => (Msg)new Msg.ExternalDirectoryChanged(p)),
         GenColumnIndex.Select(i => (Msg)new Msg.PinFocusedLocation(i)),
+        GenColumnIndex.Select(i => (Msg)new Msg.PinEntryAtCursor(i)),
         Gen.Select(GenColumnIndex, GenEntryIndex).Select(t => (Msg)new Msg.ToggleSection(t.Item1, t.Item2)),
         Gen.Const<Msg>(new Msg.PlacesChanged()));
 

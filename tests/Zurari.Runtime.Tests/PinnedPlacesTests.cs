@@ -197,4 +197,38 @@ public class PinnedPlacesTests
             Directory.Delete(dir, recursive: true);
         }
     }
+
+    [Fact]
+    public void Adding_a_folder_a_known_one_already_shows_does_not_duplicate_it()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var known = Path.Combine(dir, "downloads");
+            Directory.CreateDirectory(known);
+            var store = new UserSettingsStore(Path.Combine(dir, "cfg"));
+
+            // Standing on Downloads and pressing Ctrl+B is an easy thing to do.
+            store.Save(new UserSettings(PinnedPaths: [known]));
+
+            var queue = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(
+                queue.Enqueue,
+                settings: store,
+                places: () => [new RootPlace(known, "ダウンロード")]);
+
+            var rows = ReadRoot(runtime, queue)
+                .Where(e => e.Kind != EntryKind.Header && e.Group == EntryGroups.Favorites)
+                .ToList();
+
+            // One row, and it is the permanent one - not a second, removable copy beside it.
+            Assert.Single(rows);
+            Assert.Equal("ダウンロード", rows[0].Label);
+            Assert.False(rows[0].IsRemovable);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }

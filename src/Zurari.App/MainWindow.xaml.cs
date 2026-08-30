@@ -505,6 +505,13 @@ public sealed partial class MainWindow : Window, IDisposable
             Dispatch(new Msg.ToggleMarkAtCursor(loop.State.FocusedColumn));
             e.Handled = true;
         }
+        else if (e.Key == Key.B && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            // Ctrl+B adds the folder the cursor is pointing at, without having to enter it. The
+            // gesture that matters once several columns are open and the drive pane is off-screen.
+            Dispatch(new Msg.PinEntryAtCursor(loop.State.FocusedColumn));
+            e.Handled = true;
+        }
         else if (e.Key == Key.D && Keyboard.Modifiers == ModifierKeys.Control)
         {
             // Ctrl+D pins the location this column is showing into the drive pane, the way a browser

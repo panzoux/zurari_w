@@ -448,9 +448,14 @@ public sealed class WorkerRuntime : IDisposable
     /// </remarks>
     private void ReadAddedPlaces(List<Entry> favorites, List<Entry> pinned)
     {
+        // Whatever the known folders already cover. Adding Downloads by hand is an easy thing to do
+        // and would otherwise put a second, removable row beside the one that is always there.
+        var alreadyShown = new HashSet<string>(
+            favorites.Select(f => f.Name), StringComparer.OrdinalIgnoreCase);
+
         foreach (var path in _settings.Load().PinnedPaths ?? [])
         {
-            if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+            if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path) || !alreadyShown.Add(path))
             {
                 continue;
             }

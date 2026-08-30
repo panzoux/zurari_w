@@ -65,6 +65,7 @@ public static class Transition
             Msg.JobConflictResolved m => JobConflictResolved(state, m.JobId, m.Decision),
             Msg.ExternalDirectoryChanged m => ExternalDirectoryChanged(state, m.Path),
             Msg.PinFocusedLocation m => PinFocusedLocation(state, m.ColumnIndex),
+            Msg.PinEntryAtCursor m => PinEntryAtCursor(state, m.ColumnIndex),
             Msg.PlacesChanged => ReloadDrivePanes(state),
             Msg.ToggleSection m => (ToggleSection(state, m.ColumnIndex, m.EntryIndex), NoEffects),
             _ => (state, NoEffects),
@@ -343,6 +344,33 @@ public static class Transition
     {
         if (!InRange(state, columnIndex) ||
             state.Columns[columnIndex].Location.FilesystemPath is not { } path)
+        {
+            return (state, NoEffects);
+        }
+
+        return (state, [new Effect.SetPinned(path, Pin: true)]);
+    }
+
+    /// <summary>
+    /// Adds the folder under the cursor to the drive pane. Only a row you could open is a place -
+    /// a file is not, and neither is a header.
+    /// </summary>
+    private static (AppState, IReadOnlyList<Effect>) PinEntryAtCursor(AppState state, int columnIndex)
+    {
+        if (!InRange(state, columnIndex))
+        {
+            return (state, NoEffects);
+        }
+
+        var column = state.Columns[columnIndex];
+        if (column.Cursor < 0 || column.Cursor >= column.Entries.Length)
+        {
+            return (state, NoEffects);
+        }
+
+        var entry = column.Entries[column.Cursor];
+        if (entry.Kind is not (EntryKind.Directory or EntryKind.Drive) ||
+            EntryPath(column, entry) is not { } path)
         {
             return (state, NoEffects);
         }

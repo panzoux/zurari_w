@@ -298,6 +298,18 @@ public abstract record Msg
     public sealed record PinFocusedLocation(int ColumnIndex) : Msg;
 
     /// <summary>
+    /// Add the folder under <paramref name="ColumnIndex"/>'s cursor to the drive pane, without
+    /// having to go into it first. Ignored unless the cursor is on something you can open.
+    /// </summary>
+    /// <remarks>
+    /// The gesture that matters in practice. Reaching the drive pane by dragging is not an option
+    /// once a few columns are open - it is off-screen to the left, and there is no drag-scroll -
+    /// so adding a place has to work from the keyboard, pointing at a folder rather than standing
+    /// in it.
+    /// </remarks>
+    public sealed record PinEntryAtCursor(int ColumnIndex) : Msg;
+
+    /// <summary>
     /// The pinned places changed, so any column showing the drive pane is stale. Re-reads every
     /// <see cref="Zurari.Core.Location.Drives"/> column; no such column is a no-op.
     /// </summary>
