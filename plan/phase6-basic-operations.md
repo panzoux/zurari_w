@@ -18,8 +18,8 @@ Phase 6 was sixteen loose checkboxes. Grilling turned it into decisions, and fou
 
 # Status
 
-Branch `phase6a-location-foundation`, 30 commits, **nothing merged to main** (see R-1).
-587 tests, `scripts/check.ps1` green.
+Branch `phase6a-location-foundation`, 31 commits, **nothing merged to main** (see R-1).
+604 tests, `scripts/check.ps1` green.
 
 | | Item | Status | Commit |
 |---|---|---|---|
@@ -39,7 +39,7 @@ Branch `phase6a-location-foundation`, 30 commits, **nothing merged to main** (se
 | 6d.5 | Trash as its own group, enumerable via the shell namespace | `[x]` | `3a1d56c` |
 | 6d.5a | ゴミ箱 usable: its own context menu, readable rows, real drive/bin icons | `[x]` | `0faeecd` |
 | 6d.6 | Collapse state persisted | `[x]` | `7923fb9` |
-| 6d.7 | Drive / share capacity preview | `[ ]` | |
+| 6d.7 | Drive / share capacity preview | `[x]` | (this commit) |
 | 6d.8 | ISO mount on activate, eject | `[ ]` | |
 | 6d.9 | Live refresh (`SHChangeNotifyRegister`) | `[ ]` | |
 | **6e** | **Sorting, hidden files, cursor memory, rename** | `[ ]` | |
@@ -120,6 +120,23 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   not throw" and "empty implies empty" — all satisfied by `Enumerate()` returning `[]` from its
   catch block. A throwaway probe established the truth: 373 items in the bin, 373 returned,
   agreeing with `SHQueryRecycleBin`. The tests now assert both directions of that agreement.
+
+- **6d-12** `[note]` **The preview effect had to learn what it is previewing.** A drive's `C:\` is
+  also a perfectly good directory path, so nothing in `Effect.LoadPreview(generation, path)` could
+  say whether the question was "read this" or "how full is this". The row knows; the path does not -
+  so the effect now carries a `PreviewTarget` (File / Volume / RecycleBin) decided where the row is,
+  in `Transition`.
+
+  Two consequences worth recording. **A pinned share gets a capacity panel, a folder inside it does
+  not** - `\srv\share` is a volume, `\srv\share\sub` is a folder, and the test pins that
+  distinction down. And **the bin's totals reach the Runtime through the delegate the composition
+  root already supplies for its label**: they come from `SHQueryRecycleBin`, and Runtime may not
+  reference Shell, so `TrashPlace` simply gained the two numbers rather than a new seam being cut.
+
+- **6d-13** `[note]` **One P/Invoke now lives in Zurari.Runtime**, which had none. `DriveInfo` throws
+  on a UNC path, so a share's capacity has no managed route at all; `GetDiskFreeSpaceEx` is what
+  `DriveInfo` calls for a local volume anyway. Kernel32 and filesystem-only - shell interop stays in
+  Zurari.Shell, and the layering tests still pass unchanged.
 
 - **6d-11** `[x]` **Nothing was ever restored, because closing the window erased it.** Reported as
   "it doesn't restore on startup. favorites neither". Confirmed from the user's own

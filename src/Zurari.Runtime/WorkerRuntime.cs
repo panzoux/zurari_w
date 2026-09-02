@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Security;
 using System.Text;
 using System.Threading.Channels;
 using Zurari.Core;
@@ -647,6 +648,21 @@ public sealed class WorkerRuntime : IDisposable
         }
     }
 
+    /// <summary>
+    /// What kind of volume this is, for the capacity preview's type line. Distinct from
+    /// <see cref="DriveKindLabel"/>, which exists to explain a drive that is <em>not</em> ready and
+    /// so has no name for a working fixed disk.
+    /// </summary>
+    private static string DescribeDriveType(DriveType type) => type switch
+    {
+        DriveType.Fixed => "固定ドライブ",
+        DriveType.CDRom => "光学ドライブ",
+        DriveType.Removable => "リムーバブルドライブ",
+        DriveType.Network => "ネットワークドライブ",
+        DriveType.Ram => "RAM ディスク",
+        _ => "ドライブ",
+    };
+
     private static string DriveKindLabel(DriveType type) => type switch
     {
         DriveType.CDRom => "光学ドライブ",
@@ -716,6 +732,97 @@ public sealed class WorkerRuntime : IDisposable
     /// <see cref="Msg.PreviewFailed"/> instead of propagating - a bad preview request must never
     /// take down a worker.
     /// </summary>
+    /// <summary>
+    /// How full a volume is, or how much is in the recycle bin - the preview for a row that is a
+    /// place rather than a file.
+    /// </summary>
+    /// <remarks>
+    /// Runs on the same cancellable slot as a file preview, and for the same reason: a not-ready
+    /// optical drive or a disconnected share can take seconds to answer, and the cursor may well
+    /// have moved on by then.
+    /// </remarks>
+    private void ExecuteLoadCapacity(Effect.LoadPreview effect)
+    {
+        if (effect.Target == PreviewTarget.RecycleBin)
+        {
+            var trash = _trash?.Invoke();
+            _post(trash is null
+                ? new Msg.PreviewFailed(effect.Generation, "ゴミ箱の情報を取得できません")
+                : new Msg.PreviewCapacityLoaded(
+                    effect.Generation,
+                    new PreviewCapacity(
+                        "ゴミ箱",
+                        "ゴミ箱",
+                        UsedBytes: trash.TotalBytes,
+                        TotalBytes: null,
+                        ItemCount: trash.ItemCount)));
+            return;
+        }
+
+        try
+        {
+            var (capacity, unavailable) = ReadVolume(effect.Path);
+            _post(capacity is null
+                ? new Msg.PreviewFailed(effect.Generation, unavailable ?? "利用できません")
+                : new Msg.PreviewCapacityLoaded(effect.Generation, capacity));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+            or ArgumentException or SecurityException)
+        {
+            _post(new Msg.PreviewFailed(effect.Generation, ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// The size and free space of a drive letter or a UNC share, or a reason it cannot say.
+    /// </summary>
+    /// <remarks>
+    /// Two routes because the BCL only covers one of them: <c>DriveInfo</c> throws on a UNC path, so
+    /// a share's numbers have to come from <c>GetDiskFreeSpaceEx</c>, which is what
+    /// <c>DriveInfo</c> itself calls for a local volume. Kernel32 rather than the shell - this is
+    /// filesystem I/O, which is Runtime's job, and the only P/Invoke here for that reason.
+    /// </remarks>
+    private static (PreviewCapacity? Capacity, string? Unavailable) ReadVolume(string path)
+    {
+        if (path.StartsWith(@"\\", StringComparison.Ordinal))
+        {
+            if (!NativeMethods.GetDiskFreeSpaceExW(path, out _, out var shareTotal, out var shareFree))
+            {
+                return (null, "共有に接続できません");
+            }
+
+            return (
+                new PreviewCapacity(
+                    LastSegment(path),
+                    "ネットワーク共有",
+                    UsedBytes: Math.Max(0, shareTotal - shareFree),
+                    TotalBytes: shareTotal),
+                null);
+        }
+
+        var drive = new DriveInfo(path);
+        if (!drive.IsReady)
+        {
+            // An empty optical drive, an unplugged card reader, a disconnected mapped drive. Not an
+            // error to apologise for - the row is deliberately still listed so it can be reached.
+            return (null, "ドライブの準備ができていません");
+        }
+
+        var total = drive.TotalSize;
+        var free = drive.AvailableFreeSpace;
+        var label = string.IsNullOrEmpty(drive.VolumeLabel)
+            ? drive.Name
+            : $"{drive.VolumeLabel} ({drive.Name.TrimEnd('\\', '/')})";
+
+        return (
+            new PreviewCapacity(
+                label,
+                $"{drive.DriveFormat} · {DescribeDriveType(drive.DriveType)}",
+                UsedBytes: Math.Max(0, total - free),
+                TotalBytes: total),
+            null);
+    }
+
     private void ExecuteLoadPreview(Effect.LoadPreview effect, CancellationToken token)
     {
         try
@@ -724,6 +831,12 @@ public sealed class WorkerRuntime : IDisposable
             // token is signalled, so a superseded request wakes immediately and never opens the file.
             if (token.WaitHandle.WaitOne(PreviewSettleDelay))
             {
+                return;
+            }
+
+            if (effect.Target != PreviewTarget.File)
+            {
+                ExecuteLoadCapacity(effect);
                 return;
             }
 

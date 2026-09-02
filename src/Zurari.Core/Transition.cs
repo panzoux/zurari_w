@@ -60,6 +60,7 @@ public static class Transition
             Msg.PreviewLoaded m =>
                 (PreviewLoaded(state, m.Generation, m.Kind, m.Text, m.ImageBytes, m.BinaryLabel, m.Metadata), NoEffects),
             Msg.PreviewFailed m => (PreviewFailed(state, m.Generation, m.Error), NoEffects),
+            Msg.PreviewCapacityLoaded m => (PreviewCapacityLoaded(state, m.Generation, m.Capacity), NoEffects),
             Msg.SetCutPending m => (state with { CutPending = m.Paths }, NoEffects),
             Msg.JobConflictsFound m => (JobConflictsFound(state, m.JobId, m.ConflictCount), NoEffects),
             Msg.JobConflictResolved m => JobConflictResolved(state, m.JobId, m.Decision),
@@ -1125,7 +1126,7 @@ public static class Transition
         AppState oldState, AppState newState, IReadOnlyList<Effect> effects)
     {
         var oldTarget = ResolveCursorFileTarget(oldState).Path;
-        var (newTarget, originalPath) = ResolveCursorFileTarget(newState);
+        var (newTarget, originalPath, targetKind) = ResolveCursorFileTarget(newState);
         if (string.Equals(oldTarget, newTarget, StringComparison.Ordinal))
         {
             return (newState, effects);
@@ -1154,7 +1155,8 @@ public static class Transition
             },
         };
 
-        var withPreviewEffect = Append(effects, abandoned, new Effect.LoadPreview(nextGeneration, newTarget));
+        var withPreviewEffect = Append(
+            effects, abandoned, new Effect.LoadPreview(nextGeneration, newTarget, targetKind));
         return (loading, withPreviewEffect);
     }
 
@@ -1184,27 +1186,67 @@ public static class Transition
     /// the focused column is out of range, empty, its cursor is on a Directory/Drive/Header, or its
     /// cursor is -1.
     /// </summary>
-    private static (string? Path, string? OriginalPath) ResolveCursorFileTarget(AppState state)
+    private static CursorTarget ResolveCursorFileTarget(AppState state)
     {
         if (!InRange(state, state.FocusedColumn))
         {
-            return (null, null);
+            return default;
         }
 
         var column = state.Columns[state.FocusedColumn];
         if (column.Cursor < 0 || column.Cursor >= column.Entries.Length)
         {
-            return (null, null);
+            return default;
         }
 
         var entry = column.Entries[column.Cursor];
-        if (entry.Kind != EntryKind.File)
+
+        if (entry.Target is Location.RecycleBin)
         {
-            return (null, null);
+            // The bin has no path. Its own name identifies it well enough for the one question being
+            // asked of it, which is how much is in it.
+            return new CursorTarget(Location.RecycleBin.ParsingName, null, PreviewTarget.RecycleBin);
         }
 
-        return (EntryPath(column, entry), entry.OriginalPath);
+        if (entry.Kind == EntryKind.Drive)
+        {
+            return new CursorTarget(EntryPath(column, entry), null, PreviewTarget.Volume);
+        }
+
+        var path = EntryPath(column, entry);
+
+        // A pinned share is a directory like any other to open, but "how full is it" is the useful
+        // thing to say about the share itself - the same question a drive row answers.
+        if (entry.Kind == EntryKind.Directory && column.Location is Location.Drives && IsShareRoot(path))
+        {
+            return new CursorTarget(path, null, PreviewTarget.Volume);
+        }
+
+        return entry.Kind == EntryKind.File
+            ? new CursorTarget(path, entry.OriginalPath, PreviewTarget.File)
+            : default;
     }
+
+    /// <summary>
+    /// Whether <paramref name="path"/> is a UNC share root - <c>\\server\share</c> and nothing
+    /// deeper. A folder inside a share is just a folder; the share itself is a volume.
+    /// </summary>
+    private static bool IsShareRoot(string? path)
+    {
+        if (path is null || !path.StartsWith(@"\\", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var segments = path.TrimEnd('\\', '/').Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries);
+        return segments.Length == 2;
+    }
+
+    /// <summary>
+    /// What the cursor is pointing at, for the preview: what to load, how to load it, and - for a
+    /// deleted file - where it came from.
+    /// </summary>
+    private readonly record struct CursorTarget(string? Path, string? OriginalPath, PreviewTarget Kind);
 
     private static AppState PreviewLoaded(
         AppState state,
@@ -1232,6 +1274,27 @@ public static class Transition
                 ImageBytes = imageBytes,
                 Error = null,
                 Metadata = metadata,
+            },
+        };
+    }
+
+    private static AppState PreviewCapacityLoaded(AppState state, int generation, PreviewCapacity capacity)
+    {
+        if (generation != state.Preview.Generation)
+        {
+            return state;
+        }
+
+        return state with
+        {
+            Preview = state.Preview with
+            {
+                Kind = PreviewKind.Capacity,
+                Text = null,
+                ImageBytes = [],
+                Error = null,
+                Metadata = null,
+                Capacity = capacity,
             },
         };
     }

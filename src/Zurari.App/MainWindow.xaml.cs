@@ -184,7 +184,9 @@ public sealed partial class MainWindow : Window, IDisposable
                 ? "ゴミ箱"
                 : string.Create(
                     System.Globalization.CultureInfo.InvariantCulture,
-                    $"ゴミ箱 ({summary.ItemCount})"));
+                    $"ゴミ箱 ({summary.ItemCount})"),
+            summary.ItemCount,
+            summary.TotalBytes);
     }
 
     /// <summary>
@@ -1001,19 +1003,6 @@ public sealed partial class MainWindow : Window, IDisposable
     }
 
     /// <summary>
-    /// Wires <see cref="StateProjection.ProjectPreview"/> onto the preview pane's three
-    /// mutually-exclusive content views (image / text-or-hex / status message), toggling
-    /// visibility by <see cref="PreviewKind"/>, plus the Finder-style metadata block underneath
-    /// (<see cref="PreviewMetadataBlock"/>, shown whenever <c>vm.MetadataText</c> is non-empty -
-    /// independent of <see cref="PreviewKind"/>, since it applies to every kind alike).
-    /// <see cref="PreviewKind.Binary"/> shares the same monospace text box as
-    /// <see cref="PreviewKind.Text"/> - its <c>vm.Text</c> is already the label header plus hex
-    /// dump, composed in the projection. The only decision made here rather than in the projection
-    /// is the <c>ImageBytes</c> -&gt; <c>BitmapImage</c> decode, which is wiring (WPF-specific, not
-    /// a display-formatting choice) - cached by <see cref="lastDecodedImageGeneration"/> so it only
-    /// runs once per distinct preview, not on every unrelated re-render.
-    /// </summary>
-    /// <summary>
     /// Renders the preview header - the folder a deleted file came from, then its name - shortening
     /// each from the middle to fit the pane's current width.
     /// </summary>
@@ -1031,6 +1020,48 @@ public sealed partial class MainWindow : Window, IDisposable
             string.IsNullOrEmpty(previewOriginalDirectory) ? Visibility.Collapsed : Visibility.Visible;
     }
 
+    /// <summary>
+    /// Wires <see cref="StateProjection.ProjectPreview"/> onto the preview pane's four
+    /// mutually-exclusive content views (image / text-or-hex / capacity bar / status message), toggling
+    /// visibility by <see cref="PreviewKind"/>, plus the Finder-style metadata block underneath
+    /// (<see cref="PreviewMetadataBlock"/>, shown whenever <c>vm.MetadataText</c> is non-empty -
+    /// independent of <see cref="PreviewKind"/>, since it applies to every kind alike).
+    /// <see cref="PreviewKind.Binary"/> shares the same monospace text box as
+    /// <see cref="PreviewKind.Text"/> - its <c>vm.Text</c> is already the label header plus hex
+    /// dump, composed in the projection. The only decision made here rather than in the projection
+    /// is the <c>ImageBytes</c> -&gt; <c>BitmapImage</c> decode, which is wiring (WPF-specific, not
+    /// a display-formatting choice) - cached by <see cref="lastDecodedImageGeneration"/> so it only
+    /// runs once per distinct preview, not on every unrelated re-render.
+    /// </summary>
+    /// <summary>
+    /// Draws how full a volume is: a summary line, a bar, and what is left.
+    /// </summary>
+    /// <remarks>
+    /// The bar is two star-sized grid columns rather than a width computed here, so it follows the
+    /// splitter without this method being told about it. The recycle bin has a size but no capacity,
+    /// so it gets the figures and no bar - a bar with nothing to be full of would be a lie.
+    /// </remarks>
+    private void RenderCapacity(StateProjection.CapacityVm capacity)
+    {
+        PreviewCapacitySummary.Text = capacity.Summary;
+
+        if (capacity.UsedFraction is { } fraction)
+        {
+            PreviewCapacityUsed.Width = new GridLength(fraction, GridUnitType.Star);
+            PreviewCapacityFree.Width = new GridLength(1 - fraction, GridUnitType.Star);
+            PreviewCapacityBar.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            PreviewCapacityBar.Visibility = Visibility.Collapsed;
+        }
+
+        PreviewCapacityFreeText.Text = capacity.Free is { } free ? $"空き {free}" : string.Empty;
+        PreviewCapacityFreeText.Visibility =
+            capacity.Free is null ? Visibility.Collapsed : Visibility.Visible;
+        PreviewCapacityPanel.Visibility = Visibility.Visible;
+    }
+
     private void RenderPreview(AppState state)
     {
         var vm = StateProjection.ProjectPreview(state);
@@ -1045,6 +1076,7 @@ public sealed partial class MainWindow : Window, IDisposable
         PreviewImage.Visibility = Visibility.Collapsed;
         PreviewTextBox.Visibility = Visibility.Collapsed;
         PreviewMeta.Visibility = Visibility.Collapsed;
+        PreviewCapacityPanel.Visibility = Visibility.Collapsed;
 
         switch (vm.Kind)
         {
@@ -1065,6 +1097,10 @@ public sealed partial class MainWindow : Window, IDisposable
                 // special-casing to show it.
                 PreviewTextBox.Text = vm.Text ?? string.Empty;
                 PreviewTextBox.Visibility = Visibility.Visible;
+                break;
+
+            case PreviewKind.Capacity when vm.Capacity is { } capacity:
+                RenderCapacity(capacity);
                 break;
 
             case PreviewKind.Loading:

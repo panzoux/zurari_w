@@ -1,0 +1,27 @@
+using System.Runtime.InteropServices;
+
+namespace Zurari.Runtime;
+
+/// <summary>
+/// The one P/Invoke this layer needs. Kernel32 only: this is filesystem I/O, which is Runtime's
+/// job, and nothing here touches the shell - that lives in <c>Zurari.Shell</c>, which Runtime is
+/// forbidden to reference.
+/// </summary>
+internal static class NativeMethods
+{
+    /// <summary>
+    /// Free and total bytes for a directory, a drive root, or a UNC share.
+    /// </summary>
+    /// <remarks>
+    /// Here because <c>DriveInfo</c> throws on a UNC path, so a pinned share's capacity has no
+    /// managed route. It is what <c>DriveInfo</c> calls for a local volume anyway.
+    /// </remarks>
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetDiskFreeSpaceExW(
+        string lpDirectoryName,
+        out long lpFreeBytesAvailableToCaller,
+        out long lpTotalNumberOfBytes,
+        out long lpTotalNumberOfFreeBytes);
+}

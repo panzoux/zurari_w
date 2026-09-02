@@ -16,8 +16,10 @@ public sealed record RootPlace(string Path, string Label);
 /// The recycle bin row, as the composition root describes it.
 /// </summary>
 /// <param name="Label">What the row reads, including how much is in the bin.</param>
+/// <param name="ItemCount">How many deleted items it holds.</param>
+/// <param name="TotalBytes">What those items occupy.</param>
 /// <remarks>
 /// Supplied rather than computed here for the same reason favorites are: the totals come from
 /// <c>SHQueryRecycleBin</c>, and Runtime is not allowed to depend on Shell.
 /// </remarks>
-public sealed record TrashPlace(string Label);
+public sealed record TrashPlace(string Label, long ItemCount = 0, long TotalBytes = 0);

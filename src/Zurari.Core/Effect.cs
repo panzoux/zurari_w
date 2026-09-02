@@ -72,13 +72,15 @@ public abstract record Effect
     public sealed record ResolveJobConflict(int JobId, ConflictDecision Decision) : Effect;
 
     /// <summary>
-    /// Loads a preview of the file at <paramref name="Path"/>: image bytes (whole file, capped),
+    /// Loads a preview of whatever <paramref name="Target"/> says <paramref name="Path"/> is. For a
+    /// file: image bytes (whole file, capped),
     /// decoded text (head only), or a <see cref="FileTypeDetector"/> label for anything else.
     /// Reports back as <see cref="Msg.PreviewLoaded"/> or <see cref="Msg.PreviewFailed"/>, both
     /// carrying <paramref name="Generation"/> unchanged so a superseded request's result can be
     /// told apart from the current one and discarded.
     /// </summary>
-    public sealed record LoadPreview(int Generation, string Path) : Effect;
+    public sealed record LoadPreview(
+        int Generation, string Path, PreviewTarget Target = PreviewTarget.File) : Effect;
 
     /// <summary>
     /// Abandons the in-flight <see cref="LoadPreview"/> for <paramref name="Generation"/>: the

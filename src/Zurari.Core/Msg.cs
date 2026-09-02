@@ -250,6 +250,17 @@ public abstract record Msg
     public sealed record PreviewFailed(int Generation, string Error) : Msg;
 
     /// <summary>
+    /// An <see cref="Effect.LoadPreview"/> for a volume or the recycle bin succeeded. Subject to the
+    /// same staleness check as <see cref="PreviewLoaded"/>.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="PreviewLoaded"/> rather than another nullable field on it: that
+    /// record already carries three fields that only apply to some kinds, and a capacity shares none
+    /// of them - no bytes, no text, no file metadata.
+    /// </remarks>
+    public sealed record PreviewCapacityLoaded(int Generation, PreviewCapacity Capacity) : Msg;
+
+    /// <summary>
     /// Replaces <see cref="AppState.CutPending"/> with <paramref name="Paths"/> (an empty array
     /// clears it) - the Explorer-style "dim the cut rows" feedback for Ctrl+X. Dispatched by the App
     /// layer alongside its own clipboard write; Ctrl+C dispatches this with an empty array (copying

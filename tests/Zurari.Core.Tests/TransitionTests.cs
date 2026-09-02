@@ -1822,6 +1822,158 @@ public class TransitionTests
     }
 
     [Fact]
+    public void A_drive_row_asks_for_how_full_it_is_rather_than_its_contents()
+    {
+        var column = new Column(
+            Location.Drives.Instance,
+            [
+                new Entry("ドライブ", EntryKind.Header, Group: EntryGroups.Drives),
+                new Entry(@"C:\", EntryKind.Drive, Group: EntryGroups.Drives, DisplayName: "Windows (C:)"),
+            ],
+            Cursor: 0,
+            Load: LoadState.Loaded);
+
+        var (next, effects) = Transition.Apply(StateWithColumns(column), new Msg.CursorDown(0));
+
+        var effect = Assert.IsType<Effect.LoadPreview>(Assert.Single(effects));
+        Assert.Equal(PreviewTarget.Volume, effect.Target);
+        Assert.Equal(@"C:\", effect.Path);
+        Assert.Equal(PreviewKind.Loading, next.Preview.Kind);
+    }
+
+    /// <summary>
+    /// A drive's path is also a valid directory path, so the effect has to say which question is
+    /// being asked - "read this" and "how full is this" cannot be told apart from the path alone.
+    /// </summary>
+    [Fact]
+    public void An_ordinary_file_still_asks_for_its_contents()
+    {
+        var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
+
+        var (_, effects) = Transition.Apply(StateWithColumns(column), new Msg.CursorDown(0));
+
+        Assert.Equal(PreviewTarget.File, Assert.IsType<Effect.LoadPreview>(Assert.Single(effects)).Target);
+    }
+
+    [Fact]
+    public void The_bin_row_asks_for_how_much_is_in_it()
+    {
+        var column = new Column(
+            Location.Drives.Instance,
+            [
+                new Entry("ゴミ箱", EntryKind.Header, Group: EntryGroups.Trash),
+                new Entry(
+                    "::recyclebin",
+                    EntryKind.Directory,
+                    Group: EntryGroups.Trash,
+                    Target: Location.RecycleBin.Instance,
+                    DisplayName: "ゴミ箱 (413)"),
+            ],
+            Cursor: 0,
+            Load: LoadState.Loaded);
+
+        var (_, effects) = Transition.Apply(StateWithColumns(column), new Msg.CursorDown(0));
+
+        var effect = Assert.IsType<Effect.LoadPreview>(Assert.Single(effects));
+        Assert.Equal(PreviewTarget.RecycleBin, effect.Target);
+    }
+
+    /// <summary>
+    /// The share itself is a volume; a folder inside it is just a folder, and previewing it as one
+    /// would put a capacity bar under every directory a user pins.
+    /// </summary>
+    [Theory]
+    [InlineData(@"\\srv\share", true)]
+    [InlineData(@"\\srv\share\", true)]
+    [InlineData(@"\\srv\share\sub", false)]
+    [InlineData(@"C:\Users\someone", false)]
+    public void Only_a_share_root_gets_a_capacity_preview(string path, bool expectsCapacity)
+    {
+        var column = new Column(
+            Location.Drives.Instance,
+            [
+                new Entry("ネットワーク", EntryKind.Header, Group: EntryGroups.Pinned),
+                new Entry(
+                    path,
+                    EntryKind.Directory,
+                    Group: EntryGroups.Pinned,
+                    Target: new Location.RealDirectory(path),
+                    IsRemovable: true),
+            ],
+            Cursor: 0,
+            Load: LoadState.Loaded);
+
+        var (_, effects) = Transition.Apply(StateWithColumns(column), new Msg.CursorDown(0));
+
+        if (expectsCapacity)
+        {
+            Assert.Equal(
+                PreviewTarget.Volume,
+                Assert.IsType<Effect.LoadPreview>(Assert.Single(effects)).Target);
+        }
+        else
+        {
+            Assert.Empty(effects);
+        }
+    }
+
+    [Fact]
+    public void A_capacity_result_for_the_current_generation_becomes_the_preview()
+    {
+        var column = new Column(
+            Location.Drives.Instance,
+            [
+                new Entry("ドライブ", EntryKind.Header, Group: EntryGroups.Drives),
+                new Entry(@"C:\", EntryKind.Drive, Group: EntryGroups.Drives),
+            ],
+            Cursor: 0,
+            Load: LoadState.Loaded);
+        var (loading, _) = Transition.Apply(StateWithColumns(column), new Msg.CursorDown(0));
+
+        var capacity = new PreviewCapacity("Windows (C:)", "NTFS · 固定ドライブ", UsedBytes: 750, TotalBytes: 1000);
+        var (next, effects) = Transition.Apply(
+            loading, new Msg.PreviewCapacityLoaded(loading.Preview.Generation, capacity));
+
+        Assert.Equal(PreviewKind.Capacity, next.Preview.Kind);
+        Assert.Equal(capacity, next.Preview.Capacity);
+        Assert.Equal(250, next.Preview.Capacity!.FreeBytes);
+        Assert.Equal(0.75, next.Preview.Capacity!.UsedFraction);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void A_capacity_result_from_a_stale_generation_is_ignored()
+    {
+        var column = new Column(
+            Location.Drives.Instance,
+            [
+                new Entry("ドライブ", EntryKind.Header, Group: EntryGroups.Drives),
+                new Entry(@"C:\", EntryKind.Drive, Group: EntryGroups.Drives),
+            ],
+            Cursor: 0,
+            Load: LoadState.Loaded);
+        var (loading, _) = Transition.Apply(StateWithColumns(column), new Msg.CursorDown(0));
+
+        var (next, _) = Transition.Apply(
+            loading,
+            new Msg.PreviewCapacityLoaded(
+                loading.Preview.Generation - 1, new PreviewCapacity("stale", "stale", 1, 2)));
+
+        Assert.Equal(PreviewKind.Loading, next.Preview.Kind);
+        Assert.Null(next.Preview.Capacity);
+    }
+
+    /// <summary>The bin has a size but no size limit, so there is nothing for a bar to be full of.</summary>
+    [Fact]
+    public void A_capacity_without_a_total_has_no_fraction_and_no_free_space()
+    {
+        var bin = new PreviewCapacity("ゴミ箱", "ゴミ箱", UsedBytes: 12345, TotalBytes: null, ItemCount: 413);
+
+        Assert.Null(bin.UsedFraction);
+        Assert.Null(bin.FreeBytes);
+    }
+
+    [Fact]
     public void CursorMove_onto_a_directory_clears_the_preview_and_emits_no_effect()
     {
         var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 1, Load: LoadState.Loaded);
@@ -2632,6 +2784,8 @@ public class TransitionProperties
         Gen.Select(GenColumnIndex, GenEntryIndex).Select(t => (Msg)new Msg.ToggleSection(t.Item1, t.Item2)),
         Gen.Select(GenColumnIndex, Gen.OneOfConst("g1", "g2").List[0, 2])
             .Select(t => (Msg)new Msg.CollapsedGroupsRestored(t.Item1, [.. t.Item2])),
+        GenJobId.Select(g => (Msg)new Msg.PreviewCapacityLoaded(
+            g, new PreviewCapacity("vol", "kind", UsedBytes: 1, TotalBytes: 2))),
         Gen.Const<Msg>(new Msg.PlacesChanged()));
 
     [Fact]

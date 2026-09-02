@@ -79,6 +79,60 @@ public class PreviewProjectionTests
     }
 
     [Fact]
+    public void A_volume_projects_a_bar_fraction_and_a_summary_line()
+    {
+        var preview = PreviewState.Initial with
+        {
+            Generation = 4,
+            Kind = PreviewKind.Capacity,
+            Capacity = new PreviewCapacity(
+                "Windows (C:)", "NTFS · 固定ドライブ", UsedBytes: 768L * 1024 * 1024, TotalBytes: 1024L * 1024 * 1024),
+        };
+
+        var vm = StateProjection.ProjectPreview(StateWithPreview(preview));
+
+        Assert.NotNull(vm.Capacity);
+        Assert.Equal(0.75, vm.Capacity!.UsedFraction);
+        Assert.Equal("768.0 MB", vm.Capacity.Used);
+        Assert.Equal("256.0 MB", vm.Capacity.Free);
+        Assert.Equal("768.0 MB / 1.0 GB 使用中", vm.Capacity.Summary);
+
+        // The metadata block describes the volume rather than a file.
+        Assert.Contains("名前: Windows (C:)", vm.MetadataText, StringComparison.Ordinal);
+        Assert.Contains("空き: 256.0 MB", vm.MetadataText, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The bin has a size but no size limit. No fraction means the renderer draws no bar, which is
+    /// the honest thing - a bar needs something to be full of.
+    /// </summary>
+    [Fact]
+    public void The_recycle_bin_projects_a_count_and_a_size_but_no_bar()
+    {
+        var preview = PreviewState.Initial with
+        {
+            Kind = PreviewKind.Capacity,
+            Capacity = new PreviewCapacity("ゴミ箱", "ゴミ箱", UsedBytes: 2048, TotalBytes: null, ItemCount: 413),
+        };
+
+        var vm = StateProjection.ProjectPreview(StateWithPreview(preview));
+
+        Assert.Null(vm.Capacity!.UsedFraction);
+        Assert.Null(vm.Capacity.Free);
+        Assert.Equal("2.0 KB", vm.Capacity.Summary);
+        Assert.Contains("項目数: 413 件", vm.MetadataText, StringComparison.Ordinal);
+        Assert.DoesNotContain("容量:", vm.MetadataText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_file_preview_has_no_capacity()
+    {
+        var preview = new PreviewState(1, @"C:\a.txt", PreviewKind.Text, "body", [], null);
+
+        Assert.Null(StateProjection.ProjectPreview(StateWithPreview(preview)).Capacity);
+    }
+
+    [Fact]
     public void Image_kind_projects_the_image_bytes()
     {
         ImmutableArray<byte> bytes = [1, 2, 3];

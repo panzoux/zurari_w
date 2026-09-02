@@ -307,10 +307,28 @@ public static class StateProjection
     /// <see cref="FormatMetadata"/>. Empty string when <see cref="PreviewState.Metadata"/> is
     /// <c>null</c> (nothing loaded yet, or the load failed before any metadata arrived).
     /// </param>
+    /// <summary>
+    /// The capacity panel's numbers, already formatted: how full a volume is, or how much is in the
+    /// recycle bin.
+    /// </summary>
+    /// <param name="UsedFraction">
+    /// How full, 0 to 1, for sizing the bar. <c>null</c> when there is no capacity to be a fraction
+    /// of - the bin has a size but no limit - and the bar is then not drawn at all.
+    /// </param>
+    /// <param name="Used">Occupied space, e.g. <c>"412.7 GB"</c>.</param>
+    /// <param name="Free">What is left, or <c>null</c> when there is no total to subtract from.</param>
+    /// <param name="Summary">The one line above the bar, e.g. <c>"412.7 GB / 931.5 GB 使用中"</c>.</param>
+    public sealed record CapacityVm(
+        double? UsedFraction,
+        string Used,
+        string? Free,
+        string Summary);
+
     public sealed record PreviewVm(
         int Generation,
         string? FileName,
         string? OriginalDirectory,
+        CapacityVm? Capacity,
         PreviewKind Kind,
         string? Text,
         ImmutableArray<byte> ImageBytes,
@@ -334,7 +352,35 @@ public static class StateProjection
         var text = preview.Kind == PreviewKind.Binary ? FormatBinaryText(preview) : preview.Text;
         var metadataText = FormatMetadata(preview);
         return new PreviewVm(
-            preview.Generation, fileName, originalDirectory, preview.Kind, text, preview.ImageBytes, preview.Error, metadataText);
+            preview.Generation,
+            fileName,
+            originalDirectory,
+            ProjectCapacity(preview.Capacity),
+            preview.Kind,
+            text,
+            preview.ImageBytes,
+            preview.Error,
+            metadataText);
+    }
+
+    /// <summary>Formats a <see cref="PreviewCapacity"/> for display, or <c>null</c> when there is none.</summary>
+    private static CapacityVm? ProjectCapacity(PreviewCapacity? capacity)
+    {
+        if (capacity is null)
+        {
+            return null;
+        }
+
+        var used = FormatBytes(capacity.UsedBytes);
+        var summary = capacity.TotalBytes is { } total
+            ? $"{used} / {FormatBytes(total)} 使用中"
+            : used;
+
+        return new CapacityVm(
+            capacity.UsedFraction,
+            used,
+            capacity.FreeBytes is { } free ? FormatBytes(free) : null,
+            summary);
     }
 
     /// <summary>
@@ -346,6 +392,11 @@ public static class StateProjection
     /// </summary>
     private static string FormatMetadata(PreviewState preview)
     {
+        if (preview.Capacity is { } capacity)
+        {
+            return FormatCapacityMetadata(capacity);
+        }
+
         var metadata = preview.Metadata;
         if (metadata is null)
         {
@@ -369,6 +420,37 @@ public static class StateProjection
         if (metadata.BitsPerPixel is int bitsPerPixel)
         {
             lines.Add($"色深度: {bitsPerPixel} bit");
+        }
+
+        return string.Join("\n", lines);
+    }
+
+    /// <summary>
+    /// The metadata block for a volume or the bin: what it is, then the figures behind the bar.
+    /// </summary>
+    private static string FormatCapacityMetadata(PreviewCapacity capacity)
+    {
+        var lines = new List<string>
+        {
+            $"名前: {capacity.Title}",
+            $"種類: {capacity.TypeName}",
+        };
+
+        if (capacity.ItemCount is { } count)
+        {
+            lines.Add($"項目数: {count.ToString("N0", CultureInfo.InvariantCulture)} 件");
+        }
+
+        if (capacity.TotalBytes is { } total)
+        {
+            lines.Add($"容量: {FormatBytes(total)}");
+        }
+
+        lines.Add($"使用済み: {FormatBytes(capacity.UsedBytes)}");
+
+        if (capacity.FreeBytes is { } free)
+        {
+            lines.Add($"空き: {FormatBytes(free)}");
         }
 
         return string.Join("\n", lines);

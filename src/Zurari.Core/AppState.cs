@@ -266,6 +266,26 @@ public sealed record Column(
     }
 }
 
+/// <summary>
+/// What the row under the cursor is, for the purposes of previewing it - which is not the same
+/// question as <see cref="EntryKind"/>.
+/// </summary>
+/// <remarks>
+/// A drive's path is also a perfectly good directory path, so the path alone cannot say whether the
+/// answer wanted is "read this file" or "how full is this volume". The row knows; the path does not.
+/// </remarks>
+public enum PreviewTarget
+{
+    /// <summary>An ordinary file: read it and show its contents.</summary>
+    File,
+
+    /// <summary>A volume - a drive or a network share - shown as how much of it is in use.</summary>
+    Volume,
+
+    /// <summary>The recycle bin: how many items it holds and what they occupy.</summary>
+    RecycleBin,
+}
+
 /// <summary>What the preview pane is currently showing.</summary>
 public enum PreviewKind
 {
@@ -287,6 +307,39 @@ public enum PreviewKind
     /// remarks.
     /// </summary>
     Binary,
+
+    /// <summary>
+    /// How full something is, rather than what is in it - see <see cref="PreviewState.Capacity"/>.
+    /// A drive, a network share, or the recycle bin.
+    /// </summary>
+    Capacity,
+}
+
+/// <summary>
+/// How much a volume holds and how much of that is in use - the preview for a drive, a network
+/// share, or the recycle bin.
+/// </summary>
+/// <param name="Title">What the thing is called: <c>Windows (C:)</c>, <c>ゴミ箱</c>.</param>
+/// <param name="TypeName">A short description of its kind: <c>NTFS · 固定ドライブ</c>.</param>
+/// <param name="UsedBytes">What is occupied.</param>
+/// <param name="TotalBytes">
+/// Capacity, or <c>null</c> when the thing has none to speak of. The recycle bin has a size but no
+/// size limit, so it gets a figure and no bar.
+/// </param>
+/// <param name="ItemCount">How many things are in it, when that is a meaningful count - the bin.</param>
+public sealed record PreviewCapacity(
+    string Title,
+    string TypeName,
+    long UsedBytes,
+    long? TotalBytes = null,
+    long? ItemCount = null)
+{
+    /// <summary>What is left, or <c>null</c> when there is no capacity to subtract from.</summary>
+    public long? FreeBytes => TotalBytes is { } total ? Math.Max(0, total - UsedBytes) : null;
+
+    /// <summary>How full, from 0 to 1, or <c>null</c> when there is nothing to be full of.</summary>
+    public double? UsedFraction =>
+        TotalBytes is { } total && total > 0 ? Math.Clamp(UsedBytes / (double)total, 0, 1) : null;
 }
 
 /// <summary>
@@ -340,6 +393,12 @@ public sealed record PreviewState(
     /// what the file is. This is the only thing that does, so the pane leads with it.
     /// </remarks>
     public string? OriginalPath { get; init; }
+
+    /// <summary>
+    /// How full the thing under the cursor is, when <see cref="Kind"/> is
+    /// <see cref="PreviewKind.Capacity"/>. <c>null</c> for every other kind.
+    /// </summary>
+    public PreviewCapacity? Capacity { get; init; }
 
     /// <summary>Starting state: no file selected, generation 0.</summary>
     public static PreviewState Initial { get; } = new(

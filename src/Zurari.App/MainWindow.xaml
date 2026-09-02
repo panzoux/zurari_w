@@ -91,6 +91,26 @@
                                  AcceptsReturn="True" FontFamily="Consolas"
                                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                                  BorderThickness="0" Background="Transparent" Visibility="Collapsed" />
+                        <!-- How full a drive, a share, or the bin is. The bar is two star-sized
+                             grid columns, so the ratio is the layout rather than arithmetic over a
+                             width that is not known until the splitter stops moving. -->
+                        <StackPanel x:Name="PreviewCapacityPanel" Margin="12" VerticalAlignment="Center"
+                                    Visibility="Collapsed">
+                            <TextBlock x:Name="PreviewCapacitySummary" TextAlignment="Center"
+                                       Foreground="#FF404040" Margin="0,0,0,8" TextWrapping="Wrap" />
+                            <Border x:Name="PreviewCapacityBar" BorderBrush="#FFB0B0B0" BorderThickness="1"
+                                    Background="#FFFFFFFF" Height="16">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition x:Name="PreviewCapacityUsed" Width="0*" />
+                                        <ColumnDefinition x:Name="PreviewCapacityFree" Width="1*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Rectangle Grid.Column="0" Fill="#FF3A86E0" />
+                                </Grid>
+                            </Border>
+                            <TextBlock x:Name="PreviewCapacityFreeText" TextAlignment="Center" FontSize="11"
+                                       Foreground="#FF707070" Margin="0,6,0,0" />
+                        </StackPanel>
                         <TextBlock x:Name="PreviewMeta" Foreground="#FF909090" Margin="8"
                                    TextWrapping="Wrap" TextAlignment="Center"
                                    HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
