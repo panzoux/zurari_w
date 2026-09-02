@@ -16,8 +16,94 @@ public static class Transition
         ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(msg);
 
-        var (newState, effects) = ApplyCore(state, msg);
-        return ReconcilePreview(state, newState, effects);
+        var (applied, effects) = ApplyCore(state, msg);
+        var (withChild, withChildEffects) = ReconcileChildColumn(state, applied, effects);
+        return ReconcilePreview(state, withChild, withChildEffects);
+    }
+
+    /// <summary>
+    /// Keeps the column immediately right of the focused one showing whatever the focused cursor is
+    /// pointing at - the Finder/Explorer columns behaviour, where landing on a folder reveals its
+    /// contents without entering it. A cursor on anything that is not a container leaves nothing to
+    /// its right.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A common post-step of <see cref="Apply"/>, like <see cref="ReconcilePreview"/> and for the
+    /// same reason: every message that can move a cursor or change focus has to be followed by it,
+    /// and enumerating those in each branch is how one gets missed.
+    /// </para>
+    /// <para>
+    /// <b>Bounded to exactly one column beyond the focus, which is what makes it safe.</b> The child
+    /// loads asynchronously, and its <see cref="Msg.DirectoryLoaded"/> runs this again - so if the
+    /// rule were "extend wherever a cursor sits on a folder", each load would trigger the next and a
+    /// deep chain would unroll itself, forever down a junction that points at its own ancestor.
+    /// Reading only the <em>focused</em> column means the grandchild's load extends nothing, because
+    /// focus has not moved. Descending stays one keypress per column, exactly as it is today. This is
+    /// why the reparse-point visited-set that zurari needs for its own auto-extend is not needed here
+    /// (see the plan's deferred list).
+    /// </para>
+    /// <para>
+    /// Does nothing when the column to the right already shows the right place, which is what lets
+    /// <see cref="GoToParent"/> keep the chain: moving focus left puts the cursor on the folder the
+    /// next column is already showing, so the columns beyond it survive untouched.
+    /// </para>
+    /// </remarks>
+    private static (AppState, IReadOnlyList<Effect>) ReconcileChildColumn(
+        AppState oldState, AppState state, IReadOnlyList<Effect> effects)
+    {
+        var focusedIndex = state.FocusedColumn;
+        if (!InRange(state, focusedIndex))
+        {
+            return (state, effects);
+        }
+
+        var wanted = ChildOfCursor(state.Columns[focusedIndex]);
+
+        // Nothing the message did changed where the cursor points, so leave the columns alone. This
+        // is what keeps a message that was ignored actually ignored, rather than every Apply
+        // rebuilding the pane underneath it.
+        if (Equals(wanted, ChildOfCursor(FocusedColumnOrNull(oldState))))
+        {
+            return (state, effects);
+        }
+
+        var childIndex = focusedIndex + 1;
+        var existing = childIndex < state.Columns.Length ? state.Columns[childIndex].Location : null;
+
+        if (Equals(wanted, existing))
+        {
+            return (state, effects);
+        }
+
+        var truncated = state.Columns.Take(childIndex).ToImmutableArray();
+        if (wanted is null)
+        {
+            return (state with { Columns = truncated }, effects);
+        }
+
+        var withChild = truncated.Add(new Column(wanted, Entries: [], Cursor: -1, Load: LoadState.Loading));
+        return (
+            state with { Columns = withChild },
+            Append(effects, new Effect.ReadDirectory(childIndex, wanted, Speculative: true)));
+    }
+
+    /// <summary>
+    /// Where the row under <paramref name="column"/>'s cursor leads, or <c>null</c> when it leads
+    /// nowhere - an empty column, a file, or a section header.
+    /// </summary>
+    private static Column? FocusedColumnOrNull(AppState state) =>
+        InRange(state, state.FocusedColumn) ? state.Columns[state.FocusedColumn] : null;
+
+    private static Location? ChildOfCursor(Column? column)
+    {
+        if (column is null || column.Cursor < 0 || column.Cursor >= column.Entries.Length)
+        {
+            return null;
+        }
+
+        var entry = column.Entries[column.Cursor];
+        return entry.Kind is EntryKind.File or EntryKind.Header ? null : ChildLocation(column, entry);
     }
 
     private static (AppState State, IReadOnlyList<Effect> Effects) ApplyCore(AppState state, Msg msg)
@@ -156,6 +242,18 @@ public static class Transition
         }
 
         var childLocation = ChildLocation(column, entry);
+        var childIndex = columnIndex + 1;
+
+        // The column beside the cursor is usually already showing this - it opened the moment the
+        // cursor landed here. Entering then means moving into it, not throwing away a loaded listing
+        // and reading it again, which would flash 読み込み中… over contents already on screen.
+        if (childIndex < state.Columns.Length && state.Columns[childIndex].Location == childLocation)
+        {
+            var reused = state.Columns.SetItem(columnIndex, column with { Cursor = entryIndex });
+            return (
+                state with { Columns = reused, FocusedColumn = focusChild ? childIndex : columnIndex },
+                NoEffects);
+        }
 
         var truncated = state.Columns.Take(columnIndex + 1).ToImmutableArray();
         truncated = truncated.SetItem(columnIndex, column with { Cursor = entryIndex });

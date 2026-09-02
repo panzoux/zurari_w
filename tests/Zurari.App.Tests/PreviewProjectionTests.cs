@@ -93,12 +93,12 @@ public class PreviewProjectionTests
 
         Assert.NotNull(vm.Capacity);
         Assert.Equal(0.75, vm.Capacity!.UsedFraction);
-        Assert.Equal("768.0 MB", vm.Capacity.Used);
         Assert.Equal("256.0 MB", vm.Capacity.Free);
         Assert.Equal("768.0 MB / 1.0 GB 使用中", vm.Capacity.Summary);
 
         // The metadata block describes the volume rather than a file.
         Assert.Contains("名前: Windows (C:)", vm.MetadataText, StringComparison.Ordinal);
+        Assert.Contains("使用済み: 768.0 MB", vm.MetadataText, StringComparison.Ordinal);
         Assert.Contains("空き: 256.0 MB", vm.MetadataText, StringComparison.Ordinal);
     }
 
@@ -122,6 +122,25 @@ public class PreviewProjectionTests
         Assert.Equal("2.0 KB", vm.Capacity.Summary);
         Assert.Contains("項目数: 413 件", vm.MetadataText, StringComparison.Ordinal);
         Assert.DoesNotContain("容量:", vm.MetadataText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_drive_that_is_not_ready_shows_what_it_is_instead_of_figures()
+    {
+        var preview = PreviewState.Initial with
+        {
+            Kind = PreviewKind.Capacity,
+            Capacity = new PreviewCapacity("E:", "光学ドライブ", Status: "準備できていません"),
+        };
+
+        var vm = StateProjection.ProjectPreview(StateWithPreview(preview));
+
+        Assert.Equal("準備できていません", vm.Capacity!.Summary);
+        Assert.Null(vm.Capacity.UsedFraction);
+        Assert.Null(vm.Capacity.Free);
+        Assert.Contains("種類: 光学ドライブ", vm.MetadataText, StringComparison.Ordinal);
+        Assert.Contains("状態: 準備できていません", vm.MetadataText, StringComparison.Ordinal);
+        Assert.DoesNotContain("使用済み", vm.MetadataText, StringComparison.Ordinal);
     }
 
     [Fact]

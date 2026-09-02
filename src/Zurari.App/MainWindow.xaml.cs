@@ -94,8 +94,17 @@ public sealed partial class MainWindow : Window, IDisposable
     /// </summary>
     private static readonly TimeSpan PreviewDebounceInterval = TimeSpan.FromMilliseconds(150);
 
-    private readonly PendingPreviewGate previewGate = new();
+    private readonly PendingEffectGate<Effect.LoadPreview> previewGate = new();
     private DispatcherTimer? previewDebounceTimer;
+
+    /// <summary>
+    /// The same coalescing as <see cref="previewGate"/>, for the column that fills in beside the
+    /// cursor. Held for the same reason and with the same interval: a held-down arrow key would
+    /// otherwise put one directory listing on the worker pool per keystroke, and on a network share
+    /// that is exactly the stall the preview slot was separated out to avoid.
+    /// </summary>
+    private readonly PendingEffectGate<Effect.ReadDirectory> speculativeReadGate = new();
+    private DispatcherTimer? speculativeReadTimer;
 
     public MainWindow()
     {
@@ -222,6 +231,7 @@ public sealed partial class MainWindow : Window, IDisposable
     public void Dispose()
     {
         previewDebounceTimer?.Stop();
+        speculativeReadTimer?.Stop();
         runtime.Dispose();
         shellExecutor.Dispose();
         jobEngine.Dispose();
@@ -246,7 +256,15 @@ public sealed partial class MainWindow : Window, IDisposable
         switch (EffectRouting.For(effect))
         {
             case EffectTarget.Runtime:
-                runtime.Submit(effect);
+                if (effect is Effect.ReadDirectory { Speculative: true } speculativeRead)
+                {
+                    ScheduleSpeculativeRead(speculativeRead);
+                }
+                else
+                {
+                    runtime.Submit(effect);
+                }
+
                 break;
             case EffectTarget.Preview:
                 if (effect is Effect.LoadPreview loadPreview)
@@ -290,6 +308,34 @@ public sealed partial class MainWindow : Window, IDisposable
 
         previewDebounceTimer.Stop();
         previewDebounceTimer.Start();
+    }
+
+    /// <summary>
+    /// Holds the newest speculative listing and (re)starts its timer, exactly as
+    /// <see cref="SchedulePreviewLoad"/> does for previews.
+    /// </summary>
+    private void ScheduleSpeculativeRead(Effect.ReadDirectory effect)
+    {
+        speculativeReadGate.Hold(effect);
+
+        if (speculativeReadTimer is null)
+        {
+            speculativeReadTimer = new DispatcherTimer { Interval = PreviewDebounceInterval };
+            speculativeReadTimer.Tick += OnSpeculativeReadTick;
+        }
+
+        speculativeReadTimer.Stop();
+        speculativeReadTimer.Start();
+    }
+
+    private void OnSpeculativeReadTick(object? sender, EventArgs e)
+    {
+        speculativeReadTimer?.Stop();
+        var effect = speculativeReadGate.Take();
+        if (effect is not null)
+        {
+            runtime.Submit(effect);
+        }
     }
 
     private void OnPreviewDebounceTick(object? sender, EventArgs e)

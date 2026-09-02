@@ -21,7 +21,17 @@ public abstract record Effect
     /// <see cref="Zurari.Core.Location.RealDirectory"/> is a filesystem listing, while
     /// <see cref="Zurari.Core.Location.Drives"/> is synthesized from the machine's drives.
     /// </summary>
-    public sealed record ReadDirectory(int ColumnIndex, Location Location) : Effect;
+    /// <param name="ColumnIndex">Which column the result belongs to.</param>
+    /// <param name="Location">What to enumerate.</param>
+    /// <param name="Speculative">
+    /// Whether this read is only to show what the cursor is resting on, rather than somewhere the
+    /// user has actually gone. True for the auto-extended column to the right of the focus, which is
+    /// re-requested on every cursor move - so the App holds the newest for a moment before sending
+    /// it, the way it already does for previews, instead of putting a directory read on the worker
+    /// pool for every keystroke of a held-down arrow.
+    /// </param>
+    public sealed record ReadDirectory(
+        int ColumnIndex, Location Location, bool Speculative = false) : Effect;
 
     /// <summary>
     /// Move every path in <paramref name="Targets"/> to the recycle bin as a single batch

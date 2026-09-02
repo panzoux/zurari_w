@@ -320,26 +320,42 @@ public enum PreviewKind
 /// share, or the recycle bin.
 /// </summary>
 /// <param name="Title">What the thing is called: <c>Windows (C:)</c>, <c>ゴミ箱</c>.</param>
-/// <param name="TypeName">A short description of its kind: <c>NTFS · 固定ドライブ</c>.</param>
-/// <param name="UsedBytes">What is occupied.</param>
+/// <param name="TypeName">A short description of its kind: <c>NTFS · 固定ドライブ</c>, <c>光学ドライブ</c>.</param>
+/// <param name="UsedBytes">
+/// What is occupied, or <c>null</c> when there is nothing to measure - an empty optical drive knows
+/// what it is without knowing how full it is.
+/// </param>
 /// <param name="TotalBytes">
 /// Capacity, or <c>null</c> when the thing has none to speak of. The recycle bin has a size but no
 /// size limit, so it gets a figure and no bar.
 /// </param>
 /// <param name="ItemCount">How many things are in it, when that is a meaningful count - the bin.</param>
+/// <param name="Status">
+/// Why there are no figures, when there are none: 準備できていません for a drive with no disc in it.
+/// <c>null</c> when the numbers speak for themselves.
+/// </param>
+/// <remarks>
+/// A drive that cannot answer is still worth describing. Reporting it as a failed preview said only
+/// that something went wrong, when the useful thing to say is what the drive <em>is</em> - an optical
+/// drive with nothing in it is not an error, it is an empty drive.
+/// </remarks>
 public sealed record PreviewCapacity(
     string Title,
     string TypeName,
-    long UsedBytes,
+    long? UsedBytes = null,
     long? TotalBytes = null,
-    long? ItemCount = null)
+    long? ItemCount = null,
+    string? Status = null)
 {
     /// <summary>What is left, or <c>null</c> when there is no capacity to subtract from.</summary>
-    public long? FreeBytes => TotalBytes is { } total ? Math.Max(0, total - UsedBytes) : null;
+    public long? FreeBytes =>
+        TotalBytes is { } total && UsedBytes is { } used ? Math.Max(0, total - used) : null;
 
     /// <summary>How full, from 0 to 1, or <c>null</c> when there is nothing to be full of.</summary>
     public double? UsedFraction =>
-        TotalBytes is { } total && total > 0 ? Math.Clamp(UsedBytes / (double)total, 0, 1) : null;
+        TotalBytes is { } total && total > 0 && UsedBytes is { } used
+            ? Math.Clamp(used / (double)total, 0, 1)
+            : null;
 }
 
 /// <summary>

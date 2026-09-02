@@ -315,12 +315,13 @@ public static class StateProjection
     /// How full, 0 to 1, for sizing the bar. <c>null</c> when there is no capacity to be a fraction
     /// of - the bin has a size but no limit - and the bar is then not drawn at all.
     /// </param>
-    /// <param name="Used">Occupied space, e.g. <c>"412.7 GB"</c>.</param>
     /// <param name="Free">What is left, or <c>null</c> when there is no total to subtract from.</param>
-    /// <param name="Summary">The one line above the bar, e.g. <c>"412.7 GB / 931.5 GB 使用中"</c>.</param>
+    /// <param name="Summary">
+    /// The one line above the bar: <c>"412.7 GB / 931.5 GB 使用中"</c>, or the reason there are no
+    /// figures - <c>"準備できていません"</c> for a drive with nothing in it.
+    /// </param>
     public sealed record CapacityVm(
         double? UsedFraction,
-        string Used,
         string? Free,
         string Summary);
 
@@ -371,14 +372,15 @@ public static class StateProjection
             return null;
         }
 
-        var used = FormatBytes(capacity.UsedBytes);
-        var summary = capacity.TotalBytes is { } total
-            ? $"{used} / {FormatBytes(total)} 使用中"
-            : used;
+        var summary = (capacity.UsedBytes, capacity.TotalBytes) switch
+        {
+            (long used, long total) => $"{FormatBytes(used)} / {FormatBytes(total)} 使用中",
+            (long used, null) => FormatBytes(used),
+            _ => capacity.Status ?? "サイズ不明",
+        };
 
         return new CapacityVm(
             capacity.UsedFraction,
-            used,
             capacity.FreeBytes is { } free ? FormatBytes(free) : null,
             summary);
     }
@@ -436,6 +438,11 @@ public static class StateProjection
             $"種類: {capacity.TypeName}",
         };
 
+        if (capacity.Status is { } status)
+        {
+            lines.Add($"状態: {status}");
+        }
+
         if (capacity.ItemCount is { } count)
         {
             lines.Add($"項目数: {count.ToString("N0", CultureInfo.InvariantCulture)} 件");
@@ -446,7 +453,10 @@ public static class StateProjection
             lines.Add($"容量: {FormatBytes(total)}");
         }
 
-        lines.Add($"使用済み: {FormatBytes(capacity.UsedBytes)}");
+        if (capacity.UsedBytes is { } used)
+        {
+            lines.Add($"使用済み: {FormatBytes(used)}");
+        }
 
         if (capacity.FreeBytes is { } free)
         {

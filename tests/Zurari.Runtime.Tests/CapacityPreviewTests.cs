@@ -40,7 +40,7 @@ public class CapacityPreviewTests
         Assert.Equal(1, loaded.Generation);
         Assert.NotNull(capacity.TotalBytes);
         Assert.True(capacity.TotalBytes > 0, "a mounted volume has a size");
-        Assert.InRange(capacity.UsedBytes, 0, capacity.TotalBytes!.Value);
+        Assert.InRange(capacity.UsedBytes!.Value, 0, capacity.TotalBytes!.Value);
         Assert.InRange(capacity.UsedFraction!.Value, 0, 1);
         Assert.Equal(capacity.TotalBytes - capacity.UsedBytes, capacity.FreeBytes);
         Assert.NotEmpty(capacity.TypeName);
@@ -69,17 +69,48 @@ public class CapacityPreviewTests
         Assert.Null(loaded.Capacity.UsedFraction);
     }
 
+    /// <summary>
+    /// An empty optical drive is not an error - it is an empty drive, and saying what kind of drive
+    /// it is remains useful. Reporting it as a failed preview said only that something went wrong.
+    /// </summary>
     [Fact]
-    public void A_drive_that_is_not_there_reports_a_reason_rather_than_throwing()
+    public void A_drive_with_nothing_in_it_still_says_what_kind_of_drive_it_is()
+    {
+        var notReady = DriveInfo.GetDrives().FirstOrDefault(d => !d.IsReady);
+        if (notReady is null)
+        {
+            return; // every drive on this machine is ready; nothing to describe.
+        }
+
+        var queue = new ConcurrentQueue<Msg>();
+        using var runtime = new WorkerRuntime(queue.Enqueue);
+
+        runtime.Submit(new Effect.LoadPreview(5, notReady.Name, PreviewTarget.Volume));
+        var loaded = WaitFor<Msg.PreviewCapacityLoaded>(queue, TimeSpan.FromSeconds(10));
+
+        Assert.NotEmpty(loaded.Capacity.TypeName);
+        Assert.Equal("準備できていません", loaded.Capacity.Status);
+        Assert.Null(loaded.Capacity.TotalBytes);
+        Assert.Null(loaded.Capacity.UsedBytes);
+        Assert.Null(loaded.Capacity.UsedFraction);
+    }
+
+    /// <summary>
+    /// A letter nothing is mounted on behaves the same as an empty optical drive: it says it is not
+    /// ready rather than throwing, or hanging, or reporting a zero-byte volume.
+    /// </summary>
+    [Fact]
+    public void A_letter_nothing_is_mounted_on_answers_rather_than_throwing()
     {
         var queue = new ConcurrentQueue<Msg>();
         using var runtime = new WorkerRuntime(queue.Enqueue);
 
         runtime.Submit(new Effect.LoadPreview(3, MissingDriveLetter(), PreviewTarget.Volume));
-        var failed = WaitFor<Msg.PreviewFailed>(queue, TimeSpan.FromSeconds(10));
+        var loaded = WaitFor<Msg.PreviewCapacityLoaded>(queue, TimeSpan.FromSeconds(10));
 
-        Assert.Equal(3, failed.Generation);
-        Assert.NotEmpty(failed.Error);
+        Assert.Equal(3, loaded.Generation);
+        Assert.Equal("準備できていません", loaded.Capacity.Status);
+        Assert.Null(loaded.Capacity.TotalBytes);
     }
 
     /// <summary>A volume request must not be mistaken for "read the directory at this path".</summary>

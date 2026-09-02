@@ -804,8 +804,15 @@ public sealed class WorkerRuntime : IDisposable
         if (!drive.IsReady)
         {
             // An empty optical drive, an unplugged card reader, a disconnected mapped drive. Not an
-            // error to apologise for - the row is deliberately still listed so it can be reached.
-            return (null, "ドライブの準備ができていません");
+            // error to apologise for - the row is deliberately still listed so it can be reached, and
+            // what it is stays worth saying even when how full it is cannot be answered. DriveType
+            // needs no disc; VolumeLabel and DriveFormat would both throw here.
+            return (
+                new PreviewCapacity(
+                    drive.Name.TrimEnd('\\', '/'),
+                    DescribeDriveType(drive.DriveType),
+                    Status: "準備できていません"),
+                null);
         }
 
         var total = drive.TotalSize;

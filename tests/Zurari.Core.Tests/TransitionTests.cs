@@ -209,10 +209,11 @@ public class TransitionTests
     [Fact]
     public void EnterDirectory_truncates_right_columns_and_emits_ReadDirectory()
     {
+        // The column beside the cursor is showing somewhere else, so entering has to read.
         var state = StateWithColumns(
             new Column(new Location.RealDirectory(@"C:\"), [Dir, File1], Cursor: 0, Load: LoadState.Loaded),
-            new Column(new Location.RealDirectory(@"C:\sub"), [File1], Cursor: 0, Load: LoadState.Loaded),
-            new Column(new Location.RealDirectory(@"C:\sub\stale"), [], Load: LoadState.Loading));
+            new Column(new Location.RealDirectory(@"C:\elsewhere"), [File1], Cursor: 0, Load: LoadState.Loaded),
+            new Column(new Location.RealDirectory(@"C:\elsewhere\stale"), [], Load: LoadState.Loading));
 
         var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(0, 0));
 
@@ -223,10 +224,28 @@ public class TransitionTests
         Assert.Equal(LoadState.Loading, next.Columns[1].Load);
         Assert.Equal(1, next.FocusedColumn);
 
-        var effect = Assert.Single(effects);
-        var readDirectory = Assert.IsType<Effect.ReadDirectory>(effect);
+        var readDirectory = Assert.IsType<Effect.ReadDirectory>(Assert.Single(effects));
         Assert.Equal(1, readDirectory.ColumnIndex);
         Assert.Equal(new Location.RealDirectory(@"C:\sub"), readDirectory.Location);
+    }
+
+    /// <summary>
+    /// Entering the folder the cursor was resting on moves into the column that is already there.
+    /// Re-reading it would flash 読み込み中… over contents already on screen.
+    /// </summary>
+    [Fact]
+    public void EnterDirectory_moves_into_the_column_that_is_already_showing_it()
+    {
+        var state = StateWithColumns(
+            new Column(new Location.RealDirectory(@"C:\"), [Dir, File1], Cursor: 0, Load: LoadState.Loaded),
+            new Column(new Location.RealDirectory(@"C:\sub"), [File1], Cursor: 0, Load: LoadState.Loaded));
+
+        var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(0, 0));
+
+        Assert.Equal(1, next.FocusedColumn);
+        Assert.Equal(LoadState.Loaded, next.Columns[1].Load);
+        Assert.Equal(0, next.Columns[1].Cursor);
+        Assert.Empty(effects.OfType<Effect.ReadDirectory>());
     }
 
     [Fact]
@@ -390,7 +409,11 @@ public class TransitionTests
         Assert.Equal(LoadState.Loaded, next.Columns[0].Load);
         Assert.Single(next.Columns[0].Entries);
         Assert.Equal(0, next.Columns[0].Cursor);
-        Assert.Empty(effects);
+
+        // The clamped cursor landed on a directory, so the pane fills in the column beside it.
+        Assert.Equal(
+            new Effect.ReadDirectory(1, new Location.RealDirectory(@"C:\sub"), Speculative: true),
+            Assert.Single(effects));
     }
 
     [Fact]
@@ -1835,7 +1858,8 @@ public class TransitionTests
 
         var (next, effects) = Transition.Apply(StateWithColumns(column), new Msg.CursorDown(0));
 
-        var effect = Assert.IsType<Effect.LoadPreview>(Assert.Single(effects));
+        // Two effects: what to say about the drive, and what to show in the column beside it.
+        var effect = Assert.Single(effects.OfType<Effect.LoadPreview>());
         Assert.Equal(PreviewTarget.Volume, effect.Target);
         Assert.Equal(@"C:\", effect.Path);
         Assert.Equal(PreviewKind.Loading, next.Preview.Kind);
@@ -1874,7 +1898,7 @@ public class TransitionTests
 
         var (_, effects) = Transition.Apply(StateWithColumns(column), new Msg.CursorDown(0));
 
-        var effect = Assert.IsType<Effect.LoadPreview>(Assert.Single(effects));
+        var effect = Assert.Single(effects.OfType<Effect.LoadPreview>());
         Assert.Equal(PreviewTarget.RecycleBin, effect.Target);
     }
 
@@ -1905,15 +1929,15 @@ public class TransitionTests
 
         var (_, effects) = Transition.Apply(StateWithColumns(column), new Msg.CursorDown(0));
 
+        // Either way the column beside it fills in - it is a directory. The question here is only
+        // whether the pane on the right also describes it as a volume.
         if (expectsCapacity)
         {
-            Assert.Equal(
-                PreviewTarget.Volume,
-                Assert.IsType<Effect.LoadPreview>(Assert.Single(effects)).Target);
+            Assert.Equal(PreviewTarget.Volume, Assert.Single(effects.OfType<Effect.LoadPreview>()).Target);
         }
         else
         {
-            Assert.Empty(effects);
+            Assert.Empty(effects.OfType<Effect.LoadPreview>());
         }
     }
 
@@ -1974,7 +1998,7 @@ public class TransitionTests
     }
 
     [Fact]
-    public void CursorMove_onto_a_directory_clears_the_preview_and_emits_no_effect()
+    public void CursorMove_onto_a_directory_clears_the_preview_and_shows_the_directory_instead()
     {
         var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 1, Load: LoadState.Loaded);
         var state = StateWithColumns(column) with
@@ -1987,7 +2011,13 @@ public class TransitionTests
         Assert.Equal(PreviewKind.None, next.Preview.Kind);
         Assert.Null(next.Preview.Path);
         Assert.Equal(4, next.Preview.Generation);
-        Assert.Empty(effects);
+
+        // A folder's preview is the column beside it, not the pane on the right.
+        Assert.Equal(
+            new Effect.ReadDirectory(1, new Location.RealDirectory(@"C:\sub"), Speculative: true),
+            Assert.Single(effects));
+        Assert.Equal(2, next.Columns.Length);
+        Assert.Equal(LoadState.Loading, next.Columns[1].Load);
     }
 
     private static Column DrivePaneColumn(int cursor = 0) => new(
@@ -2261,8 +2291,9 @@ public class TransitionTests
         var (next, effects) = Transition.Apply(state, new Msg.CursorUp(0)); // File1 -> Dir
 
         Assert.Equal(PreviewKind.None, next.Preview.Kind);
-        var cancel = Assert.IsType<Effect.CancelPreview>(Assert.Single(effects));
+        var cancel = Assert.IsType<Effect.CancelPreview>(Assert.Single(effects.OfType<Effect.CancelPreview>()));
         Assert.Equal(3, cancel.Generation);
+        Assert.Empty(effects.OfType<Effect.LoadPreview>());
     }
 
     [Fact]

@@ -58,8 +58,10 @@ public class HeadlessBrowsingTests
             loop.Dispatch(new Msg.Refresh());
             DrainUntil(loop, queue, () => loop.State.Columns[0].Load == LoadState.Loaded, TimeSpan.FromSeconds(10));
 
+            // Two columns: the root, plus the one that opened beside the cursor because it landed
+            // on a directory.
             var rootVms = StateProjection.Project(loop.State);
-            Assert.Single(rootVms);
+            Assert.Equal(2, rootVms.Count);
             Assert.Equal(3, rootVms[0].Entries.Count);
             Assert.True(rootVms[0].IsFocused);
 
@@ -71,6 +73,7 @@ public class HeadlessBrowsingTests
             loop.Dispatch(new Msg.CursorTo(0, alphaIndex));
             Assert.Equal(alphaIndex, loop.State.Columns[0].Cursor);
 
+            // Entering moves into the column that is already there rather than reloading it.
             loop.Dispatch(new Msg.EnterDirectory(0, alphaIndex));
             Assert.Equal(2, loop.State.Columns.Length);
             Assert.Equal(1, loop.State.FocusedColumn);

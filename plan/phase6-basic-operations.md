@@ -18,8 +18,8 @@ Phase 6 was sixteen loose checkboxes. Grilling turned it into decisions, and fou
 
 # Status
 
-Branch `phase6a-location-foundation`, 31 commits, **nothing merged to main** (see R-1).
-604 tests, `scripts/check.ps1` green.
+Branch `phase6a-location-foundation`, 32 commits, **nothing merged to main** (see R-1).
+618 tests, `scripts/check.ps1` green.
 
 | | Item | Status | Commit |
 |---|---|---|---|
@@ -51,6 +51,7 @@ Branch `phase6a-location-foundation`, 31 commits, **nothing merged to main** (se
 | 6e.6 | Open with default app | `[ ]` | |
 | 6e.7 | Status bar, key hints / help screen | `[ ]` | |
 | **6e-bis** | **Smooth cursor movement** | `[x]` | `f61c46b` `593194e` |
+| **6g** | **Finder-style auto-extend**: the column beside the cursor | `[x]` | (this commit) |
 | **6f** | **Findings parked from 6a–6e** | `[~]` | |
 | 6f.1 | Settings store: injectable path, atomic save | `[x]` | `134fce0` |
 | 6f.2 | `JobEngineTests` cancel race | `[ ]` | |
@@ -120,6 +121,36 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   not throw" and "empty implies empty" — all satisfied by `Enumerate()` returning `[]` from its
   catch block. A throwaway probe established the truth: 373 items in the bin, 373 returned,
   agreeing with `SHQueryRecycleBin`. The tests now assert both directions of that agreement.
+
+- **6g-1** `[x]` **The column beside the cursor now shows what the cursor is resting on.** Reported
+  as "a long standing bug"; it was in fact the deferred Finder-style auto-extend, never built.
+  `ReconcileChildColumn` is a common post-step of `Apply`, like `ReconcilePreview` and for the same
+  reason - every message that can move a cursor or change focus has to be followed by it, and
+  enumerating those per branch is how one gets missed.
+
+  **Bounded to exactly one column beyond the focus, which is the whole safety argument.** The child
+  loads asynchronously and its `DirectoryLoaded` runs the reconciliation again, so a rule of "extend
+  wherever a cursor sits on a folder" would have each load trigger the next - a chain unrolling
+  itself, and never terminating inside a junction that points at its own ancestor. Reading only the
+  *focused* column means the grandchild's load extends nothing, because focus has not moved. There is
+  a test for exactly that.
+
+  Two further decisions. It reconciles only when the cursor's target actually **changed** between
+  before and after, so a message that was ignored stays ignored rather than rebuilding the pane
+  underneath it - without that, 51 existing tests failed, all of them correctly. And `EnterDirectory`
+  now **moves into the column that is already showing the folder** instead of discarding a loaded
+  listing and re-reading it, which would flash 読み込み中… over contents already on screen.
+
+  The speculative read is marked as such on the effect and **debounced in the App exactly like a
+  preview** (same gate, same 150 ms): a held-down arrow would otherwise put one directory listing on
+  the worker pool per keystroke, which on a network share is precisely the stall the preview slot was
+  separated out to avoid in 6c.
+
+- **6d-14** `[x]` **A not-ready drive said only that something had gone wrong.** It was reported as a
+  failed preview, so an empty optical drive read as an error. It is not an error - it is an empty
+  drive, and what kind of drive it is stays worth saying. `PreviewCapacity` gained a `Status` and
+  nullable byte counts, so the pane shows 光学ドライブ / 準備できていません with no bar and no figures.
+  `DriveType` needs no disc; `VolumeLabel` and `DriveFormat` would both throw there.
 
 - **6d-12** `[note]` **The preview effect had to learn what it is previewing.** A drive's `C:\` is
   also a perfectly good directory path, so nothing in `Effect.LoadPreview(generation, path)` could
@@ -781,12 +812,14 @@ covers HSM and archive tiers. Detect the attribute, never a vendor.
 
 # Deferred, with reasons
 
-- **Reparse-point cycle prevention.** Not reachable today: `MoveCursor` returns `NoEffects` and
-  columns exist only via explicit `EnterDirectory`. zurari needs it because
-  `ExtendRightSideIfReadyAsync` *auto-extends* the chain — that is what runs away on a
-  self-referencing junction (`..\zurari\Program.cs:5879`). **Required the moment Finder-style
-  auto-extend is added**; the two are one feature, and `ResolveCanonicalPath` plus a visited-set
-  (`:4042`) is the design to copy. Link *display* is cheap and rides along in 6d.
+- **Reparse-point cycle prevention.** Auto-extend has now landed (6g-1) and this is **still not
+  needed**, which corrects what this entry used to say. zurari's `ExtendRightSideIfReadyAsync`
+  extends the whole chain, and that is what runs away on a self-referencing junction
+  (`..\zurari\Program.cs:5879`). Ours extends exactly one column beyond the focus, so nothing
+  advances without a keypress: walking a junction into its own ancestor costs one column per press,
+  the same as Explorer. `ResolveCanonicalPath` plus a visited-set (`:4042`) becomes the design to
+  copy only if the chain is ever extended more than one deep at a time. Link *display* is cheap and
+  rides along in 6d.
 - **VHD/VHDX mounting** — needs elevation.
 - Extension-mismatch warning, audio/exe/PDF metadata, MP4 self-parsing — small and unblocked; the
   shell-thumbnail decision may make MP4 self-parsing unnecessary.
