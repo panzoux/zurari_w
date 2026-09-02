@@ -51,7 +51,7 @@ Branch `phase6a-location-foundation`, 32 commits, **nothing merged to main** (se
 | 6e.6 | Open with default app | `[ ]` | |
 | 6e.7 | Status bar, key hints / help screen | `[ ]` | |
 | **6e-bis** | **Smooth cursor movement** | `[x]` | `f61c46b` `593194e` |
-| **6g** | **Finder-style auto-extend**: the column beside the cursor | `[x]` | (this commit) |
+| **6g** | **Finder-style auto-extend**: the column beside the cursor | `[x]` | `75f84f9` |
 | **6f** | **Findings parked from 6a–6e** | `[~]` | |
 | 6f.1 | Settings store: injectable path, atomic save | `[x]` | `134fce0` |
 | 6f.2 | `JobEngineTests` cancel race | `[ ]` | |
