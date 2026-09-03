@@ -40,7 +40,7 @@ Branch `phase6a-location-foundation`, 33 commits, **nothing merged to main** (se
 | 6d.5a | ゴミ箱 usable: its own context menu, readable rows, real drive/bin icons | `[x]` | `0faeecd` |
 | 6d.6 | Collapse state persisted | `[x]` | `7923fb9` |
 | 6d.7 | Drive / share capacity preview | `[x]` | `a39b004` |
-| 6d.8 | ISO mount on activate, eject | `[x]` | (this commit) |
+| 6d.8 | ISO mount on activate, eject | `[x]` | `5e7b402` |
 | 6d.9 | Live refresh (`SHChangeNotifyRegister`) | `[ ]` | |
 | **6e** | **Sorting, hidden files, cursor memory, rename** | `[ ]` | |
 | 6e.1 | Sort in `Transition` (modes + direction + dirs-first) | `[ ]` | |
