@@ -61,6 +61,10 @@ public enum LoadState
 /// rather than presentation: a section-aware operation needs it, and the header rows themselves
 /// carry it so a collapse knows what it is hiding.
 /// </param>
+/// <param name="IsEjectable">
+/// Whether the media behind this row can be taken out - an optical drive, a card reader, a mounted
+/// image. False for a fixed disk and for everything that is not a drive.
+/// </param>
 /// <param name="OriginalPath">
 /// Where a deleted item used to live, for rows in the recycle bin. The row is named by where the
 /// item is *now* - the shell's parsing name, which is what any operation on it needs - so this is
@@ -92,7 +96,8 @@ public sealed record Entry(
     string? DisplayName = null,
     string? Group = null,
     bool IsRemovable = false,
-    string? OriginalPath = null)
+    string? OriginalPath = null,
+    bool IsEjectable = false)
 {
     /// <summary>What to render for this entry - <see cref="DisplayName"/> when it has one.</summary>
     public string Label => DisplayName ?? Name;
@@ -464,6 +469,29 @@ public sealed record AppState
 
     /// <summary>What the preview pane currently shows - see <see cref="PreviewState"/>.</summary>
     public PreviewState Preview { get; init; } = PreviewState.Initial;
+
+    /// <summary>
+    /// A short message for the status bar - the result of something the user asked for that has no
+    /// other visible outcome. <c>null</c> when there is nothing to say.
+    /// </summary>
+    /// <remarks>
+    /// Cleared as soon as the user moves on (see <c>Transition.ReconcilePreview</c>), so it reads as
+    /// a reply to what was just done rather than a message that lingers. Eject is what this is for:
+    /// a drive that will not eject otherwise does nothing at all, which is indistinguishable from a
+    /// key that is not wired up.
+    /// </remarks>
+    public string? Notice { get; init; }
+
+    /// <summary>
+    /// An entry name to put the cursor on as soon as a listing containing it arrives, or
+    /// <c>null</c>. Consumed and cleared by the first <see cref="Msg.DirectoryLoaded"/> that has it.
+    /// </summary>
+    /// <remarks>
+    /// Mounting an image is the first use: the new drive does not exist until the listing is re-read,
+    /// so "put the cursor on it" cannot be done at the moment the request is made. The same shape is
+    /// what "the cursor lands on the folder you just created" will need.
+    /// </remarks>
+    public string? RevealTarget { get; init; }
 
     /// <summary>
     /// Full paths of entries the user has cut (Ctrl+X) but not yet pasted - Explorer-style "dim the

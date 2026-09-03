@@ -703,6 +703,13 @@ public sealed partial class MainWindow : Window, IDisposable
             Dispatch(new Msg.PinFocusedLocation(loop.State.FocusedColumn));
             e.Handled = true;
         }
+        else if (e.Key == Key.E && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            // Ctrl+E ejects whatever is in the drive under the cursor - a disc, a card, or an image
+            // that was mounted by opening it. It is also the only way to unmount one.
+            Dispatch(new Msg.EjectAtCursor(loop.State.FocusedColumn));
+            e.Handled = true;
+        }
         else if (e.Key is Key.Apps || (e.Key == Key.F10 && Keyboard.Modifiers == ModifierKeys.Shift))
         {
             ShowContextMenuAtCursor();
@@ -975,6 +982,13 @@ public sealed partial class MainWindow : Window, IDisposable
         if (markedCount > 0)
         {
             statusText += $" | マーク: {markedCount}";
+        }
+
+        // The reply to something the user just asked for, when it has no other visible outcome -
+        // an eject that the drive refused. Cleared by Transition as soon as the cursor moves on.
+        if (state.Notice is { } notice)
+        {
+            statusText += " | " + notice;
         }
 
         StatusText.Text = statusText;

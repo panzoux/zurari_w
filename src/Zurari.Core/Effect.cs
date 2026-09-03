@@ -123,6 +123,27 @@ public abstract record Effect
     public sealed record SetPinned(string Path, bool Pin) : Effect;
 
     /// <summary>
+    /// Mounts the disc image at <paramref name="Path"/> as a drive, through the shell's own
+    /// <c>mount</c> verb - the same thing double-clicking it in Explorer does.
+    /// </summary>
+    /// <remarks>
+    /// Reports back as <see cref="Msg.ImageMounted"/> with the drive that appeared, or
+    /// <see cref="Msg.NoticeRaised"/> if it did not. ISO only: <c>Windows.IsoFile</c> registers the
+    /// verb and needs no elevation, while VHD/VHDX go through <c>AttachVirtualDisk</c>, which does.
+    /// </remarks>
+    public sealed record MountImage(string Path) : Effect;
+
+    /// <summary>
+    /// Ejects the media in <paramref name="DriveRoot"/> - an optical disc, a card, or an image
+    /// mounted by <see cref="MountImage"/> - through the shell's <c>Eject</c> verb.
+    /// </summary>
+    /// <remarks>
+    /// Always reports back as <see cref="Msg.NoticeRaised"/>, success or failure. A drive with a file
+    /// open on it refuses, and silence would be indistinguishable from a key that does nothing.
+    /// </remarks>
+    public sealed record EjectDrive(string DriveRoot) : Effect;
+
+    /// <summary>
     /// Remembers which sections of the drive pane are collapsed, so they come back that way.
     /// </summary>
     /// <remarks>

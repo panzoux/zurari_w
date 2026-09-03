@@ -116,6 +116,12 @@ public sealed class ShellEffectExecutor : IDisposable
             case Effect.ShellCopyOrMove shellCopyOrMove:
                 ExecuteShellCopyOrMove(shellCopyOrMove);
                 break;
+            case Effect.MountImage mountImage:
+                ExecuteMountImage(mountImage);
+                break;
+            case Effect.EjectDrive ejectDrive:
+                ExecuteEjectDrive(ejectDrive);
+                break;
             default:
                 // Filesystem effects (ReadDirectory, ...) are routed to WorkerRuntime by the App
                 // composition root and never reach this executor; ignore anything unrecognized.
@@ -159,6 +165,84 @@ public sealed class ShellEffectExecutor : IDisposable
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             post(new Msg.DirectoryLoadFailed(effect.ColumnIndex, effect.Location, ex.Message));
+        }
+    }
+
+    /// <summary>How long <see cref="ExecuteMountImage"/> waits for the new drive to turn up.</summary>
+    /// <remarks>
+    /// The verb returns once the shell has taken the request, not once the volume is mounted. A
+    /// second is generous for an ISO on a local disk and short enough that a failure is not mistaken
+    /// for a hang.
+    /// </remarks>
+    private static readonly TimeSpan MountAppearTimeout = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Mounts a disc image and reports which drive it became.
+    /// </summary>
+    /// <remarks>
+    /// The drive letter is not returned by anything: the verb succeeds and the volume appears a
+    /// moment later. Comparing the set of drives before and after is the only way to name it, and
+    /// naming it is what lets the cursor land on it. <c>DriveInfo</c> here is not the file I/O this
+    /// layer is banned from - it is "which volumes exist", which is inseparable from having just
+    /// created one.
+    /// </remarks>
+    private void ExecuteMountImage(Effect.MountImage effect)
+    {
+        var before = DriveNames();
+
+        if (ShellVerbs.Invoke("mount", effect.Path) is { } error)
+        {
+            post(new Msg.NoticeRaised($"マウントできません: {error.Message}"));
+            return;
+        }
+
+        var deadline = DateTime.UtcNow + MountAppearTimeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            foreach (var name in DriveNames())
+            {
+                if (!before.Contains(name))
+                {
+                    post(new Msg.ImageMounted(name));
+                    return;
+                }
+            }
+
+            Thread.Sleep(100);
+        }
+
+        // Mounted, but nothing new turned up - an image that was already mounted, most likely. Say
+        // so rather than leaving the keypress looking ignored.
+        post(new Msg.NoticeRaised("新しいドライブは見つかりませんでした"));
+    }
+
+    private void ExecuteEjectDrive(Effect.EjectDrive effect)
+    {
+        var error = ShellVerbs.Invoke("Eject", effect.DriveRoot);
+        post(new Msg.NoticeRaised(
+            error is null ? $"{effect.DriveRoot} を取り出しました" : $"取り出せません: {error.Message}"));
+
+        if (error is null)
+        {
+            post(new Msg.PlacesChanged());
+        }
+    }
+
+    private static HashSet<string> DriveNames()
+    {
+        try
+        {
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var drive in System.IO.DriveInfo.GetDrives())
+            {
+                names.Add(drive.Name);
+            }
+
+            return names;
+        }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
+        {
+            return [];
         }
     }
 

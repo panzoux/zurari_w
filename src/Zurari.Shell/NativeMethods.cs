@@ -72,6 +72,42 @@ internal static class NativeMethods
     public static extern int SHGetKnownFolderPath(
         in Guid rfid, uint dwFlags, IntPtr hToken, out IntPtr ppszPath);
 
+    public const uint SEE_MASK_FLAG_NO_UI = 0x00000400;
+    public const uint SEE_MASK_NOASYNC = 0x00000100;
+    public const uint SEE_MASK_INVOKEIDLIST = 0x0000000C;
+    public const int SW_HIDE = 0;
+
+    /// <summary>Arguments for <see cref="ShellExecuteExW"/>.</summary>
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct SHELLEXECUTEINFOW
+    {
+        public int cbSize;
+        public uint fMask;
+        public IntPtr hwnd;
+        [MarshalAs(UnmanagedType.LPWStr)] public string? lpVerb;
+        [MarshalAs(UnmanagedType.LPWStr)] public string? lpFile;
+        [MarshalAs(UnmanagedType.LPWStr)] public string? lpParameters;
+        [MarshalAs(UnmanagedType.LPWStr)] public string? lpDirectory;
+        public int nShow;
+        public IntPtr hInstApp;
+        public IntPtr lpIDList;
+        [MarshalAs(UnmanagedType.LPWStr)] public string? lpClass;
+        public IntPtr hkeyClass;
+        public uint dwHotKey;
+        public IntPtr hIcon;
+        public IntPtr hProcess;
+    }
+
+    /// <summary>
+    /// Invokes a registered verb on a file or drive - <c>mount</c> on a disc image, <c>Eject</c> on
+    /// a drive. The same code path Explorer's own context menu takes, so it needs no elevation for
+    /// anything Explorer can do unelevated.
+    /// </summary>
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool ShellExecuteExW(ref SHELLEXECUTEINFOW lpExecInfo);
+
     /// <summary>How much is in the recycle bin, without enumerating it.</summary>
     [StructLayout(LayoutKind.Sequential)]
     public struct SHQUERYRBINFO

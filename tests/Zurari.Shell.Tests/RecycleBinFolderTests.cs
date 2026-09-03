@@ -64,6 +64,12 @@ public class RecycleBinFolderTests
     {
         // Each pass releases its COM objects; a mistake there tends to show up as a second call
         // behaving differently from the first.
+        //
+        // This assembly runs its tests serially (xunit.runner.json). Enumerating the bin while other
+        // shell COM calls are in flight in the same process returns a SHORT list - measured at 5
+        // failures in 6 runs with parallel collections on, and 0 in 6 with them off, against a bin
+        // whose contents were identical across three consecutive reads when nothing else was running.
+        // See the plan's 6f-4: the same hazard may exist in the app itself.
         var first = RecycleBinFolder.Enumerate();
         var second = RecycleBinFolder.Enumerate();
 

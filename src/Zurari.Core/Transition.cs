@@ -154,6 +154,9 @@ public static class Transition
             Msg.PinFocusedLocation m => PinFocusedLocation(state, m.ColumnIndex),
             Msg.PinEntryAtCursor m => PinEntryAtCursor(state, m.ColumnIndex),
             Msg.PlacesChanged => ReloadDrivePanes(state),
+            Msg.EjectAtCursor m => EjectAtCursor(state, m.ColumnIndex),
+            Msg.ImageMounted m => ReloadDrivePanes(state with { RevealTarget = m.DriveRoot }),
+            Msg.NoticeRaised m => (state with { Notice = m.Message }, NoEffects),
             Msg.ToggleSection m => ToggleSection(state, m.ColumnIndex, m.EntryIndex),
             Msg.CollapsedGroupsRestored m => (RestoreCollapsedGroups(state, m.ColumnIndex, m.Groups), NoEffects),
             _ => (state, NoEffects),
@@ -238,7 +241,12 @@ public static class Transition
             var fileTruncated = state.Columns.Take(columnIndex + 1).ToImmutableArray();
             fileTruncated = fileTruncated.SetItem(columnIndex, column with { Cursor = entryIndex });
             var fileState = state with { Columns = fileTruncated, FocusedColumn = columnIndex };
-            return (fileState, NoEffects);
+
+            // A disc image is a container the filesystem cannot open, so opening it means asking the
+            // shell to make it one - after which it is an ordinary drive like any other.
+            return entry.Kind == EntryKind.File && IsDiscImage(entry.Name) && EntryPath(column, entry) is { } imagePath
+                ? (fileState, new Effect[] { new Effect.MountImage(imagePath) })
+                : (fileState, NoEffects);
         }
 
         var childLocation = ChildLocation(column, entry);
@@ -264,6 +272,53 @@ public static class Transition
 
         var newState = state with { Columns = newColumns, FocusedColumn = focusChild ? newColumnIndex : columnIndex };
         return (newState, [new Effect.ReadDirectory(newColumnIndex, childLocation)]);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="name"/> is a disc image the shell can mount without elevation.
+    /// </summary>
+    /// <remarks>
+    /// ISO only. <c>Windows.IsoFile</c> registers the <c>mount</c> verb for it; VHD and VHDX go
+    /// through <c>AttachVirtualDisk</c>, which needs an administrator, so offering it here would
+    /// produce a prompt or a silent failure rather than a mounted drive.
+    /// </remarks>
+    private static bool IsDiscImage(string name) =>
+        name.EndsWith(".iso", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Ejects whatever is in the drive under the cursor, or says why it cannot.
+    /// </summary>
+    /// <remarks>
+    /// Refusing here rather than letting the shell refuse keeps the answer immediate and specific: a
+    /// fixed disk is not something that comes out, and a file is not a drive at all.
+    /// </remarks>
+    private static (AppState, IReadOnlyList<Effect>) EjectAtCursor(AppState state, int columnIndex)
+    {
+        if (!InRange(state, columnIndex))
+        {
+            return (state, NoEffects);
+        }
+
+        var column = state.Columns[columnIndex];
+        if (column.Cursor < 0 || column.Cursor >= column.Entries.Length)
+        {
+            return (state, NoEffects);
+        }
+
+        var entry = column.Entries[column.Cursor];
+        if (entry.Kind != EntryKind.Drive)
+        {
+            return (state with { Notice = "取り出せるドライブを選んでください" }, NoEffects);
+        }
+
+        if (!entry.IsEjectable)
+        {
+            return (state with { Notice = $"{entry.Label} は取り出せません" }, NoEffects);
+        }
+
+        return EntryPath(column, entry) is { } path
+            ? (state, new Effect[] { new Effect.EjectDrive(path) })
+            : (state, NoEffects);
     }
 
     private static AppState GoToParent(AppState state, int columnIndex)
@@ -312,7 +367,29 @@ public static class Transition
             Load = LoadState.Loaded,
             ErrorMessage = null,
         };
-        return WithColumn(state, columnIndex, updated);
+
+        // Something was waiting for this listing to exist before it could be pointed at - the drive
+        // a disc image was just mounted as. Now that its row is here, put the cursor on it.
+        var revealed = state.RevealTarget is { } target ? IndexOfName(updated.Entries, target) : -1;
+
+        var withColumn = WithColumn(state, columnIndex, revealed >= 0 ? updated with { Cursor = revealed } : updated);
+        return revealed >= 0
+            ? withColumn with { FocusedColumn = columnIndex, RevealTarget = null }
+            : withColumn;
+    }
+
+    /// <summary>Index of the entry called <paramref name="name"/>, or -1.</summary>
+    private static int IndexOfName(ImmutableArray<Entry> entries, string name)
+    {
+        for (var i = 0; i < entries.Length; i++)
+        {
+            if (string.Equals(entries[i].Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 
     /// <summary>
@@ -1231,6 +1308,9 @@ public static class Transition
         }
 
         var nextGeneration = newState.Preview.Generation + 1;
+
+        // The cursor moved, so whatever the last notice was replying to is over.
+        newState = newState with { Notice = null };
 
         // The target moved, so whatever was loading for the previous generation is now destined to
         // be discarded on arrival. Say so, rather than letting it run to completion unnoticed.

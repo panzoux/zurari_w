@@ -18,8 +18,8 @@ Phase 6 was sixteen loose checkboxes. Grilling turned it into decisions, and fou
 
 # Status
 
-Branch `phase6a-location-foundation`, 32 commits, **nothing merged to main** (see R-1).
-618 tests, `scripts/check.ps1` green.
+Branch `phase6a-location-foundation`, 33 commits, **nothing merged to main** (see R-1).
+636 tests, `scripts/check.ps1` green.
 
 | | Item | Status | Commit |
 |---|---|---|---|
@@ -40,7 +40,7 @@ Branch `phase6a-location-foundation`, 32 commits, **nothing merged to main** (se
 | 6d.5a | ゴミ箱 usable: its own context menu, readable rows, real drive/bin icons | `[x]` | `0faeecd` |
 | 6d.6 | Collapse state persisted | `[x]` | `7923fb9` |
 | 6d.7 | Drive / share capacity preview | `[x]` | `a39b004` |
-| 6d.8 | ISO mount on activate, eject | `[ ]` | |
+| 6d.8 | ISO mount on activate, eject | `[x]` | (this commit) |
 | 6d.9 | Live refresh (`SHChangeNotifyRegister`) | `[ ]` | |
 | **6e** | **Sorting, hidden files, cursor memory, rename** | `[ ]` | |
 | 6e.1 | Sort in `Transition` (modes + direction + dirs-first) | `[ ]` | |
@@ -70,6 +70,21 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
 `[ ]` = still open.
 
 ## Open
+
+- **6f-4** `[ ]` **Enumerating the recycle bin while other shell COM is in flight returns a short
+  list.** Found while finishing 6d.8, and **it is not only a test problem**.
+  `RecycleBinFolderTests.Repeated_enumeration_does_not_leak_or_change_its_answer` compares two
+  consecutive `Enumerate()` calls. Measured: **5 failures in 6 runs** with xUnit's parallel
+  collections on, **0 in 6** with them off - while three consecutive reads in isolation returned
+  identical 533-item lists. So the bin's contents were not changing; the enumeration was being
+  truncated by concurrent shell calls in the same process.
+
+  Worked around for now by serializing that assembly (`tests/Zurari.Shell.Tests/xunit.runner.json`).
+  **The app does the same thing**: icons resolve through `SHGetFileInfo` on the UI thread while the
+  `ShellEffectExecutor`'s STA worker enumerates the bin. If the same truncation applies there, a bin
+  listing can silently come up short - which is unfalsifiable by looking at it. Wants a deliberate
+  investigation: whether `IEnumShellItems` over `shell:RecycleBinFolder` needs its own apartment, a
+  retry, or a cross-check against `SHQueryRecycleBin`'s count before being believed.
 
 - **R-1** `[ ]` **Nothing is merged to main.** All 24 commits sit on `phase6a-location-foundation`.
   `main` is still at `b561d45`.
@@ -121,6 +136,25 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   not throw" and "empty implies empty" — all satisfied by `Enumerate()` returning `[]` from its
   catch block. A throwaway probe established the truth: 373 items in the bin, 373 returned,
   agreeing with `SHQueryRecycleBin`. The tests now assert both directions of that agreement.
+
+- **6d-15** `[x]` **Mount and eject, 6d.8.** Opening an `.iso` invokes the shell's `mount` verb;
+  `Ctrl+E` invokes `Eject` on the drive under the cursor. Verbs rather than APIs, deliberately: they
+  are what Explorer's own menu uses and need no elevation, where `AttachVirtualDisk` (VHD/VHDX) needs
+  an administrator and raw `IOCTL_STORAGE_EJECT_MEDIA` needs a volume handle and notifies nobody. A
+  test reads the registry and confirms Windows still registers `mount` for `.iso` - the assumption
+  the whole approach rests on, and one that would otherwise fail silently at the point of use.
+
+  Three supporting pieces. `Entry.IsEjectable` comes from `DriveType`, so Core can refuse a fixed
+  disk immediately and specifically instead of letting the shell refuse it silently - a mounted image
+  reports as an optical drive, which is also how it gets unmounted. `AppState.Notice` gives the
+  status bar a line for a result with no other visible outcome, cleared as soon as the cursor moves
+  on; without it a refused eject is indistinguishable from a key that was never wired up, which is
+  precisely the defect shape of 6d-6. And `AppState.RevealTarget` holds "put the cursor here once a
+  listing containing it arrives", because the mounted drive does not exist until the pane is re-read
+  - the same shape 6e.5's "the cursor lands on the folder you just created" will need.
+
+  **Ctrl+E is not in any help screen yet** - there is no help screen (6e.7). The plan's rule that
+  every command needs a binding *and* a help entry is half-satisfied.
 
 - **6g-1** `[x]` **The column beside the cursor now shows what the cursor is resting on.** Reported
   as "a long standing bug"; it was in fact the deferred Finder-style auto-extend, never built.

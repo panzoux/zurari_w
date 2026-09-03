@@ -135,4 +135,27 @@ public class RootPaneTests
 
         Assert.All(loaded.Entries, e => Assert.Equal("drives", e.Group));
     }
+
+    /// <summary>
+    /// Ejecting is offered on the rows where it means something. A mounted disc image reports as an
+    /// optical drive, so this is also what makes unmounting one possible.
+    /// </summary>
+    [Fact]
+    public void Drive_rows_say_whether_their_media_can_be_taken_out()
+    {
+        var entries = ReadRoot(() => []);
+        var drives = entries.Where(e => e.Kind == EntryKind.Drive).ToList();
+        Assert.NotEmpty(drives);
+
+        foreach (var drive in drives)
+        {
+            var info = new DriveInfo(drive.Name);
+            var expected = info.DriveType is DriveType.CDRom or DriveType.Removable;
+            Assert.Equal(expected, drive.IsEjectable);
+        }
+
+        // Nothing that is not a drive is ever ejectable - a header or a favorite would otherwise
+        // offer a gesture that cannot mean anything.
+        Assert.DoesNotContain(entries, e => e.Kind != EntryKind.Drive && e.IsEjectable);
+    }
 }

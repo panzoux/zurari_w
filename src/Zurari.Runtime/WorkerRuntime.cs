@@ -427,7 +427,8 @@ public sealed class WorkerRuntime : IDisposable
                 EntryKind.Drive,
                 SizeBytes: -1,
                 Group: EntryGroups.Drives,
-                DisplayName: DescribeDrive(drive)));
+                DisplayName: DescribeDrive(drive),
+                IsEjectable: IsEjectable(drive.DriveType)));
         }
 
         AppendSection(builder, EntryGroups.Drives, "ドライブ", drives);
@@ -662,6 +663,13 @@ public sealed class WorkerRuntime : IDisposable
         DriveType.Ram => "RAM ディスク",
         _ => "ドライブ",
     };
+
+    /// <summary>
+    /// Whether the media in a drive of this type can be taken out. A mounted disc image reports as
+    /// <see cref="DriveType.CDRom"/>, so ejecting one is the same gesture as ejecting a disc - which
+    /// is also how it is unmounted.
+    /// </summary>
+    private static bool IsEjectable(DriveType type) => type is DriveType.CDRom or DriveType.Removable;
 
     private static string DriveKindLabel(DriveType type) => type switch
     {
