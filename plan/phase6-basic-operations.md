@@ -18,7 +18,8 @@ Phase 6 was sixteen loose checkboxes. Grilling turned it into decisions, and fou
 
 # Status
 
-Branch `phase6a-location-foundation`, **nothing merged to main** (see R-1).
+**6a-6d, 6f and 6g are on `main`** - fast-forwarded from `phase6a-location-foundation` on
+2026-09-05, once 6d was complete (see R-1). 6e and 6c.5 remain.
 646 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`, and `check.ps1` refuses to pass while it is
@@ -74,6 +75,16 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
 `[ ]` = still open.
 
 ## Open
+
+- **R-1** `[x]` **Merged.** 43 commits fast-forwarded onto `main` at the end of 6d - the first point
+  where the phase had a coherent stopping place: `Location` is in, the drive pane is finished, and
+  the two test-reliability problems that were making the gate unreliable are fixed. A fast-forward
+  rather than a merge commit, because `main` had not moved and the history here has been linear
+  throughout. There is no remote, so nothing was published. Work on 6e continues on the same branch.
+
+  (This record had been deleted by accident while I was rewriting 6f-4, and was restored when the
+  merge went in - which is the second time this phase that an edit to one record quietly took a
+  neighbouring one with it.)
 
 - **status-1** `[x]` **The status tool's first use wrote the wrong hash, and it was my own bug.**
   `scripts/status.ps1` replaces a `(this commit)` placeholder with HEAD's short hash - but HEAD is

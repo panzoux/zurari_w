@@ -1,8 +1,10 @@
 # zurari_w 開発ロードマップ
 
 **作成**: 2026-07-20
-**現状**: Phase 0〜5 完了(main = `b561d45`)。Phase 6 は `phase6a-location-foundation` ブランチで進行中 —
-646 テスト green / **main 未マージ**(コミット一覧は `git log --oneline main..`)。
+**現状**: Phase 0〜5 完了。**Phase 6 の 6a〜6d・6f・6g を main にマージ済み**(2026-09-05、
+`phase6a-location-foundation` を fast-forward)。残りは 6e(ソート・隠しファイル・カーソル記憶・
+リネーム・新規フォルダ・既定アプリ・ステータスバー/ヘルプ)と 6c.5(シェルサムネイル)—
+646 テスト green。
 進捗の詳細は Phase 6 計画の Status 表と Records を見ること。
 **この行のテスト数は `scripts/status.ps1` が書く。手で直さない** — check.ps1 が古いままの通過を拒否する
 **コンセプト**: zurari(TUI版, 別名 zrr)の multi-column UX を Windows GUI へ。
@@ -78,7 +80,7 @@ Phase 6 の作業中に見つかったもののうち、**そのフェーズの�
 | 6f-2 | `JobEngineTests` のキャンセル競合(50MB のコピーが先に終わると `JobCancelled` が来ない) | `[ ]` 未着手 |
 | 6f-3 | ~~テストの `finally` にある無防備な `Directory.Delete`~~ → 共有ヘルパー `TempDirectory` を全テストアセンブリに導入し、89 箇所すべてを置換 | `[x]` 解決(2026-09-04) |
 | help | **キーバインドの一覧がどこにも無い。** 「コマンドを足したらキーとヘルプ項目の両方を足す」という規約の後半が未実装で、Ctrl+B / Ctrl+D / Ctrl+E / Space / Apps は**発見不可能**。ステータスバーの文脈ヒント + ヘルプ画面(6e.7)で解消する | `[ ]` 6e.7 |
-| R-1 | Phase 6 のコミットが **main に一つもマージされていない** | `[ ]` 未着手 |
+| R-1 | ~~Phase 6 のコミットが main に一つもマージされていない~~ → 6d 完了時点(6a〜6d/6f/6g、43コミット)を main へ fast-forward | `[x]` 解決(2026-09-05) |
 
 ## 見送った案
 
