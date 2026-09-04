@@ -119,9 +119,6 @@ public sealed class ShellEffectExecutor : IDisposable
             case Effect.MountImage mountImage:
                 ExecuteMountImage(mountImage);
                 break;
-            case Effect.EjectDrive ejectDrive:
-                ExecuteEjectDrive(ejectDrive);
-                break;
             default:
                 // Filesystem effects (ReadDirectory, ...) are routed to WorkerRuntime by the App
                 // composition root and never reach this executor; ignore anything unrecognized.
@@ -214,18 +211,6 @@ public sealed class ShellEffectExecutor : IDisposable
         // Mounted, but nothing new turned up - an image that was already mounted, most likely. Say
         // so rather than leaving the keypress looking ignored.
         post(new Msg.NoticeRaised("新しいドライブは見つかりませんでした"));
-    }
-
-    private void ExecuteEjectDrive(Effect.EjectDrive effect)
-    {
-        var error = ShellVerbs.Invoke("Eject", effect.DriveRoot);
-        post(new Msg.NoticeRaised(
-            error is null ? $"{effect.DriveRoot} を取り出しました" : $"取り出せません: {error.Message}"));
-
-        if (error is null)
-        {
-            post(new Msg.PlacesChanged());
-        }
     }
 
     private static HashSet<string> DriveNames()

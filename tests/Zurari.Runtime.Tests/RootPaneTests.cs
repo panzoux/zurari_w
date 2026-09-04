@@ -136,26 +136,39 @@ public class RootPaneTests
         Assert.All(loaded.Entries, e => Assert.Equal("drives", e.Group));
     }
 
+
     /// <summary>
-    /// Ejecting is offered on the rows where it means something. A mounted disc image reports as an
-    /// optical drive, so this is also what makes unmounting one possible.
+    /// An unlabelled volume has no name of its own, and the bare letter said nothing: C: and a USB
+    /// stick both read as one character, so there was no way to tell a fixed disk from removable
+    /// media without opening the preview. Explorer names those by type, and this row does too.
     /// </summary>
     [Fact]
-    public void Drive_rows_say_whether_their_media_can_be_taken_out()
+    public void A_drive_row_reads_as_the_shell_names_it()
     {
-        var entries = ReadRoot(() => []);
-        var drives = entries.Where(e => e.Kind == EntryKind.Drive).ToList();
+        var queue = new ConcurrentQueue<Msg>();
+        using var runtime = new WorkerRuntime(queue.Enqueue, displayName: path => "名前 " + path);
+        runtime.Submit(new Effect.ReadDirectory(0, Location.Drives.Instance));
+        var loaded = Assert.IsType<Msg.DirectoryLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
+
+        var drives = loaded.Entries.Where(e => e.Kind == EntryKind.Drive).ToList();
         Assert.NotEmpty(drives);
+        Assert.All(drives, d => Assert.Equal("名前 " + d.Name, d.Label));
+    }
 
-        foreach (var drive in drives)
-        {
-            var info = new DriveInfo(drive.Name);
-            var expected = info.DriveType is DriveType.CDRom or DriveType.Removable;
-            Assert.Equal(expected, drive.IsEjectable);
-        }
+    /// <summary>
+    /// The shell can decline to name something - a disconnected mapped drive, a volume that went
+    /// away between listing and asking. The letter is still better than nothing.
+    /// </summary>
+    [Fact]
+    public void A_drive_the_shell_will_not_name_still_shows_its_letter()
+    {
+        var queue = new ConcurrentQueue<Msg>();
+        using var runtime = new WorkerRuntime(queue.Enqueue, displayName: _ => null);
+        runtime.Submit(new Effect.ReadDirectory(0, Location.Drives.Instance));
+        var loaded = Assert.IsType<Msg.DirectoryLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
 
-        // Nothing that is not a drive is ever ejectable - a header or a favorite would otherwise
-        // offer a gesture that cannot mean anything.
-        Assert.DoesNotContain(entries, e => e.Kind != EntryKind.Drive && e.IsEjectable);
+        var drives = loaded.Entries.Where(e => e.Kind == EntryKind.Drive).ToList();
+        Assert.NotEmpty(drives);
+        Assert.All(drives, d => Assert.Contains(d.Name.TrimEnd('\\', '/'), d.Label, StringComparison.Ordinal));
     }
 }

@@ -85,6 +85,18 @@ public sealed class WorkerRuntime : IDisposable
     private readonly UserSettingsStore _settings;
 
     /// <summary>
+    /// Explorer's own name for a path, or <c>null</c> when it has none. Injected for the same reason
+    /// favorites and the bin are: it comes from the shell, and Runtime may not reference Shell.
+    /// </summary>
+    /// <remarks>
+    /// A volume with no label has no name of its own. Showing the bare letter told the user nothing -
+    /// C: and a USB stick both read as just a letter, so there was no way to see which was which
+    /// without opening the preview. The shell substitutes a type name ("ローカル ディスク (C:)",
+    /// "USB ドライブ (D:)"), localized and correct per machine in a way a hand-kept table would not be.
+    /// </remarks>
+    private readonly Func<string, string?>? _displayName;
+
+    /// <summary>
     /// 1 once the stored collapsed sections have been handed to the state - see
     /// <see cref="ExecuteReadDirectory"/>. Read from whichever worker picks up a drive-pane read, so
     /// it is claimed with <see cref="Interlocked"/> rather than a plain test-and-set.
@@ -150,7 +162,8 @@ public sealed class WorkerRuntime : IDisposable
         ThumbnailCache? thumbnailCache = null,
         Func<IReadOnlyList<RootPlace>>? places = null,
         Func<TrashPlace?>? trash = null,
-        UserSettingsStore? settings = null)
+        UserSettingsStore? settings = null,
+        Func<string, string?>? displayName = null)
     {
         ArgumentNullException.ThrowIfNull(post);
         if (workerCount < 1)
@@ -168,6 +181,7 @@ public sealed class WorkerRuntime : IDisposable
         _places = places;
         _trash = trash;
         _settings = settings ?? new UserSettingsStore();
+        _displayName = displayName;
 
         _workers = new Task[workerCount];
         for (var i = 0; i < workerCount; i++)
@@ -427,8 +441,7 @@ public sealed class WorkerRuntime : IDisposable
                 EntryKind.Drive,
                 SizeBytes: -1,
                 Group: EntryGroups.Drives,
-                DisplayName: DescribeDrive(drive),
-                IsEjectable: IsEjectable(drive.DriveType)));
+                DisplayName: DescribeDrive(drive)));
         }
 
         AppendSection(builder, EntryGroups.Drives, "ドライブ", drives);
@@ -629,9 +642,17 @@ public sealed class WorkerRuntime : IDisposable
     /// What a drive row reads as: its volume label with the letter, the way Explorer shows it, or
     /// just the letter when the volume has no label or cannot be reached.
     /// </summary>
-    private static string DescribeDrive(DriveInfo drive)
+    private string DescribeDrive(DriveInfo drive)
     {
         var letter = drive.Name.TrimEnd('\\', '/');
+
+        // Explorer's own name first: it names an unlabelled volume by its type, which is the
+        // only thing that distinguishes one bare letter from another.
+        if (_displayName?.Invoke(drive.Name) is { Length: > 0 } shellName)
+        {
+            return shellName;
+        }
+
         try
         {
             if (!drive.IsReady)
@@ -663,13 +684,6 @@ public sealed class WorkerRuntime : IDisposable
         DriveType.Ram => "RAM ディスク",
         _ => "ドライブ",
     };
-
-    /// <summary>
-    /// Whether the media in a drive of this type can be taken out. A mounted disc image reports as
-    /// <see cref="DriveType.CDRom"/>, so ejecting one is the same gesture as ejecting a disc - which
-    /// is also how it is unmounted.
-    /// </summary>
-    private static bool IsEjectable(DriveType type) => type is DriveType.CDRom or DriveType.Removable;
 
     private static string DriveKindLabel(DriveType type) => type switch
     {
@@ -790,7 +804,7 @@ public sealed class WorkerRuntime : IDisposable
     /// <c>DriveInfo</c> itself calls for a local volume. Kernel32 rather than the shell - this is
     /// filesystem I/O, which is Runtime's job, and the only P/Invoke here for that reason.
     /// </remarks>
-    private static (PreviewCapacity? Capacity, string? Unavailable) ReadVolume(string path)
+    private (PreviewCapacity? Capacity, string? Unavailable) ReadVolume(string path)
     {
         if (path.StartsWith(@"\\", StringComparison.Ordinal))
         {
@@ -801,7 +815,7 @@ public sealed class WorkerRuntime : IDisposable
 
             return (
                 new PreviewCapacity(
-                    LastSegment(path),
+                    _displayName?.Invoke(path) is { Length: > 0 } shareName ? shareName : LastSegment(path),
                     "ネットワーク共有",
                     UsedBytes: Math.Max(0, shareTotal - shareFree),
                     TotalBytes: shareTotal),
@@ -817,7 +831,7 @@ public sealed class WorkerRuntime : IDisposable
             // needs no disc; VolumeLabel and DriveFormat would both throw here.
             return (
                 new PreviewCapacity(
-                    drive.Name.TrimEnd('\\', '/'),
+                    DescribeDrive(drive),
                     DescribeDriveType(drive.DriveType),
                     Status: "準備できていません"),
                 null);
@@ -825,13 +839,9 @@ public sealed class WorkerRuntime : IDisposable
 
         var total = drive.TotalSize;
         var free = drive.AvailableFreeSpace;
-        var label = string.IsNullOrEmpty(drive.VolumeLabel)
-            ? drive.Name
-            : $"{drive.VolumeLabel} ({drive.Name.TrimEnd('\\', '/')})";
-
         return (
             new PreviewCapacity(
-                label,
+                DescribeDrive(drive),
                 $"{drive.DriveFormat} · {DescribeDriveType(drive.DriveType)}",
                 UsedBytes: Math.Max(0, total - free),
                 TotalBytes: total),

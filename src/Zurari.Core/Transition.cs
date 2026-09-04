@@ -154,7 +154,6 @@ public static class Transition
             Msg.PinFocusedLocation m => PinFocusedLocation(state, m.ColumnIndex),
             Msg.PinEntryAtCursor m => PinEntryAtCursor(state, m.ColumnIndex),
             Msg.PlacesChanged => ReloadDrivePanes(state),
-            Msg.EjectAtCursor m => EjectAtCursor(state, m.ColumnIndex),
             Msg.ImageMounted m => ReloadDrivePanes(state with { RevealTarget = m.DriveRoot }),
             Msg.NoticeRaised m => (state with { Notice = m.Message }, NoEffects),
             Msg.ToggleSection m => ToggleSection(state, m.ColumnIndex, m.EntryIndex),
@@ -284,42 +283,6 @@ public static class Transition
     /// </remarks>
     private static bool IsDiscImage(string name) =>
         name.EndsWith(".iso", StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// Ejects whatever is in the drive under the cursor, or says why it cannot.
-    /// </summary>
-    /// <remarks>
-    /// Refusing here rather than letting the shell refuse keeps the answer immediate and specific: a
-    /// fixed disk is not something that comes out, and a file is not a drive at all.
-    /// </remarks>
-    private static (AppState, IReadOnlyList<Effect>) EjectAtCursor(AppState state, int columnIndex)
-    {
-        if (!InRange(state, columnIndex))
-        {
-            return (state, NoEffects);
-        }
-
-        var column = state.Columns[columnIndex];
-        if (column.Cursor < 0 || column.Cursor >= column.Entries.Length)
-        {
-            return (state, NoEffects);
-        }
-
-        var entry = column.Entries[column.Cursor];
-        if (entry.Kind != EntryKind.Drive)
-        {
-            return (state with { Notice = "取り出せるドライブを選んでください" }, NoEffects);
-        }
-
-        if (!entry.IsEjectable)
-        {
-            return (state with { Notice = $"{entry.Label} は取り出せません" }, NoEffects);
-        }
-
-        return EntryPath(column, entry) is { } path
-            ? (state, new Effect[] { new Effect.EjectDrive(path) })
-            : (state, NoEffects);
-    }
 
     private static AppState GoToParent(AppState state, int columnIndex)
     {

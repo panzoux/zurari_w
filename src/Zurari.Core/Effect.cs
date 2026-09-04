@@ -130,18 +130,9 @@ public abstract record Effect
     /// Reports back as <see cref="Msg.ImageMounted"/> with the drive that appeared, or
     /// <see cref="Msg.NoticeRaised"/> if it did not. ISO only: <c>Windows.IsoFile</c> registers the
     /// verb and needs no elevation, while VHD/VHDX go through <c>AttachVirtualDisk</c>, which does.
+    /// Unmounting is the shell context menu's 取り出し, which needs nothing from us.
     /// </remarks>
     public sealed record MountImage(string Path) : Effect;
-
-    /// <summary>
-    /// Ejects the media in <paramref name="DriveRoot"/> - an optical disc, a card, or an image
-    /// mounted by <see cref="MountImage"/> - through the shell's <c>Eject</c> verb.
-    /// </summary>
-    /// <remarks>
-    /// Always reports back as <see cref="Msg.NoticeRaised"/>, success or failure. A drive with a file
-    /// open on it refuses, and silence would be indistinguishable from a key that does nothing.
-    /// </remarks>
-    public sealed record EjectDrive(string DriveRoot) : Effect;
 
     /// <summary>
     /// Remembers which sections of the drive pane are collapsed, so they come back that way.

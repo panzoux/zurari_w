@@ -18,8 +18,8 @@ Phase 6 was sixteen loose checkboxes. Grilling turned it into decisions, and fou
 
 # Status
 
-Branch `phase6a-location-foundation`, 33 commits, **nothing merged to main** (see R-1).
-636 tests, `scripts/check.ps1` green.
+Branch `phase6a-location-foundation`, 34 commits, **nothing merged to main** (see R-1).
+634 tests, `scripts/check.ps1` green.
 
 | | Item | Status | Commit |
 |---|---|---|---|
@@ -40,7 +40,7 @@ Branch `phase6a-location-foundation`, 33 commits, **nothing merged to main** (se
 | 6d.5a | ゴミ箱 usable: its own context menu, readable rows, real drive/bin icons | `[x]` | `0faeecd` |
 | 6d.6 | Collapse state persisted | `[x]` | `7923fb9` |
 | 6d.7 | Drive / share capacity preview | `[x]` | `a39b004` |
-| 6d.8 | ISO mount on activate, eject | `[x]` | `5e7b402` |
+| 6d.8 | ISO mount on activate (eject: see roadmap 見送った案) | `[x]` | `5e7b402` |
 | 6d.9 | Live refresh (`SHChangeNotifyRegister`) | `[ ]` | |
 | **6e** | **Sorting, hidden files, cursor memory, rename** | `[ ]` | |
 | 6e.1 | Sort in `Transition` (modes + direction + dirs-first) | `[ ]` | |
@@ -137,6 +137,32 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   catch block. A throwaway probe established the truth: 373 items in the bin, 373 returned,
   agreeing with `SHQueryRecycleBin`. The tests now assert both directions of that agreement.
 
+- **6d-16** `[x]` **The eject key was reviewed away, and the drive rows were the real problem.**
+  Reviewing the status-bar design turned up three corrections, all of them right.
+
+  **`Ctrl+E` is withdrawn.** It is not an Explorer convention, and 取り出し is already in the shell
+  context menu on any drive row - so a dedicated key bought speed alone, at the price of a key, a
+  help line, and `Msg.EjectAtCursor` / `Effect.EjectDrive` / `Entry.IsEjectable` in Core. All removed;
+  the reasoning is in the roadmap's 見送った案 so re-adding it is a decision rather than a rediscovery.
+  Mount stays: opening an `.iso` is the existing "open this" gesture, not a new key.
+
+  **"Windows (C:) は取り出せません" was the wrong answer to the wrong question.** An operation that
+  cannot apply should not be accepted and then explained - it should not be offered. Moot now that the
+  key is gone, but the principle stands for whatever replaces it.
+
+  **The drive rows never said what the drives were.** `C:` and `D:` both rendered as a bare letter,
+  so a fixed disk and a USB stick were indistinguishable in the pane - the type was visible only in
+  the preview, and only for the one drive that happened to be *not ready*. The cause: an unlabelled
+  volume has no name, and the code fell back to the letter. Explorer does not; it substitutes a type
+  name. `ShellDisplayName.For` (`SIGDN_NORMALDISPLAY`, already listed as "Adopt" in the facilities
+  inventory) now supplies it, injected into Runtime as a delegate for the same reason favorites and
+  the bin are. Measured on this machine: `ローカル ディスク (C:)`, `USB ドライブ (D:)`,
+  `BD-ROM ドライブ (E:)` - localized, per-machine correct, and better than the hand-written
+  「E: (光学ドライブ)」 it replaces.
+
+  **The title bar now shows only `zurari <version>`.** It was repeating the focused path, which the
+  status bar already carries - a duplicate occupying the most visible line in the window.
+
 - **6d-15** `[x]` **Mount and eject, 6d.8.** Opening an `.iso` invokes the shell's `mount` verb;
   `Ctrl+E` invokes `Eject` on the drive under the cursor. Verbs rather than APIs, deliberately: they
   are what Explorer's own menu uses and need no elevation, where `AttachVirtualDisk` (VHD/VHDX) needs
@@ -153,8 +179,8 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   listing containing it arrives", because the mounted drive does not exist until the pane is re-read
   - the same shape 6e.5's "the cursor lands on the folder you just created" will need.
 
-  **Ctrl+E is not in any help screen yet** - there is no help screen (6e.7). The plan's rule that
-  every command needs a binding *and* a help entry is half-satisfied.
+  **Superseded in part by 6d-16**: the `Ctrl+E` binding and everything that existed only to serve it
+  were removed on review. Mount, `AppState.Notice` and `AppState.RevealTarget` remain.
 
 - **6g-1** `[x]` **The column beside the cursor now shows what the cursor is resting on.** Reported
   as "a long standing bug"; it was in fact the deferred Finder-style auto-extend, never built.

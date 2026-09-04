@@ -4,9 +4,10 @@ using Zurari.Core;
 namespace Zurari.Core.Tests;
 
 /// <summary>
-/// Opening a disc image mounts it; Ctrl+E takes it, or a disc, back out again.
+/// Opening a disc image mounts it. Taking it back out is the shell context menu's 取り出し - see the
+/// roadmap for why there is no key of our own for that.
 /// </summary>
-public class MountAndEjectTests
+public class MountImageTests
 {
     private static AppState With(params Column[] columns) =>
         new() { Columns = [.. columns], FocusedColumn = 0 };
@@ -15,7 +16,7 @@ public class MountAndEjectTests
         new(Location.Drives.Instance, [.. rows], Cursor: cursor, Load: LoadState.Loaded);
 
     private static readonly Entry Optical =
-        new(@"E:\", EntryKind.Drive, Group: EntryGroups.Drives, DisplayName: "E: (光学ドライブ)", IsEjectable: true);
+        new(@"E:\", EntryKind.Drive, Group: EntryGroups.Drives, DisplayName: "BD-ROM ドライブ (E:)");
 
     private static readonly Entry Fixed =
         new(@"C:\", EntryKind.Drive, Group: EntryGroups.Drives, DisplayName: "Windows (C:)");
@@ -57,43 +58,6 @@ public class MountAndEjectTests
         var (_, effects) = Transition.Apply(With(column), new Msg.EnterDirectory(0, 0));
 
         Assert.Equal(mounts, effects.OfType<Effect.MountImage>().Any());
-    }
-
-    [Fact]
-    public void Ejecting_an_optical_drive_asks_the_shell_to_eject_it()
-    {
-        var (_, effects) = Transition.Apply(With(DrivePane(0, Optical)), new Msg.EjectAtCursor(0));
-
-        Assert.Equal(new Effect.EjectDrive(@"E:\"), Assert.Single(effects));
-    }
-
-    /// <summary>
-    /// A refusal has to be said out loud. A key that silently does nothing is indistinguishable from
-    /// one that was never wired up - which is exactly how a real defect hid earlier in this phase.
-    /// </summary>
-    [Fact]
-    public void Ejecting_a_fixed_disk_says_why_it_will_not()
-    {
-        var (next, effects) = Transition.Apply(With(DrivePane(0, Fixed)), new Msg.EjectAtCursor(0));
-
-        Assert.Empty(effects);
-        Assert.NotNull(next.Notice);
-        Assert.Contains("Windows (C:)", next.Notice!, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Ejecting_something_that_is_not_a_drive_says_so()
-    {
-        var column = new Column(
-            new Location.RealDirectory(@"C:\"),
-            [new Entry("a.txt", EntryKind.File)],
-            Cursor: 0,
-            Load: LoadState.Loaded);
-
-        var (next, effects) = Transition.Apply(With(column), new Msg.EjectAtCursor(0));
-
-        Assert.Empty(effects);
-        Assert.NotNull(next.Notice);
     }
 
     [Fact]

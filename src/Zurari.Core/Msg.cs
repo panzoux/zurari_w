@@ -348,12 +348,6 @@ public abstract record Msg
     public sealed record CollapsedGroupsRestored(int ColumnIndex, ImmutableArray<string> Groups) : Msg;
 
     /// <summary>
-    /// Eject the media in the drive under the focused column's cursor. Ignored unless that row is a
-    /// drive whose media can actually come out - see <see cref="Entry.IsEjectable"/>.
-    /// </summary>
-    public sealed record EjectAtCursor(int ColumnIndex) : Msg;
-
-    /// <summary>
     /// An <see cref="Effect.MountImage"/> succeeded and <paramref name="DriveRoot"/> appeared.
     /// Re-reads the drive pane and puts the cursor on the new drive once its row exists.
     /// </summary>

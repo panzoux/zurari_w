@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
@@ -113,7 +114,8 @@ public sealed partial class MainWindow : Window, IDisposable
         JobStrip.ItemsSource = jobRows;
 
         runtime = new WorkerRuntime(
-            post: PostToLoop, places: RootPlaces, trash: TrashPlaceRow, settings: settingsStore);
+            post: PostToLoop, places: RootPlaces, trash: TrashPlaceRow, settings: settingsStore,
+            displayName: Zurari.Shell.ShellDisplayName.For);
         shellExecutor = new ShellEffectExecutor(post: PostToLoop);
         jobEngine = new JobEngine(post: PostToLoop);
         directoryWatcher = new DirectoryWatcher(post: PostToLoop);
@@ -148,6 +150,10 @@ public sealed partial class MainWindow : Window, IDisposable
             Dispose();
         };
         Loaded += (_, _) => Browser.Focus();
+
+        // The title names the app and its version, nothing more. Where you are is the status bar's
+        // job, and having both say it meant the most valuable line in the window was a duplicate.
+        Title = "zurari " + AppVersion();
 
         // The header's two lines are shortened to fit, so a resize has to re-shorten them - the
         // splitter drag is the whole reason the preview pane's width is not a constant.
@@ -213,6 +219,18 @@ public sealed partial class MainWindow : Window, IDisposable
                 Location.RecycleBin.ParsingName,
                 Volatile.Read(ref trashItemCount) > 0 ? "full" : "empty")
             : iconCache.GetIcon(entry.Kind, entry.Name);
+
+    /// <summary>The assembly's informational version, trimmed of any build metadata suffix.</summary>
+    private static string AppVersion()
+    {
+        var version = typeof(MainWindow).Assembly
+            .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()?.InformationalVersion
+            ?? typeof(MainWindow).Assembly.GetName().Version?.ToString()
+            ?? "0.0";
+
+        var plus = version.IndexOf('+', StringComparison.Ordinal);
+        return plus < 0 ? version : version[..plus];
+    }
 
     /// <summary>Diagnostic-only: logs a window-level mouse transition (see ctor wiring).</summary>
     private void TraceWindowMouse(string kind, MouseButtonEventArgs e)
@@ -703,13 +721,6 @@ public sealed partial class MainWindow : Window, IDisposable
             Dispatch(new Msg.PinFocusedLocation(loop.State.FocusedColumn));
             e.Handled = true;
         }
-        else if (e.Key == Key.E && Keyboard.Modifiers == ModifierKeys.Control)
-        {
-            // Ctrl+E ejects whatever is in the drive under the cursor - a disc, a card, or an image
-            // that was mounted by opening it. It is also the only way to unmount one.
-            Dispatch(new Msg.EjectAtCursor(loop.State.FocusedColumn));
-            e.Handled = true;
-        }
         else if (e.Key is Key.Apps || (e.Key == Key.F10 && Keyboard.Modifiers == ModifierKeys.Shift))
         {
             ShowContextMenuAtCursor();
@@ -967,7 +978,6 @@ public sealed partial class MainWindow : Window, IDisposable
 
         var focused = state.Columns[state.FocusedColumn];
         var focusedPath = focused.Location.FilesystemPath ?? "ドライブ";
-        Title = "zurari — " + focusedPath;
 
         var markedCount = 0;
         foreach (var entry in focused.Entries)

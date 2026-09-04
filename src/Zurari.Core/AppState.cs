@@ -61,10 +61,6 @@ public enum LoadState
 /// rather than presentation: a section-aware operation needs it, and the header rows themselves
 /// carry it so a collapse knows what it is hiding.
 /// </param>
-/// <param name="IsEjectable">
-/// Whether the media behind this row can be taken out - an optical drive, a card reader, a mounted
-/// image. False for a fixed disk and for everything that is not a drive.
-/// </param>
 /// <param name="OriginalPath">
 /// Where a deleted item used to live, for rows in the recycle bin. The row is named by where the
 /// item is *now* - the shell's parsing name, which is what any operation on it needs - so this is
@@ -96,8 +92,7 @@ public sealed record Entry(
     string? DisplayName = null,
     string? Group = null,
     bool IsRemovable = false,
-    string? OriginalPath = null,
-    bool IsEjectable = false)
+    string? OriginalPath = null)
 {
     /// <summary>What to render for this entry - <see cref="DisplayName"/> when it has one.</summary>
     public string Label => DisplayName ?? Name;

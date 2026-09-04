@@ -2815,7 +2815,6 @@ public class TransitionProperties
         Gen.Select(GenColumnIndex, GenEntryIndex).Select(t => (Msg)new Msg.ToggleSection(t.Item1, t.Item2)),
         Gen.Select(GenColumnIndex, Gen.OneOfConst("g1", "g2").List[0, 2])
             .Select(t => (Msg)new Msg.CollapsedGroupsRestored(t.Item1, [.. t.Item2])),
-        GenColumnIndex.Select(i => (Msg)new Msg.EjectAtCursor(i)),
         Gen.OneOfConst(@"E:\", @"Z:\").Select(d => (Msg)new Msg.ImageMounted(d)),
         Gen.OneOfConst("ok", "failed").Select(m => (Msg)new Msg.NoticeRaised(m)),
         GenJobId.Select(g => (Msg)new Msg.PreviewCapacityLoaded(
