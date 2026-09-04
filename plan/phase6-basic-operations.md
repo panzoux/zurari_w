@@ -55,7 +55,7 @@ Branch `phase6a-location-foundation`, 36 commits, **nothing merged to main** (se
 | **6f** | **Findings parked from 6a–6e** | `[~]` | |
 | 6f.1 | Settings store: injectable path, atomic save | `[x]` | `134fce0` |
 | 6f.2 | `JobEngineTests` cancel race | `[ ]` | |
-| 6f.3 | Unguarded `Directory.Delete` in test cleanup (89, not 57) | `[x]` | (this commit) |
+| 6f.3 | Unguarded `Directory.Delete` in test cleanup (89, not 57) | `[x]` | `eb5ad3e` |
 | **docs** | Stale plan facts, CLAUDE.md pointer | `[x]` | `9d55e8f` `06dde17` |
 
 Deferred out of Phase 6 with reasons: reparse-point cycle prevention (coupled to Finder-style
