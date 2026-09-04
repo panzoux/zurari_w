@@ -18,7 +18,7 @@ Phase 6 was sixteen loose checkboxes. Grilling turned it into decisions, and fou
 
 # Status
 
-Branch `phase6a-location-foundation`, 34 commits, **nothing merged to main** (see R-1).
+Branch `phase6a-location-foundation`, 35 commits, **nothing merged to main** (see R-1).
 634 tests, `scripts/check.ps1` green.
 
 | | Item | Status | Commit |
@@ -71,23 +71,45 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
 
 ## Open
 
-- **6f-4** `[ ]` **Enumerating the recycle bin while other shell COM is in flight returns a short
-  list.** Found while finishing 6d.8, and **it is not only a test problem**.
-  `RecycleBinFolderTests.Repeated_enumeration_does_not_leak_or_change_its_answer` compares two
-  consecutive `Enumerate()` calls. Measured: **5 failures in 6 runs** with xUnit's parallel
-  collections on, **0 in 6** with them off - while three consecutive reads in isolation returned
-  identical 533-item lists. So the bin's contents were not changing; the enumeration was being
-  truncated by concurrent shell calls in the same process.
+- **6f-5** `[x]` **`ThumbnailCache`'s constructor started a background sweep nothing could wait
+  for.** It surfaced as the pre-commit hook rejecting an unrelated commit:
+  `UnauthorizedAccessException` from a test's `Directory.Delete` - one instance of the parked 6f-3,
+  but with a specific cause rather than a generic lingering handle. The constructor fires
+  `Task.Run(Sweep)` (mine, 6c.4), so a test that made a cache and then deleted its directory was
+  racing a sweep still walking it.
 
-  Worked around for now by serializing that assembly (`tests/Zurari.Shell.Tests/xunit.runner.json`).
-  **The app does the same thing**: icons resolve through `SHGetFileInfo` on the UI thread while the
-  `ShellEffectExecutor`'s STA worker enumerates the bin. If the same truncation applies there, a bin
-  listing can silently come up short - which is unfalsifiable by looking at it. Wants a deliberate
-  investigation: whether `IEnumShellItems` over `shell:RecycleBinFolder` needs its own apartment, a
-  retry, or a cross-check against `SHQueryRecycleBin`'s count before being believed.
+  The task is now exposed as `InitialSweep`. Nothing in the app waits for it - that is the point of
+  running it off-thread - but a constructor that starts background work otherwise leaves the type
+  with no quiescent point at all, which is not a property a type should have. The tests await it
+  before deleting; 5 runs, 5 green.
 
-- **R-1** `[ ]` **Nothing is merged to main.** All 24 commits sit on `phase6a-location-foundation`.
-  `main` is still at `b561d45`.
+- **6f-4** `[x]` **My diagnosis was wrong: there is no truncation, and no app bug.** I recorded that
+  enumerating the bin under concurrent shell COM returned a short list, and put that in the roadmap
+  as a hazard in the running app. It is not true, and the correction matters more than the finding
+  did.
+
+  What the evidence actually showed. Under four threads hammering `SHGetFileInfo`/`IShellItem`
+  display names, the enumeration was **perfect**: 581 loops, 581 kept, no display-name failures,
+  terminating on `S_FALSE`, matching `SHQueryRecycleBin` exactly. So concurrency does not truncate it.
+
+  The real cause: **`ShellEffectExecutorTests` genuinely recycles a file** (`victim.txt`) to test
+  `DeleteToRecycleBin`, and xUnit runs test classes in parallel - so it landed between the two
+  `Enumerate()` calls that `RecycleBinFolderTests` was comparing. Proved directly rather than
+  inferred: enumerate (581), recycle one file, enumerate again (582), difference is exactly
+  `…\zurari-6f4-…\victim.txt`. Both classes were behaving correctly; the test was asserting that a
+  shared machine-wide resource holds still.
+
+  **What I got wrong, specifically.** I saw a strong statistical signal (5 failures in 6 with
+  parallel collections, 0 in 6 without), reached for the most alarming explanation that fit, and
+  wrote it up as fact without testing it. "Correlates with parallelism" is not "caused by concurrent
+  COM" - and the cheap experiment that separated them took ten minutes.
+
+  Fixed properly rather than papered over. The assembly-wide `xunit.runner.json` is gone; instead the
+  two classes that share the bin share an xUnit collection, so only they serialize. And the test now
+  compares each pass against `SHQueryRecycleBin` rather than against the previous pass, so a bin that
+  legitimately changes mid-run moves both numbers together - verified non-vacuous by making the
+  enumeration drop every tenth item, which fails it. 6 runs, 6 green.
+
 - **6c-5** `[ ]` **The preview stall relief has no automated test.** Reproducing it needs a preview
   that genuinely blocks, which needs ffmpeg guaranteed present or a seam for injecting one. The
   guard test that exists says so in its own remarks. **Wants a manual run:** hold ↓ through a folder

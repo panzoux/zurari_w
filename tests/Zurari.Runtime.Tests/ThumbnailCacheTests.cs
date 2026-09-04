@@ -19,12 +19,13 @@ public class ThumbnailCacheTests
     }
 
     [Fact]
-    public void A_stored_thumbnail_comes_back()
+    public async Task A_stored_thumbnail_comes_back()
     {
         var dir = CreateTempDir();
         try
         {
             var cache = new ThumbnailCache(Path.Combine(dir, "cache"));
+            await cache.InitialSweep;
             var video = CreateVideoFile(dir);
             byte[] png = [0x89, 0x50, 0x4E, 0x47, 0xAA];
 
@@ -41,12 +42,13 @@ public class ThumbnailCacheTests
     }
 
     [Fact]
-    public void A_stored_failure_comes_back_instead_of_regenerating()
+    public async Task A_stored_failure_comes_back_instead_of_regenerating()
     {
         var dir = CreateTempDir();
         try
         {
             var cache = new ThumbnailCache(Path.Combine(dir, "cache"));
+            await cache.InitialSweep;
             var video = CreateVideoFile(dir);
 
             cache.StoreFailure(video, "ffmpeg: moov atom not found");
@@ -64,12 +66,13 @@ public class ThumbnailCacheTests
     }
 
     [Fact]
-    public void An_unknown_file_is_a_miss()
+    public async Task An_unknown_file_is_a_miss()
     {
         var dir = CreateTempDir();
         try
         {
             var cache = new ThumbnailCache(Path.Combine(dir, "cache"));
+            await cache.InitialSweep;
             var video = CreateVideoFile(dir);
 
             Assert.False(cache.TryGet(video, out var bytes, out var failure));
@@ -83,12 +86,13 @@ public class ThumbnailCacheTests
     }
 
     [Fact]
-    public void Editing_the_file_invalidates_its_entry()
+    public async Task Editing_the_file_invalidates_its_entry()
     {
         var dir = CreateTempDir();
         try
         {
             var cache = new ThumbnailCache(Path.Combine(dir, "cache"));
+            await cache.InitialSweep;
             var video = CreateVideoFile(dir);
             cache.StoreSuccess(video, [1, 2, 3]);
             Assert.True(cache.TryGet(video, out _, out _));
@@ -107,12 +111,13 @@ public class ThumbnailCacheTests
     }
 
     [Fact]
-    public void Two_files_with_the_same_name_in_different_directories_do_not_collide()
+    public async Task Two_files_with_the_same_name_in_different_directories_do_not_collide()
     {
         var dir = CreateTempDir();
         try
         {
             var cache = new ThumbnailCache(Path.Combine(dir, "cache"));
+            await cache.InitialSweep;
             var a = Path.Combine(dir, "a");
             var b = Path.Combine(dir, "b");
             Directory.CreateDirectory(a);
@@ -135,13 +140,15 @@ public class ThumbnailCacheTests
     }
 
     [Fact]
-    public void Sweep_removes_entries_past_the_age_limit_and_keeps_fresh_ones()
+    public async Task Sweep_removes_entries_past_the_age_limit_and_keeps_fresh_ones()
     {
         var dir = CreateTempDir();
         try
         {
             var cacheDir = Path.Combine(dir, "cache");
             var cache = new ThumbnailCache(cacheDir);
+            await cache.InitialSweep;
+            await cache.InitialSweep;
             var fresh = CreateVideoFile(dir, "fresh.mp4");
             var stale = CreateVideoFile(dir, "stale.mp4");
 
@@ -168,7 +175,7 @@ public class ThumbnailCacheTests
     }
 
     [Fact]
-    public void A_cache_over_an_unusable_directory_degrades_to_misses_without_throwing()
+    public async Task A_cache_over_an_unusable_directory_degrades_to_misses_without_throwing()
     {
         var dir = CreateTempDir();
         try
@@ -178,6 +185,7 @@ public class ThumbnailCacheTests
             // A path that cannot be created (a directory under a file). Caching is an optimization;
             // losing it must never surface as an error.
             var cache = new ThumbnailCache(Path.Combine(video, "cache"));
+            await cache.InitialSweep;
 
             cache.StoreSuccess(video, [1, 2, 3]);
             cache.StoreFailure(video, "nope");

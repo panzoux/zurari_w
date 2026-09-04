@@ -48,8 +48,19 @@ public sealed class ThumbnailCache
 
         // Eviction runs off-thread: the cache is constructed during startup, and enumerating a
         // large directory there would delay the first window. Losing a sweep costs nothing.
-        _ = Task.Run(Sweep);
+        InitialSweep = Task.Run(Sweep);
     }
+
+    /// <summary>
+    /// The startup sweep, so a caller can tell when the cache has stopped touching its directory.
+    /// </summary>
+    /// <remarks>
+    /// Nothing in the app waits for it - that is the point of running it off-thread. It is exposed
+    /// because a constructor that starts background work otherwise leaves the type with no quiescent
+    /// point at all: a test that made a cache and then deleted its directory was racing a sweep that
+    /// was still walking it, and failed intermittently with UnauthorizedAccessException.
+    /// </remarks>
+    internal Task InitialSweep { get; }
 
     private static string? DefaultDirectory()
     {

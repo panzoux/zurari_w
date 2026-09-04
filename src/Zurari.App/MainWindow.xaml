@@ -6,7 +6,7 @@
         xmlns:local="clr-namespace:Zurari.App"
         xmlns:controls="clr-namespace:Zurari.Controls;assembly=Zurari.Controls"
         mc:Ignorable="d"
-        Title="zurari" Height="600" Width="1000">
+        Title="zurari for Windows" Height="600" Width="1000">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
     </Window.Resources>

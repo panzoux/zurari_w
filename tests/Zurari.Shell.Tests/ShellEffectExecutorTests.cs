@@ -5,6 +5,7 @@ using Zurari.Core;
 
 namespace Zurari.Shell.Tests;
 
+[Collection(SharedRecycleBin.Name)]
 public class ShellEffectExecutorTests
 {
     private static string CreateTempDir()

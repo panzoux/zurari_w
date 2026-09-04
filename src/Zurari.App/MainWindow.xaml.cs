@@ -153,7 +153,9 @@ public sealed partial class MainWindow : Window, IDisposable
 
         // The title names the app and its version, nothing more. Where you are is the status bar's
         // job, and having both say it meant the most valuable line in the window was a duplicate.
-        Title = "zurari " + AppVersion();
+        //
+        // The full name, not "zurari": that is the TUI one, and both can be open at once.
+        Title = "zurari for Windows " + AppVersion();
 
         // The header's two lines are shortened to fit, so a resize has to re-shorten them - the
         // splitter drag is the whole reason the preview pane's width is not a constant.

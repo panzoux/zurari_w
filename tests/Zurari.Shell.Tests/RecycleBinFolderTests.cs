@@ -7,6 +7,7 @@ namespace Zurari.Shell.Tests;
 /// Touches the real shell. Asserts what is true regardless of what is in the bin on this machine -
 /// a listing that depends on the tester's recycle bin would be a coin toss.
 /// </summary>
+[Collection(SharedRecycleBin.Name)]
 public class RecycleBinFolderTests
 {
     [Fact]
@@ -62,18 +63,18 @@ public class RecycleBinFolderTests
     [Fact]
     public void Repeated_enumeration_does_not_leak_or_change_its_answer()
     {
-        // Each pass releases its COM objects; a mistake there tends to show up as a second call
-        // behaving differently from the first.
+        // Each pass releases its COM objects; a mistake there shows up as a later pass returning
+        // fewer items than the shell says are in there.
         //
-        // This assembly runs its tests serially (xunit.runner.json). Enumerating the bin while other
-        // shell COM calls are in flight in the same process returns a SHORT list - measured at 5
-        // failures in 6 runs with parallel collections on, and 0 in 6 with them off, against a bin
-        // whose contents were identical across three consecutive reads when nothing else was running.
-        // See the plan's 6f-4: the same hazard may exist in the app itself.
-        var first = RecycleBinFolder.Enumerate();
-        var second = RecycleBinFolder.Enumerate();
+        // Compared against SHQueryRecycleBin rather than against the previous pass. The bin belongs
+        // to the machine and anything may put something in it mid-run; both numbers move together
+        // when that happens, whereas two listings compared to each other would simply disagree.
+        for (var pass = 0; pass < 3; pass++)
+        {
+            var expected = RecycleBinFolder.Query().ItemCount;
 
-        Assert.Equal(first, second);
+            Assert.Equal(expected, RecycleBinFolder.Enumerate().Count);
+        }
     }
 
     /// <summary>

@@ -16,7 +16,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
-      <Version>0.6.0</Version>
+      <!-- Minor tracks the phase: 0.6.x is Phase 6. Nothing is released yet, so the major stays 0. -->
+    <Version>0.6.0</Version>
+    <Product>zurari for Windows</Product>
 </PropertyGroup>
 
 </Project>
