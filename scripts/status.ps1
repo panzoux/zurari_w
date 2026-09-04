@@ -38,6 +38,11 @@ try {
     if ($total -le 0) { throw "Read a test total of $total, which cannot be right." }
 
     $head = (git rev-parse --short HEAD).Trim()
+
+    # A "(this commit)" placeholder means the hash of the commit that is about to be made. HEAD is
+    # only that commit once it exists - so with a dirty tree, HEAD is the *previous* commit and
+    # filling it in writes the wrong hash. That happened the first time this script was used.
+    $clean = -not (git status --porcelain)
     $changes = @()
 
     foreach ($doc in Get-ChildItem (Join-Path $root 'plan') -Filter *.md) {
@@ -48,8 +53,13 @@ try {
         $updated = [regex]::Replace($updated, '\d+(?= tests, `scripts/check\.ps1` green)', $total)
         $updated = [regex]::Replace($updated, '\d+(?= テスト green)', $total)
 
-        # A Status row written before the commit it describes existed.
-        $updated = $updated.Replace('(this commit)', "``$head``")
+        # A Status row written before the commit it describes existed. Only once it does.
+        if ($clean) {
+            $updated = $updated.Replace('(this commit)', "``$head``")
+        }
+        elseif ($updated.Contains('(this commit)')) {
+            Write-Host "  (this commit) left alone in $($doc.Name) - commit first, then run this again" -ForegroundColor DarkYellow
+        }
 
         if ($updated -ne $text) {
             $changes += $doc.Name

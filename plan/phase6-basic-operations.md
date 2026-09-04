@@ -45,7 +45,7 @@ wrong the moment the next commit lands - `git log --oneline main..` is the hones
 | 6d.6 | Collapse state persisted | `[x]` | `7923fb9` |
 | 6d.7 | Drive / share capacity preview | `[x]` | `a39b004` |
 | 6d.8 | ISO mount on activate (eject: see roadmap 見送った案) | `[x]` | `5e7b402` |
-| 6d.9 | Live refresh (`SHChangeNotifyRegister`) | `[x]` | `128c973` |
+| 6d.9 | Live refresh (`SHChangeNotifyRegister`) | `[x]` | `ef5d7a3` |
 | **6e** | **Sorting, hidden files, cursor memory, rename** | `[ ]` | |
 | 6e.1 | Sort in `Transition` (modes + direction + dirs-first) | `[ ]` | |
 | 6e.2 | Hidden-file toggle | `[ ]` | |
@@ -74,6 +74,13 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
 `[ ]` = still open.
 
 ## Open
+
+- **status-1** `[x]` **The status tool's first use wrote the wrong hash, and it was my own bug.**
+  `scripts/status.ps1` replaces a `(this commit)` placeholder with HEAD's short hash - but HEAD is
+  the commit being described only *after* it exists. Run with a dirty tree, it filled 6d.9's row with
+  the hash of the previous commit, which is exactly the kind of quietly-wrong record the tool was
+  written to prevent. Corrected, and the script now refuses to substitute unless the working tree is
+  clean, saying so rather than doing it silently.
 
 - **6d-17** `[x]` **Live refresh, 6d.9 - and `SHCNRF_NewDelivery` is 0x8000, not 0x1000.** The drive
   pane now notices a stick going in or a disc coming out without an F5.
