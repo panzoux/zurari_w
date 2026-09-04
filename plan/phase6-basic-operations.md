@@ -19,7 +19,7 @@ Phase 6 was sixteen loose checkboxes. Grilling turned it into decisions, and fou
 # Status
 
 Branch `phase6a-location-foundation`, **nothing merged to main** (see R-1).
-640 tests, `scripts/check.ps1` green.
+646 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`, and `check.ps1` refuses to pass while it is
 stale. Do not edit it by hand. A commit count used to live here too; it was removed because it is
@@ -45,7 +45,7 @@ wrong the moment the next commit lands - `git log --oneline main..` is the hones
 | 6d.6 | Collapse state persisted | `[x]` | `7923fb9` |
 | 6d.7 | Drive / share capacity preview | `[x]` | `a39b004` |
 | 6d.8 | ISO mount on activate (eject: see roadmap 見送った案) | `[x]` | `5e7b402` |
-| 6d.9 | Live refresh (`SHChangeNotifyRegister`) | `[ ]` | |
+| 6d.9 | Live refresh (`SHChangeNotifyRegister`) | `[x]` | `128c973` |
 | **6e** | **Sorting, hidden files, cursor memory, rename** | `[ ]` | |
 | 6e.1 | Sort in `Transition` (modes + direction + dirs-first) | `[ ]` | |
 | 6e.2 | Hidden-file toggle | `[ ]` | |
@@ -74,6 +74,27 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
 `[ ]` = still open.
 
 ## Open
+
+- **6d-17** `[x]` **Live refresh, 6d.9 - and `SHCNRF_NewDelivery` is 0x8000, not 0x1000.** The drive
+  pane now notices a stick going in or a disc coming out without an F5.
+  `SHChangeNotifyRegister` rather than `WM_DEVICECHANGE`: it reports a superset of the same events
+  (media and shares as well as volumes), needs no device-interface registration, and is the shell's
+  own view - so what it says appeared is what the pane is about to enumerate.
+
+  **The end-to-end test earned itself immediately.** 0x1000 is `SHCNRF_RecursiveInterrupt`; asking
+  for it instead of new delivery is completely silent - the registration succeeds, the notifications
+  arrive, and every single one fails to lock, because they are being delivered in the old form where
+  `wParam` is a pointer and `lParam` is the event id rather than a process id. A structural test would
+  have passed. What found it was broadcasting a real event with `SHChangeNotify` and watching for it
+  to come back: `lockfail(l=32), lockfail(l=256), lockfail(l=2)` - those numbers are event ids, which
+  is what gave the game away. After the fix: `0x20, 0x100, 0x2`. Verified the test fails again with
+  the wrong constant put back.
+
+  Two supporting decisions. The event mask is deliberately narrow (drives, media, shares) - watching
+  everything would wake the app on every file written anywhere on the machine to re-read a listing
+  that had not changed. And the App coalesces notifications over 400 ms before re-reading, because
+  inserting a disc produces several in a row and each re-read enumerates every drive, queries the bin
+  and asks the shell for a display name per drive.
 
 - **6f-5** `[x]` **`ThumbnailCache`'s constructor started a background sweep nothing could wait
   for.** It surfaced as the pre-commit hook rejecting an unrelated commit:

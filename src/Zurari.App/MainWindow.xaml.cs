@@ -95,6 +95,13 @@ public sealed partial class MainWindow : Window, IDisposable
     /// </summary>
     private static readonly TimeSpan PreviewDebounceInterval = TimeSpan.FromMilliseconds(150);
 
+    /// <summary>
+    /// How long to wait after a drive change before re-reading the pane. Longer than the preview
+    /// debounce because a volume that has just announced itself is not ready to be enumerated the
+    /// instant it does, and because these arrive in bursts rather than one per keystroke.
+    /// </summary>
+    private static readonly TimeSpan PlacesRefreshDelay = TimeSpan.FromMilliseconds(400);
+
     private readonly PendingEffectGate<Effect.LoadPreview> previewGate = new();
     private DispatcherTimer? previewDebounceTimer;
 
@@ -106,6 +113,19 @@ public sealed partial class MainWindow : Window, IDisposable
     /// </summary>
     private readonly PendingEffectGate<Effect.ReadDirectory> speculativeReadGate = new();
     private DispatcherTimer? speculativeReadTimer;
+
+    /// <summary>
+    /// Watches for drives arriving and leaving, so the pane does not need an F5 to notice. Created
+    /// once the window has a handle, which is what the shell registers against.
+    /// </summary>
+    private ShellChangeWatcher? shellWatcher;
+
+    /// <summary>
+    /// Coalesces drive notifications. Inserting a disc produces several events in a row, and each
+    /// one would otherwise re-read every drive, query the bin and ask the shell for a display name
+    /// per drive.
+    /// </summary>
+    private DispatcherTimer? placesRefreshTimer;
 
     public MainWindow()
     {
@@ -150,6 +170,9 @@ public sealed partial class MainWindow : Window, IDisposable
             Dispose();
         };
         Loaded += (_, _) => Browser.Focus();
+
+        // The handle does not exist until here, and the shell registers against a handle.
+        SourceInitialized += OnSourceInitialized;
 
         // The title names the app and its version, nothing more. Where you are is the status bar's
         // job, and having both say it meant the most valuable line in the window was a duplicate.
@@ -222,6 +245,52 @@ public sealed partial class MainWindow : Window, IDisposable
                 Volatile.Read(ref trashItemCount) > 0 ? "full" : "empty")
             : iconCache.GetIcon(entry.Kind, entry.Name);
 
+    /// <summary>
+    /// Starts watching for drive changes, and routes the shell's notification message to the watcher.
+    /// </summary>
+    /// <remarks>
+    /// If the shell declines to register, nothing here fails - the pane simply keeps needing F5, the
+    /// way it did before. That is why the hook is only added when the registration took.
+    /// </remarks>
+    private void OnSourceInitialized(object? sender, EventArgs e)
+    {
+        var source = (HwndSource)PresentationSource.FromVisual(this)!;
+        shellWatcher = new ShellChangeWatcher(source.Handle, ScheduleDrivePaneRefresh);
+        if (shellWatcher.IsRegistered)
+        {
+            source.AddHook(OnWindowMessage);
+        }
+    }
+
+    private IntPtr OnWindowMessage(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (shellWatcher?.HandleMessage(message, wParam, lParam) == true)
+        {
+            handled = true;
+        }
+
+        return IntPtr.Zero;
+    }
+
+    /// <summary>
+    /// Re-reads the drive pane shortly after a drive change, coalescing a burst into one read.
+    /// </summary>
+    private void ScheduleDrivePaneRefresh()
+    {
+        if (placesRefreshTimer is null)
+        {
+            placesRefreshTimer = new DispatcherTimer { Interval = PlacesRefreshDelay };
+            placesRefreshTimer.Tick += (_, _) =>
+            {
+                placesRefreshTimer?.Stop();
+                Dispatch(new Msg.PlacesChanged());
+            };
+        }
+
+        placesRefreshTimer.Stop();
+        placesRefreshTimer.Start();
+    }
+
     /// <summary>The assembly's informational version, trimmed of any build metadata suffix.</summary>
     private static string AppVersion()
     {
@@ -252,6 +321,8 @@ public sealed partial class MainWindow : Window, IDisposable
     {
         previewDebounceTimer?.Stop();
         speculativeReadTimer?.Stop();
+        placesRefreshTimer?.Stop();
+        shellWatcher?.Dispose();
         runtime.Dispose();
         shellExecutor.Dispose();
         jobEngine.Dispose();
