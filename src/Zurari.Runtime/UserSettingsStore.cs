@@ -9,10 +9,16 @@ namespace Zurari.Runtime;
 /// Sections of the drive pane the user had collapsed. Names, not indices, so adding a section does
 /// not silently collapse a different one.
 /// </param>
+/// <param name="SortMode">Name of the <c>Zurari.Core.SortMode</c> last chosen.</param>
+/// <param name="SortDescending">Whether that mode was reversed.</param>
+/// <param name="DirectoriesFirst">Whether folders were kept above files.</param>
 public sealed record UserSettings(
     double? PreviewWidth = null,
     IReadOnlyList<string>? PinnedPaths = null,
-    IReadOnlyList<string>? CollapsedGroups = null);
+    IReadOnlyList<string>? CollapsedGroups = null,
+    string? SortMode = null,
+    bool? SortDescending = null,
+    bool? DirectoriesFirst = null);
 
 /// <summary>
 /// Loads and saves <see cref="UserSettings"/> as JSON, by default under <c>%APPDATA%\zurari</c>.

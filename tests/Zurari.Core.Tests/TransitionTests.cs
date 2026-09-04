@@ -777,7 +777,9 @@ public class TransitionTests
     {
         var column = new Column(
             new Location.RealDirectory(@"C:\"),
-            [Dir with { IsMarked = true }, File1, File2, File1 with { IsMarked = true }],
+            // Distinct names in sorted order: this test is about the range, and a fixture that the
+            // sort would rearrange would be testing the sort instead.
+            [Dir with { IsMarked = true }, File1, File2, new Entry("c.txt", EntryKind.File, IsMarked: true)],
             Cursor: 0,
             Load: LoadState.Loaded);
         var state = StateWithColumns(column);
@@ -2224,7 +2226,38 @@ public class TransitionTests
 
         var violations = new AppState { Columns = [broken], FocusedColumn = 0 }.CheckInvariants();
 
-        Assert.Contains(violations, v => v.Contains("not a subsequence", StringComparison.Ordinal));
+        Assert.Contains(violations, v => v.Contains("not in AllEntries", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// The other half of the rule, and the half that survived sorting: reordering the view is fine,
+    /// showing the same row twice is not.
+    /// </summary>
+    [Fact]
+    public void A_visible_row_shown_twice_is_an_invariant_violation()
+    {
+        var broken = new Column(
+            new Location.RealDirectory(@"C:\"), [Dir, Dir], Cursor: 0, Load: LoadState.Loaded)
+        {
+            AllEntries = [Dir, File1],
+        };
+
+        var violations = new AppState { Columns = [broken], FocusedColumn = 0 }.CheckInvariants();
+
+        Assert.Contains(violations, v => v.Contains("not in AllEntries", StringComparison.Ordinal));
+    }
+
+    /// <summary>A reordered view is legitimate now that sorting exists, and must not be a violation.</summary>
+    [Fact]
+    public void A_reordered_visible_list_is_fine()
+    {
+        var reordered = new Column(
+            new Location.RealDirectory(@"C:\"), [File1, Dir], Cursor: 0, Load: LoadState.Loaded)
+        {
+            AllEntries = [Dir, File1],
+        };
+
+        Assert.Empty(new AppState { Columns = [reordered], FocusedColumn = 0 }.CheckInvariants());
     }
 
     [Fact]
@@ -2817,6 +2850,14 @@ public class TransitionProperties
             .Select(t => (Msg)new Msg.CollapsedGroupsRestored(t.Item1, [.. t.Item2])),
         Gen.OneOfConst(@"E:\", @"Z:\").Select(d => (Msg)new Msg.ImageMounted(d)),
         Gen.OneOfConst("ok", "failed").Select(m => (Msg)new Msg.NoticeRaised(m)),
+        Gen.OneOfConst(SortMode.Name, SortMode.Extension, SortMode.Size, SortMode.Modified)
+            .Select(m => (Msg)new Msg.SetSortMode(m)),
+        Gen.Const<Msg>(new Msg.ToggleDirectoriesFirst()),
+        Gen.Select(
+                Gen.OneOfConst(SortMode.Name, SortMode.Size),
+                Gen.OneOfConst(true, false),
+                Gen.OneOfConst(true, false))
+            .Select(t => (Msg)new Msg.SortOrderRestored(new SortOrder(t.Item1, t.Item2, t.Item3))),
         GenJobId.Select(g => (Msg)new Msg.PreviewCapacityLoaded(
             g, new PreviewCapacity("vol", "kind", UsedBytes: 1, TotalBytes: 2))),
         Gen.Const<Msg>(new Msg.PlacesChanged()));

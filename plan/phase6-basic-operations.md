@@ -20,7 +20,7 @@ Phase 6 was sixteen loose checkboxes. Grilling turned it into decisions, and fou
 
 **6a-6d, 6f and 6g are on `main`** - fast-forwarded from `phase6a-location-foundation` on
 2026-09-05, once 6d was complete (see R-1). 6e and 6c.5 remain.
-646 tests, `scripts/check.ps1` green.
+669 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`, and `check.ps1` refuses to pass while it is
 stale. Do not edit it by hand. A commit count used to live here too; it was removed because it is
@@ -48,7 +48,7 @@ wrong the moment the next commit lands - `git log --oneline main..` is the hones
 | 6d.8 | ISO mount on activate (eject: see roadmap 見送った案) | `[x]` | `5e7b402` |
 | 6d.9 | Live refresh (`SHChangeNotifyRegister`) | `[x]` | `ef5d7a3` |
 | **6e** | **Sorting, hidden files, cursor memory, rename** | `[ ]` | |
-| 6e.1 | Sort in `Transition` (modes + direction + dirs-first) | `[ ]` | |
+| 6e.1 | Sort in `Transition` (modes + direction + dirs-first) | `[x]` | (this commit) |
 | 6e.2 | Hidden-file toggle | `[ ]` | |
 | 6e.3 | Cursor memory (entry name, LRU-capped) | `[ ]` | |
 | 6e.4 | Rename (overlay TextBox) | `[ ]` | |
@@ -75,6 +75,38 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
 `[ ]` = still open.
 
 ## Open
+
+- **6e-1** `[x]` **Sorting, 6e.1 - and the 6b invariant it broke.** Name (natural), extension, size
+  and modified; direction; folders-first as a switch that composes with every mode rather than a mode
+  of its own. Re-sorting reads nothing: the full listing is already in `AllEntries`, which is what
+  that field was added for, so changing the order is instant on a network share or a directory with a
+  hundred thousand files in it.
+
+  **The subsequence invariant had to go.** 6b established that `Entries` is a *subsequence* of
+  `AllEntries` - same objects, same relative order. Sorting is precisely the act of not preserving
+  that order, so the property could not survive. Replaced with a subset check (by instance, no
+  duplicates), which is what it was actually guarding: a visible row no read produced, or one row
+  shown twice. A test now covers each half, plus one asserting that a reordered view is *not* a
+  violation.
+
+  **`Array.Sort` is an introsort and is not stable**, and my first version's comment claimed it was.
+  Two rows that the mode and the name cannot tell apart would have come out in an order that varied
+  with the length of the list. Sorting an index array with the original position as the final tiebreak
+  makes stability a property of the comparison rather than of the algorithm; there is a test for it.
+
+  Natural ordering is implemented here rather than calling `StrCmpLogicalW`: Core takes no dependency
+  on the shell, and an order that changed with the OS version would make a listing untestable.
+
+  **Deliberately not done.** Created, deleted-on and shell type name are listed in the plan as sort
+  modes; each needs data `Entry` does not carry (a creation time, a bin-only field, a per-extension
+  shell lookup). A member that ordered by nothing would be worse than its absence. And the plan's
+  per-location-kind sort state is a single order for now - that map earns itself when a mode exists
+  that only one kind supports, which is exactly those three.
+
+  **No key binding.** Sorting has no way to invoke it yet, deliberately: keys are being decided as a
+  set with the status bar and help screen, and Explorer's own affordance (a column header) does not
+  exist in a miller-columns view. The mechanism, its persistence and its tests are done; the gesture
+  is an open question.
 
 - **R-1** `[x]` **Merged.** 43 commits fast-forwarded onto `main` at the end of 6d - the first point
   where the phase had a coherent stopping place: `Location` is in, the drive pane is finished, and

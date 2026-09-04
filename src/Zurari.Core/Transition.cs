@@ -156,6 +156,10 @@ public static class Transition
             Msg.PlacesChanged => ReloadDrivePanes(state),
             Msg.ImageMounted m => ReloadDrivePanes(state with { RevealTarget = m.DriveRoot }),
             Msg.NoticeRaised m => (state with { Notice = m.Message }, NoEffects),
+            Msg.SetSortMode m => Reorder(state, state.Sort.Select(m.Mode), remember: true),
+            Msg.ToggleDirectoriesFirst => Reorder(
+                state, state.Sort with { DirectoriesFirst = !state.Sort.DirectoriesFirst }, remember: true),
+            Msg.SortOrderRestored m => Reorder(state, m.Order, remember: false),
             Msg.ToggleSection m => ToggleSection(state, m.ColumnIndex, m.EntryIndex),
             Msg.CollapsedGroupsRestored m => (RestoreCollapsedGroups(state, m.ColumnIndex, m.Groups), NoEffects),
             _ => (state, NoEffects),
@@ -284,6 +288,30 @@ public static class Transition
     private static bool IsDiscImage(string name) =>
         name.EndsWith(".iso", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Re-derives every sortable column under <paramref name="order"/>, keeping each cursor on the
+    /// entry it was on rather than the position.
+    /// </summary>
+    /// <remarks>
+    /// Nothing is read again. The full listing is already in <see cref="Column.AllEntries"/>, which
+    /// is what that field is for: changing the order is a rearrangement of data in hand, instant
+    /// even on a network share or a directory with a hundred thousand files in it.
+    /// </remarks>
+    private static (AppState, IReadOnlyList<Effect>) Reorder(AppState state, SortOrder order, bool remember)
+    {
+        var columns = state.Columns;
+        var reordered = ImmutableArray.CreateBuilder<Column>(columns.Length);
+        foreach (var column in columns)
+        {
+            reordered.Add(column.IsSortable ? column.WithSort(order) : column);
+        }
+
+        var next = state with { Columns = reordered.MoveToImmutable(), Sort = order };
+        return remember
+            ? (next, new Effect[] { new Effect.SetSortOrder(order) })
+            : (next, NoEffects);
+    }
+
     private static AppState GoToParent(AppState state, int columnIndex)
     {
         if (!InRange(state, columnIndex) || columnIndex == 0)
@@ -325,7 +353,7 @@ public static class Transition
         // Marks carry from everything the column knew, not just what was on screen, so a refresh
         // does not quietly drop the marks of rows the view happened to be hiding.
         var carried = CarryMarks(column.AllEntries, entries);
-        var updated = column.WithAllEntries(carried) with
+        var updated = column.WithAllEntries(carried, state.Sort) with
         {
             Load = LoadState.Loaded,
             ErrorMessage = null,
@@ -448,10 +476,10 @@ public static class Transition
     /// set of search results gathered from several directories at once.
     /// </para>
     /// </remarks>
-    private static Column WithMarkChange(Column column, Func<Entry, Entry> change)
+    private static Column WithMarkChange(Column column, SortOrder sort, Func<Entry, Entry> change)
     {
         var updated = column.AllEntries.Select(change).ToImmutableArray();
-        return column.WithAllEntries(updated);
+        return column.WithAllEntries(updated, sort);
     }
 
     /// <summary>
@@ -553,7 +581,7 @@ public static class Transition
     private static (AppState, IReadOnlyList<Effect>) Collapse(
         AppState state, int columnIndex, Column column, string group)
     {
-        var toggled = column.ToggleGroup(group);
+        var toggled = column.ToggleGroup(group, state.Sort);
         var next = WithColumn(state, columnIndex, toggled);
         return column.Location is Location.Drives
             ? (next, new Effect[] { new Effect.SetCollapsedGroups([.. toggled.CollapsedGroups]) })
@@ -579,7 +607,7 @@ public static class Transition
 
         var column = state.Columns[columnIndex];
         return column.Location is Location.Drives
-            ? WithColumn(state, columnIndex, column.WithCollapsedGroups([.. groups]))
+            ? WithColumn(state, columnIndex, column.WithCollapsedGroups([.. groups], state.Sort))
             : state;
     }
 
@@ -625,7 +653,7 @@ public static class Transition
         }
 
         var updated = WithMarkChange(
-            column, e => ReferenceEquals(e, target) ? e with { IsMarked = !e.IsMarked } : e);
+            column, state.Sort, e => ReferenceEquals(e, target) ? e with { IsMarked = !e.IsMarked } : e);
         return WithColumn(state, columnIndex, updated with { Cursor = entryIndex });
     }
 
@@ -665,7 +693,7 @@ public static class Transition
         }
 
         var updated = WithMarkChange(
-            column, e => ReferenceEquals(e, target) ? e with { IsMarked = !e.IsMarked } : e);
+            column, state.Sort, e => ReferenceEquals(e, target) ? e with { IsMarked = !e.IsMarked } : e);
 
         // Advancing past the row you just marked is what makes marking a run of files one keypress
         // each. Skips a header, which is never a mark target.
@@ -703,7 +731,7 @@ public static class Transition
             return state;
         }
 
-        var updated = WithMarkChange(column, e => e.IsMarked ? e with { IsMarked = false } : e);
+        var updated = WithMarkChange(column, state.Sort, e => e.IsMarked ? e with { IsMarked = false } : e);
         return WithColumn(state, columnIndex, updated);
     }
 
@@ -775,7 +803,7 @@ public static class Transition
             }
         }
 
-        var updated = WithMarkChange(column, e =>
+        var updated = WithMarkChange(column, state.Sort, e =>
         {
             if (inRange.Contains(e))
             {

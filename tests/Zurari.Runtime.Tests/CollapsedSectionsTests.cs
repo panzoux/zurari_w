@@ -138,4 +138,69 @@ public class CollapsedSectionsTests
             TempDirectory.Delete(dir);
         }
     }
+
+    /// <summary>
+    /// The sort order rides the same seam as the collapsed sections: written when it changes, handed
+    /// back once when the drive pane is first read.
+    /// </summary>
+    [Fact]
+    public void The_sort_order_is_written_and_handed_back_on_the_first_read()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var settingsDir = Path.Combine(dir, "cfg");
+            var store = new UserSettingsStore(settingsDir);
+            var queue = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(queue.Enqueue, settings: store);
+
+            runtime.Submit(new Effect.SetSortOrder(new SortOrder(SortMode.Size, Descending: true, DirectoriesFirst: false)));
+
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+            while (store.Load().SortMode is null && DateTime.UtcNow < deadline)
+            {
+                Thread.Sleep(10);
+            }
+
+            Assert.Equal("Size", store.Load().SortMode);
+            Assert.True(store.Load().SortDescending);
+            Assert.False(store.Load().DirectoriesFirst);
+
+            runtime.Submit(new Effect.ReadDirectory(0, Location.Drives.Instance));
+            var restored = WaitFor<Msg.SortOrderRestored>(queue, TimeSpan.FromSeconds(10));
+
+            Assert.Equal(new SortOrder(SortMode.Size, Descending: true, DirectoriesFirst: false), restored.Order);
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
+
+    /// <summary>
+    /// The mode is stored by name, so renaming or reordering the enum cannot silently reinterpret an
+    /// old settings file as a different mode. An unreadable value falls back rather than throwing.
+    /// </summary>
+    [Fact]
+    public void An_unrecognized_stored_mode_falls_back_to_the_default()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var settingsDir = Path.Combine(dir, "cfg");
+            new UserSettingsStore(settingsDir).Update(s => s with { SortMode = "ByVibes" });
+
+            var queue = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(settingsDir));
+
+            runtime.Submit(new Effect.ReadDirectory(0, Location.Drives.Instance));
+            var restored = WaitFor<Msg.SortOrderRestored>(queue, TimeSpan.FromSeconds(10));
+
+            Assert.Equal(SortOrder.Default.Mode, restored.Order.Mode);
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
 }

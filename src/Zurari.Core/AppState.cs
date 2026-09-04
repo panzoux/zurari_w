@@ -157,13 +157,13 @@ public sealed record Column(
     /// Collapses or expands <paramref name="group"/>, re-deriving the visible list and keeping the
     /// cursor on the same entry - which, for the header you just pressed, means it stays put.
     /// </summary>
-    public Column ToggleGroup(string group)
+    public Column ToggleGroup(string group, SortOrder sort)
     {
         // Remove hands back the very same set when the group was not in it, which is precisely
         // "this section was expanded" - so one call answers the question and does the work.
         var afterRemove = CollapsedGroups.Remove(group);
         var collapsed = ReferenceEquals(afterRemove, CollapsedGroups) ? CollapsedGroups.Add(group) : afterRemove;
-        return WithView(AllEntries, collapsed);
+        return WithView(AllEntries, collapsed, sort);
     }
 
     /// <summary>Name of the entry under the cursor, or <c>null</c> when there is none.</summary>
@@ -180,15 +180,19 @@ public sealed record Column(
     /// the name is the same principle the cursor memory uses, and re-deriving will need it anyway:
     /// re-sorting moves every row.
     /// </remarks>
-    public Column WithAllEntries(ImmutableArray<Entry> all) => WithView(all, CollapsedGroups);
+    public Column WithAllEntries(ImmutableArray<Entry> all, SortOrder sort) =>
+        WithView(all, CollapsedGroups, sort);
 
     /// <summary>
     /// Replaces the whole set of collapsed sections and re-derives the visible list. Used to restore
     /// what the user had collapsed when the app last ran; <see cref="ToggleGroup"/> is the
     /// one-section-at-a-time version.
     /// </summary>
-    public Column WithCollapsedGroups(ImmutableHashSet<string> collapsedGroups) =>
-        WithView(AllEntries, collapsedGroups);
+    public Column WithCollapsedGroups(ImmutableHashSet<string> collapsedGroups, SortOrder sort) =>
+        WithView(AllEntries, collapsedGroups, sort);
+
+    /// <summary>Re-derives the visible list under a different order, keeping the cursor on its entry.</summary>
+    public Column WithSort(SortOrder sort) => WithView(AllEntries, CollapsedGroups, sort);
 
     /// <summary>
     /// The single place that writes <see cref="AllEntries"/>, <see cref="Entries"/> and
@@ -201,10 +205,11 @@ public sealed record Column(
     /// redefines what "everything" means, and the full list is lost. Going through here instead
     /// makes that unrepresentable.
     /// </remarks>
-    private Column WithView(ImmutableArray<Entry> all, ImmutableHashSet<string> collapsedGroups)
+    private Column WithView(ImmutableArray<Entry> all, ImmutableHashSet<string> collapsedGroups, SortOrder sort)
     {
+        ArgumentNullException.ThrowIfNull(sort);
         var previousName = CursorName;
-        var visible = Derive(all, collapsedGroups);
+        var visible = Derive(all, collapsedGroups, sort, IsSortable);
         return this with
         {
             AllEntries = all,
@@ -215,17 +220,35 @@ public sealed record Column(
     }
 
     /// <summary>
-    /// The visible list: everything except the rows of collapsed sections. Hidden files and sort
-    /// order will join this.
+    /// Whether the user's sort order applies to this column at all.
+    /// </summary>
+    /// <remarks>
+    /// The drive pane is curated: sections in a fixed order, each with fixed contents, and header
+    /// rows that only mean anything where they are. Sorting it by size would scatter the headers
+    /// through the drives. Hidden files will join this as a second filter, not a second exception.
+    /// </remarks>
+    public bool IsSortable => Location is not Location.Drives;
+
+    /// <summary>
+    /// The visible list: everything except the rows of collapsed sections, in the order asked for.
+    /// Hidden files will join this.
     /// </summary>
     private static ImmutableArray<Entry> Derive(
-        ImmutableArray<Entry> all, ImmutableHashSet<string> collapsedGroups)
+        ImmutableArray<Entry> all,
+        ImmutableHashSet<string> collapsedGroups,
+        SortOrder sort,
+        bool sortable)
     {
-        if (collapsedGroups.IsEmpty)
+        if (collapsedGroups.IsEmpty && !sortable)
         {
             // Returning the same instance matters beyond saving a copy: the projection reuses its
             // row array when Entries is reference-equal, which is what keeps cursor movement cheap.
             return all;
+        }
+
+        if (collapsedGroups.IsEmpty)
+        {
+            return Sort(all, sort);
         }
 
         var builder = ImmutableArray.CreateBuilder<Entry>(all.Length);
@@ -239,8 +262,85 @@ public sealed record Column(
             }
         }
 
+        if (sortable)
+        {
+            return Sort(builder.ToImmutable(), sort);
+        }
+
         return builder.ToImmutable();
     }
+
+    /// <summary>
+    /// Orders a listing. Made stable explicitly - see the comment on the index array - so two rows
+    /// the mode cannot tell apart keep the order they arrived in, which for a directory listing is
+    /// the Runtime's own name order.
+    /// </summary>
+    /// <remarks>
+    /// Only <see cref="SortOrder.Mode"/> reverses. Folders stay above files, and the name that
+    /// breaks a tie stays ascending: a reversed tiebreak produces an order that looks arbitrary
+    /// rather than reversed, which is worse than either direction.
+    /// </remarks>
+    private static ImmutableArray<Entry> Sort(ImmutableArray<Entry> entries, SortOrder sort)
+    {
+        if (entries.Length < 2)
+        {
+            return entries;
+        }
+
+        var direction = sort.Descending ? -1 : 1;
+
+        // Indices, so the original position can break the last tie. Array.Sort is an introsort and
+        // is NOT stable: without this, two rows the mode and the name cannot tell apart - two files
+        // called the same thing in a set of search results, say - would come out in an order that
+        // varied with the size of the list.
+        var order = new int[entries.Length];
+        for (var i = 0; i < order.Length; i++)
+        {
+            order[i] = i;
+        }
+
+        Array.Sort(order, (left, right) =>
+        {
+            var a = entries[left];
+            var b = entries[right];
+
+            if (sort.DirectoriesFirst)
+            {
+                var byKind = IsContainer(b).CompareTo(IsContainer(a));
+                if (byKind != 0)
+                {
+                    return byKind;
+                }
+            }
+
+            var byMode = direction * CompareBy(sort.Mode, a, b);
+            if (byMode != 0)
+            {
+                return byMode;
+            }
+
+            var byName = NaturalComparer.Instance.Compare(a.Label, b.Label);
+            return byName != 0 ? byName : left.CompareTo(right);
+        });
+
+        var sorted = ImmutableArray.CreateBuilder<Entry>(entries.Length);
+        foreach (var index in order)
+        {
+            sorted.Add(entries[index]);
+        }
+
+        return sorted.MoveToImmutable();
+    }
+
+    private static bool IsContainer(Entry entry) => entry.Kind is EntryKind.Directory or EntryKind.Drive;
+
+    private static int CompareBy(SortMode mode, Entry a, Entry b) => mode switch
+    {
+        SortMode.Extension => NaturalComparer.CompareExtensions(a.Label, b.Label),
+        SortMode.Size => a.SizeBytes.CompareTo(b.SizeBytes),
+        SortMode.Modified => a.Modified.CompareTo(b.Modified),
+        _ => NaturalComparer.Instance.Compare(a.Label, b.Label),
+    };
 
     private static int ResolveCursor(ImmutableArray<Entry> visible, string? previousName, int previousIndex)
     {
@@ -466,6 +566,12 @@ public sealed record AppState
     public PreviewState Preview { get; init; } = PreviewState.Initial;
 
     /// <summary>
+    /// How listings are ordered. Applies to every column that can be sorted at all - see
+    /// <see cref="Column.IsSortable"/>.
+    /// </summary>
+    public SortOrder Sort { get; init; } = SortOrder.Default;
+
+    /// <summary>
     /// A short message for the status bar - the result of something the user asked for that has no
     /// other visible outcome. <c>null</c> when there is nothing to say.
     /// </summary>
@@ -546,13 +652,16 @@ public sealed record AppState
                 violations.Add($"Columns[{i}].Load is Error but ErrorMessage is null.");
             }
 
-            // Entries is a view onto AllEntries: same objects, same relative order, nothing invented.
-            // Checked as a subsequence rather than by length, so it still holds once something
-            // narrows or reorders the view - and catches the failure that matters, a visible row
-            // that no read ever produced.
-            if (!IsSubsequenceOfAll(column))
+            // Entries is a view onto AllEntries: the same objects, none invented, none shown twice.
+            //
+            // This used to say "subsequence", which additionally required the visible rows to keep
+            // the order the read produced. Sorting is precisely the act of not doing that, so the
+            // property could not survive 6e.1. What it was actually guarding - a visible row that no
+            // read ever produced, or one row appearing twice - is guarded by the subset check, and
+            // that part still holds.
+            if (!IsSubsetOfAll(column))
             {
-                violations.Add($"Columns[{i}].Entries is not a subsequence of AllEntries.");
+                violations.Add($"Columns[{i}].Entries contains rows that are not in AllEntries.");
             }
 
             // There is deliberately no parent/child relationship checked between adjacent columns.
@@ -579,10 +688,14 @@ public sealed record AppState
     }
 
     /// <summary>
-    /// Whether <see cref="Column.Entries"/> is a subsequence of <see cref="Column.AllEntries"/> -
-    /// every visible row came from the read, in the order the read produced it.
+    /// Whether every visible row came from the read, and none appears twice.
     /// </summary>
-    private static bool IsSubsequenceOfAll(Column column)
+    /// <remarks>
+    /// By instance, not by name: deriving the view carries the same <see cref="Entry"/> objects
+    /// across, so reference identity is exact and assumes nothing about names being unique - which
+    /// holds for a directory listing but would not for search results gathered from several places.
+    /// </remarks>
+    private static bool IsSubsetOfAll(Column column)
     {
         var all = column.AllEntries;
         var visible = column.Entries;
@@ -591,21 +704,28 @@ public sealed record AppState
             return false;
         }
 
-        // The overwhelmingly common case: nothing narrows the view, so both are the same array.
+        // The overwhelmingly common case: nothing narrows or reorders the view, so both are the
+        // same array.
         if (all == visible)
         {
             return true;
         }
 
-        var next = 0;
+        var known = new HashSet<Entry>(all.Length, ReferenceEqualityComparer.Instance as IEqualityComparer<Entry>);
         foreach (var entry in all)
         {
-            if (next < visible.Length && visible[next] == entry)
+            known.Add(entry);
+        }
+
+        var seen = new HashSet<Entry>(visible.Length, ReferenceEqualityComparer.Instance as IEqualityComparer<Entry>);
+        foreach (var entry in visible)
+        {
+            if (!known.Contains(entry) || !seen.Add(entry))
             {
-                next++;
+                return false;
             }
         }
 
-        return next == visible.Length;
+        return true;
     }
 }

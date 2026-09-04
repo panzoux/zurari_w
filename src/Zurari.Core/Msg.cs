@@ -354,6 +354,21 @@ public abstract record Msg
     public sealed record ImageMounted(string DriveRoot) : Msg;
 
     /// <summary>
+    /// Order every sortable listing by <paramref name="Mode"/>. Asking for the mode already in use
+    /// reverses it instead - see <see cref="SortOrder.Select"/>.
+    /// </summary>
+    public sealed record SetSortMode(SortMode Mode) : Msg;
+
+    /// <summary>Turns "folders above files" on or off, leaving the mode alone.</summary>
+    public sealed record ToggleDirectoriesFirst : Msg;
+
+    /// <summary>
+    /// The order the user had when the app last ran, applied at startup. Ignored for a listing that
+    /// is not sorted at all.
+    /// </summary>
+    public sealed record SortOrderRestored(SortOrder Order) : Msg;
+
+    /// <summary>
     /// Something to tell the user in the status bar - see <see cref="AppState.Notice"/>. Replaces
     /// whatever was there.
     /// </summary>

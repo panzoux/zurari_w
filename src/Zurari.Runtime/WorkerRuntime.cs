@@ -238,6 +238,14 @@ public sealed class WorkerRuntime : IDisposable
             case Effect.CancelPreview cancelPreview:
                 CancelInFlightPreview(cancelPreview.Generation);
                 break;
+            case Effect.SetSortOrder setSortOrder:
+                _settings.Update(s => s with
+                {
+                    SortMode = setSortOrder.Order.Mode.ToString(),
+                    SortDescending = setSortOrder.Order.Descending,
+                    DirectoriesFirst = setSortOrder.Order.DirectoriesFirst,
+                });
+                break;
             case Effect.SetCollapsedGroups setCollapsedGroups:
                 _settings.Update(s => s with { CollapsedGroups = [.. setCollapsedGroups.Groups] });
                 break;
@@ -375,6 +383,25 @@ public sealed class WorkerRuntime : IDisposable
         }
     }
 
+    /// <summary>
+    /// The stored sort order, falling back to the default for anything missing or unrecognized.
+    /// </summary>
+    /// <remarks>
+    /// The mode is stored by name rather than by its numeric value: renaming or reordering the enum
+    /// would otherwise silently reinterpret an old settings file as a different mode.
+    /// </remarks>
+    private static SortOrder ReadSortOrder(UserSettings settings)
+    {
+        var mode = Enum.TryParse<SortMode>(settings.SortMode, ignoreCase: true, out var parsed)
+            ? parsed
+            : SortOrder.Default.Mode;
+
+        return new SortOrder(
+            mode,
+            settings.SortDescending ?? SortOrder.Default.Descending,
+            settings.DirectoriesFirst ?? SortOrder.Default.DirectoriesFirst);
+    }
+
     private void ExecuteReadDirectory(Effect.ReadDirectory effect)
     {
         try
@@ -397,8 +424,10 @@ public sealed class WorkerRuntime : IDisposable
             // putting the section back.
             if (effect.Location is Location.Drives && Interlocked.Exchange(ref _collapseRestored, 1) == 0)
             {
+                var settings = _settings.Load();
                 _post(new Msg.CollapsedGroupsRestored(
-                    effect.ColumnIndex, [.. _settings.Load().CollapsedGroups ?? []]));
+                    effect.ColumnIndex, [.. settings.CollapsedGroups ?? []]));
+                _post(new Msg.SortOrderRestored(ReadSortOrder(settings)));
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
