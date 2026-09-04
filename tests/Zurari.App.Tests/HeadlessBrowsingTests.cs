@@ -15,8 +15,7 @@ public class HeadlessBrowsingTests
 {
     private static string CreateTempTree()
     {
-        var root = Path.Combine(Path.GetTempPath(), "zurari-app-tests-" + Guid.NewGuid());
-        Directory.CreateDirectory(root);
+        var root = TempDirectory.Create("zurari-app-tests");
         Directory.CreateDirectory(Path.Combine(root, "Alpha"));
         Directory.CreateDirectory(Path.Combine(root, "Beta"));
         File.WriteAllText(Path.Combine(root, "root.txt"), "hi");
@@ -102,7 +101,7 @@ public class HeadlessBrowsingTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TempDirectory.Delete(root);
         }
     }
 

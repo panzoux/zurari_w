@@ -8,12 +8,7 @@ namespace Zurari.Shell.Tests;
 [Collection(SharedRecycleBin.Name)]
 public class ShellEffectExecutorTests
 {
-    private static string CreateTempDir()
-    {
-        var path = Path.Combine(Path.GetTempPath(), "zurari-shell-tests-" + Guid.NewGuid());
-        Directory.CreateDirectory(path);
-        return path;
-    }
+    private static string CreateTempDir() => TempDirectory.Create("zurari-shell-tests");
 
     private static Msg WaitForMsg(ConcurrentQueue<Msg> queue, TimeSpan timeout)
     {
@@ -53,7 +48,7 @@ public class ShellEffectExecutorTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -83,7 +78,7 @@ public class ShellEffectExecutorTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -110,7 +105,7 @@ public class ShellEffectExecutorTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -134,7 +129,7 @@ public class ShellEffectExecutorTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -164,7 +159,7 @@ public class ShellEffectExecutorTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -189,7 +184,7 @@ public class ShellEffectExecutorTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -218,8 +213,8 @@ public class ShellEffectExecutorTests
         }
         finally
         {
-            Directory.Delete(srcDir, recursive: true);
-            Directory.Delete(destDir, recursive: true);
+            TempDirectory.Delete(srcDir);
+            TempDirectory.Delete(destDir);
         }
     }
 
@@ -254,8 +249,8 @@ public class ShellEffectExecutorTests
         }
         finally
         {
-            Directory.Delete(srcDir, recursive: true);
-            Directory.Delete(columnDir, recursive: true);
+            TempDirectory.Delete(srcDir);
+            TempDirectory.Delete(columnDir);
         }
     }
 
@@ -283,8 +278,8 @@ public class ShellEffectExecutorTests
         }
         finally
         {
-            Directory.Delete(srcDir, recursive: true);
-            Directory.Delete(destDir, recursive: true);
+            TempDirectory.Delete(srcDir);
+            TempDirectory.Delete(destDir);
         }
     }
 
@@ -308,7 +303,7 @@ public class ShellEffectExecutorTests
         }
         finally
         {
-            Directory.Delete(destDir, recursive: true);
+            TempDirectory.Delete(destDir);
         }
     }
 }

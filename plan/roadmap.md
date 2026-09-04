@@ -2,7 +2,7 @@
 
 **作成**: 2026-07-20
 **現状**: Phase 0〜5 完了(main = `b561d45`)。Phase 6 は `phase6a-location-foundation` ブランチで進行中 —
-34 コミット / 634 テスト green / **main 未マージ**。進捗の詳細は Phase 6 計画の Status 表と Records を見ること
+36 コミット / 640 テスト green / **main 未マージ**。進捗の詳細は Phase 6 計画の Status 表と Records を見ること
 **コンセプト**: zurari(TUI版, 別名 zrr)の multi-column UX を Windows GUI へ。
 アーキテクチャは rwf(Rust版)の純粋 Transition パターンの C# 移植。
 
@@ -74,7 +74,7 @@ Phase 6 の作業中に見つかったもののうち、**そのフェーズの�
 |---|---|---|
 | 6f-4 | ~~ゴミ箱の列挙が他のシェル COM と同時だと短いリストを返す~~ → **調査の結果、アプリの不具合ではなかった**。原因は「別のテストが実際にファイルをゴミ箱へ捨てていた」こと。詳細と証拠は Phase 6 の Records 6f-4 | `[x]` 解決(2026-09-04) |
 | 6f-2 | `JobEngineTests` のキャンセル競合(50MB のコピーが先に終わると `JobCancelled` が来ない) | `[ ]` 未着手 |
-| 6f-3 | テストの `finally` にある 57 個の無防備な `Directory.Delete(dir, recursive: true)` | `[ ]` 未着手 |
+| 6f-3 | ~~テストの `finally` にある無防備な `Directory.Delete`~~ → 共有ヘルパー `TempDirectory` を全テストアセンブリに導入し、89 箇所すべてを置換 | `[x]` 解決(2026-09-04) |
 | help | **キーバインドの一覧がどこにも無い。** 「コマンドを足したらキーとヘルプ項目の両方を足す」という規約の後半が未実装で、Ctrl+B / Ctrl+D / Ctrl+E / Space / Apps は**発見不可能**。ステータスバーの文脈ヒント + ヘルプ画面(6e.7)で解消する | `[ ]` 6e.7 |
 | R-1 | Phase 6 のコミットが **main に一つもマージされていない** | `[ ]` 未着手 |
 

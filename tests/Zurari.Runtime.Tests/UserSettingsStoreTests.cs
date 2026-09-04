@@ -4,12 +4,7 @@ namespace Zurari.Runtime.Tests;
 
 public class UserSettingsStoreTests
 {
-    private static string CreateTempDir()
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "zurari-settings-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        return dir;
-    }
+    private static string CreateTempDir() => TempDirectory.Create("zurari-settings");
 
     [Fact]
     public void Save_then_Load_round_trips_the_preview_width()
@@ -25,7 +20,7 @@ public class UserSettingsStoreTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -52,7 +47,7 @@ public class UserSettingsStoreTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -72,7 +67,7 @@ public class UserSettingsStoreTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -91,7 +86,7 @@ public class UserSettingsStoreTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -114,7 +109,7 @@ public class UserSettingsStoreTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -132,7 +127,7 @@ public class UserSettingsStoreTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -151,7 +146,7 @@ public class UserSettingsStoreTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -172,7 +167,7 @@ public class UserSettingsStoreTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 }

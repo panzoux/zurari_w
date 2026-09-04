@@ -5,4 +5,10 @@
   <PropertyGroup>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
   </PropertyGroup>
+  <!-- One best-effort temp-directory cleanup shared by every test assembly. Cleanup that throws
+       fails whichever test happens to be running, for a reason that has nothing to do with it. -->
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)TestSupport/TempDirectory.cs" Link="TestSupport/TempDirectory.cs" />
+    <Using Include="Zurari.TestSupport" />
+  </ItemGroup>
 </Project>

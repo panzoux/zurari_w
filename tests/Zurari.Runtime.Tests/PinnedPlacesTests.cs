@@ -7,12 +7,7 @@ namespace Zurari.Runtime.Tests;
 
 public class PinnedPlacesTests
 {
-    private static string CreateTempDir()
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "zurari-pin-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        return dir;
-    }
+    private static string CreateTempDir() => TempDirectory.Create("zurari-pin");
 
     private static Msg WaitFor<T>(ConcurrentQueue<Msg> queue, TimeSpan timeout)
         where T : Msg
@@ -69,7 +64,7 @@ public class PinnedPlacesTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -96,7 +91,7 @@ public class PinnedPlacesTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -125,7 +120,7 @@ public class PinnedPlacesTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -150,7 +145,7 @@ public class PinnedPlacesTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -194,7 +189,7 @@ public class PinnedPlacesTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -228,7 +223,7 @@ public class PinnedPlacesTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 }

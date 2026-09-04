@@ -10,12 +10,7 @@ namespace Zurari.Runtime.Tests;
 /// </summary>
 public class VideoThumbnailerTests
 {
-    private static string CreateTempDir()
-    {
-        var path = Path.Combine(Path.GetTempPath(), "zurari-thumb-tests-" + Guid.NewGuid());
-        Directory.CreateDirectory(path);
-        return path;
-    }
+    private static string CreateTempDir() => TempDirectory.Create("zurari-thumb-tests");
 
     /// <summary>
     /// A garbage ".mp4" (not a real video) must never throw, regardless of whether ffmpeg is
@@ -43,7 +38,7 @@ public class VideoThumbnailerTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 

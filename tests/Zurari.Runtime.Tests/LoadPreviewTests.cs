@@ -9,12 +9,7 @@ public class LoadPreviewTests
 {
     private static readonly byte[] PngSignature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
-    private static string CreateTempDir()
-    {
-        var path = Path.Combine(Path.GetTempPath(), "zurari-preview-tests-" + Guid.NewGuid());
-        Directory.CreateDirectory(path);
-        return path;
-    }
+    private static string CreateTempDir() => TempDirectory.Create("zurari-preview-tests");
 
     private static Msg WaitForMsg(ConcurrentQueue<Msg> queue, TimeSpan timeout)
     {
@@ -54,7 +49,7 @@ public class LoadPreviewTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -84,7 +79,7 @@ public class LoadPreviewTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -107,7 +102,7 @@ public class LoadPreviewTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -131,7 +126,7 @@ public class LoadPreviewTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -156,7 +151,7 @@ public class LoadPreviewTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -181,7 +176,7 @@ public class LoadPreviewTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -208,7 +203,7 @@ public class LoadPreviewTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -245,7 +240,7 @@ public class LoadPreviewTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -270,7 +265,7 @@ public class LoadPreviewTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -293,7 +288,7 @@ public class LoadPreviewTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -330,7 +325,7 @@ public class LoadPreviewTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -368,7 +363,7 @@ public class LoadPreviewTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -409,7 +404,7 @@ public class LoadPreviewTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -452,7 +447,7 @@ public class LoadPreviewTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -495,7 +490,7 @@ public class LoadPreviewTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -530,7 +525,7 @@ public class LoadPreviewTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -575,7 +570,7 @@ public class LoadPreviewTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 }

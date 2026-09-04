@@ -18,8 +18,8 @@ Phase 6 was sixteen loose checkboxes. Grilling turned it into decisions, and fou
 
 # Status
 
-Branch `phase6a-location-foundation`, 35 commits, **nothing merged to main** (see R-1).
-634 tests, `scripts/check.ps1` green.
+Branch `phase6a-location-foundation`, 36 commits, **nothing merged to main** (see R-1).
+640 tests, `scripts/check.ps1` green.
 
 | | Item | Status | Commit |
 |---|---|---|---|
@@ -55,7 +55,7 @@ Branch `phase6a-location-foundation`, 35 commits, **nothing merged to main** (se
 | **6f** | **Findings parked from 6a–6e** | `[~]` | |
 | 6f.1 | Settings store: injectable path, atomic save | `[x]` | `134fce0` |
 | 6f.2 | `JobEngineTests` cancel race | `[ ]` | |
-| 6f.3 | 57 unguarded `Directory.Delete` in test cleanup | `[ ]` | |
+| 6f.3 | Unguarded `Directory.Delete` in test cleanup (89, not 57) | `[x]` | (this commit) |
 | **docs** | Stale plan facts, CLAUDE.md pointer | `[x]` | `9d55e8f` `06dde17` |
 
 Deferred out of Phase 6 with reasons: reparse-point cycle prevention (coupled to Finder-style
@@ -140,9 +140,20 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   racy.** It copies 50MB, waits for one `JobProgress`, then cancels; if the copy finishes first,
   `JobCancelled` never arrives and it times out. Fixing it means a larger fixture (slower every run)
   or a throttle seam in `JobEngine` - a design decision, not a tidy-up.
-- **6f-3** `[ ]` **57 unguarded `Directory.Delete(dir, recursive: true)` in test `finally` blocks.**
-  On Windows a lingering handle turns a test whose assertions all passed into a failure. A shared
-  best-effort temp-dir helper would remove a whole class of flake.
+- **6f-3** `[x]` **Unguarded `Directory.Delete` in test cleanup - 89 of them, not the 57 I counted.**
+  A test that has finished asserting has already passed or failed on its own merits; cleanup throwing
+  afterwards turns it red for a reason that has nothing to do with what it was checking, and lands
+  the failure on whichever test happened to be running. 6f-5 was one of these caught in the act.
+
+  `tests/TestSupport/TempDirectory.cs` is compiled into every test assembly through
+  `tests/Directory.Build.props`. `Delete` retries five times with a growing wait and gives up quietly,
+  clearing read-only attributes once on the way - a read-only file will not delete however long you
+  wait, so waiting for it is the one case retrying cannot fix. All 89 call sites converted, and the
+  twelve near-identical private `CreateTempDir` helpers now delegate to `TempDirectory.Create`.
+
+  The helper has its own tests, and four of the six fail against a plain `Directory.Delete` - the
+  locked-file and read-only cases especially, which are the ones that were actually biting. Full gate
+  run three times, green each time.
 
 ## Closed
 

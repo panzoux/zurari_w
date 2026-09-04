@@ -10,12 +10,7 @@ namespace Zurari.Runtime.Tests;
 /// </summary>
 public class CollapsedSectionsTests
 {
-    private static string CreateTempDir()
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "zurari-collapse-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        return dir;
-    }
+    private static string CreateTempDir() => TempDirectory.Create("zurari-collapse");
 
     private static T WaitFor<T>(ConcurrentQueue<Msg> queue, TimeSpan timeout)
         where T : Msg
@@ -57,7 +52,7 @@ public class CollapsedSectionsTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -85,7 +80,7 @@ public class CollapsedSectionsTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -118,7 +113,7 @@ public class CollapsedSectionsTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -140,7 +135,7 @@ public class CollapsedSectionsTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 }

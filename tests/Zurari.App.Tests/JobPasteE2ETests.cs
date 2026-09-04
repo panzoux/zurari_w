@@ -14,12 +14,7 @@ namespace Zurari.App.Tests;
 /// </summary>
 public class JobPasteE2ETests
 {
-    private static string CreateTempDir(string suffix)
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "zurari-job-tests-" + suffix + "-" + Guid.NewGuid());
-        Directory.CreateDirectory(dir);
-        return dir;
-    }
+    private static string CreateTempDir(string suffix) => TempDirectory.Create("zurari-job-tests-" + suffix);
 
     private static void DrainUntil(MessageLoop loop, ConcurrentQueue<Msg> queue, Func<bool> done, TimeSpan timeout)
     {
@@ -107,8 +102,8 @@ public class JobPasteE2ETests
         }
         finally
         {
-            Directory.Delete(sourceDir, recursive: true);
-            Directory.Delete(destDir, recursive: true);
+            TempDirectory.Delete(sourceDir);
+            TempDirectory.Delete(destDir);
         }
     }
 
@@ -163,8 +158,8 @@ public class JobPasteE2ETests
         }
         finally
         {
-            Directory.Delete(sourceDir, recursive: true);
-            Directory.Delete(destDir, recursive: true);
+            TempDirectory.Delete(sourceDir);
+            TempDirectory.Delete(destDir);
         }
     }
 }

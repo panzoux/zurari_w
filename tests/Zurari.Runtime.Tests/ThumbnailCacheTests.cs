@@ -4,12 +4,7 @@ namespace Zurari.Runtime.Tests;
 
 public class ThumbnailCacheTests
 {
-    private static string CreateTempDir()
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "zurari-thumbcache-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        return dir;
-    }
+    private static string CreateTempDir() => TempDirectory.Create("zurari-thumbcache");
 
     private static string CreateVideoFile(string dir, string name = "clip.mp4")
     {
@@ -37,7 +32,7 @@ public class ThumbnailCacheTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -61,7 +56,7 @@ public class ThumbnailCacheTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -81,7 +76,7 @@ public class ThumbnailCacheTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -106,7 +101,7 @@ public class ThumbnailCacheTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -135,7 +130,7 @@ public class ThumbnailCacheTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -170,7 +165,7 @@ public class ThumbnailCacheTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -195,7 +190,7 @@ public class ThumbnailCacheTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 }

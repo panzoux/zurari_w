@@ -6,12 +6,7 @@ namespace Zurari.Runtime.Tests;
 
 public class DirectoryWatcherTests
 {
-    private static string CreateTempDir()
-    {
-        var path = Path.Combine(Path.GetTempPath(), "zurari-dirwatcher-tests-" + Guid.NewGuid());
-        Directory.CreateDirectory(path);
-        return path;
-    }
+    private static string CreateTempDir() => TempDirectory.Create("zurari-dirwatcher-tests");
 
     private static bool WaitForAny(ConcurrentQueue<Msg.ExternalDirectoryChanged> queue, TimeSpan timeout)
     {
@@ -52,7 +47,7 @@ public class DirectoryWatcherTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -84,7 +79,7 @@ public class DirectoryWatcherTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -112,8 +107,8 @@ public class DirectoryWatcherTests
         }
         finally
         {
-            Directory.Delete(dirA, recursive: true);
-            Directory.Delete(dirB, recursive: true);
+            TempDirectory.Delete(dirA);
+            TempDirectory.Delete(dirB);
         }
     }
 
@@ -140,7 +135,7 @@ public class DirectoryWatcherTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -158,7 +153,7 @@ public class DirectoryWatcherTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 }

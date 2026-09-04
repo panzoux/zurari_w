@@ -6,12 +6,7 @@ namespace Zurari.Runtime.Tests;
 
 public class JobEngineTests
 {
-    private static string CreateTempDir()
-    {
-        var path = Path.Combine(Path.GetTempPath(), "zurari-jobengine-tests-" + Guid.NewGuid());
-        Directory.CreateDirectory(path);
-        return path;
-    }
+    private static string CreateTempDir() => TempDirectory.Create("zurari-jobengine-tests");
 
     private static Msg WaitForMsg<T>(ConcurrentQueue<Msg> queue, TimeSpan timeout)
         where T : Msg
@@ -64,7 +59,7 @@ public class JobEngineTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -93,7 +88,7 @@ public class JobEngineTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -132,7 +127,7 @@ public class JobEngineTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -161,7 +156,7 @@ public class JobEngineTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -218,7 +213,7 @@ public class JobEngineTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -265,7 +260,7 @@ public class JobEngineTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -299,7 +294,7 @@ public class JobEngineTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -348,7 +343,7 @@ public class JobEngineTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -382,7 +377,7 @@ public class JobEngineTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -415,7 +410,7 @@ public class JobEngineTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -446,7 +441,7 @@ public class JobEngineTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -488,7 +483,7 @@ public class JobEngineTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -522,7 +517,7 @@ public class JobEngineTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -560,7 +555,7 @@ public class JobEngineTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -590,7 +585,7 @@ public class JobEngineTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 }

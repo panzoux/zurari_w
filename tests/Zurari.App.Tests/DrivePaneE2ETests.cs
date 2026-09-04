@@ -109,7 +109,7 @@ public class DrivePaneE2ETests
     [Fact]
     public void Ctrl_B_on_a_folder_adds_it_and_the_pane_shows_it()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "zurari-e2e-" + Guid.NewGuid().ToString("N"));
+        var dir = TempDirectory.Create("zurari-e2e");
         var target = Path.Combine(dir, "panzoux");
         Directory.CreateDirectory(target);
         try
@@ -142,7 +142,7 @@ public class DrivePaneE2ETests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -158,7 +158,7 @@ public class DrivePaneE2ETests
     [StaFact]
     public void What_was_pinned_and_collapsed_comes_back_on_the_next_launch()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "zurari-restart-" + Guid.NewGuid().ToString("N"));
+        var dir = TempDirectory.Create("zurari-restart");
         var target = Path.Combine(dir, "panzoux");
         Directory.CreateDirectory(target);
         var settingsDir = Path.Combine(dir, "cfg");
@@ -235,7 +235,7 @@ public class DrivePaneE2ETests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 

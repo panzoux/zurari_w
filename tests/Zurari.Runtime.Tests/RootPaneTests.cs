@@ -7,12 +7,7 @@ namespace Zurari.Runtime.Tests;
 
 public class RootPaneTests
 {
-    private static string CreateTempDir()
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "zurari-root-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        return dir;
-    }
+    private static string CreateTempDir() => TempDirectory.Create("zurari-root");
 
     private static Msg WaitForMsg(ConcurrentQueue<Msg> queue, TimeSpan timeout)
     {
@@ -62,7 +57,7 @@ public class RootPaneTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -98,7 +93,7 @@ public class RootPaneTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TempDirectory.Delete(root);
         }
     }
 
@@ -120,7 +115,7 @@ public class RootPaneTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TempDirectory.Delete(root);
         }
     }
 

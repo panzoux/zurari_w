@@ -6,12 +6,7 @@ namespace Zurari.Runtime.Tests;
 
 public class WorkerRuntimeTests
 {
-    private static string CreateTempDir()
-    {
-        var path = Path.Combine(Path.GetTempPath(), "zurari-runtime-tests-" + Guid.NewGuid());
-        Directory.CreateDirectory(path);
-        return path;
-    }
+    private static string CreateTempDir() => TempDirectory.Create("zurari-runtime-tests");
 
     private static Msg WaitForMsg(ConcurrentQueue<Msg> queue, TimeSpan timeout)
     {
@@ -68,7 +63,7 @@ public class WorkerRuntimeTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 
@@ -169,7 +164,7 @@ public class WorkerRuntimeTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectory.Delete(dir);
         }
     }
 }
