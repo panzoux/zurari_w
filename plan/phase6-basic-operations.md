@@ -48,7 +48,7 @@ wrong the moment the next commit lands - `git log --oneline main..` is the hones
 | 6d.8 | ISO mount on activate (eject: see roadmap 見送った案) | `[x]` | `5e7b402` |
 | 6d.9 | Live refresh (`SHChangeNotifyRegister`) | `[x]` | `ef5d7a3` |
 | **6e** | **Sorting, hidden files, cursor memory, rename** | `[ ]` | |
-| 6e.1 | Sort in `Transition` (modes + direction + dirs-first) | `[x]` | (this commit) |
+| 6e.1 | Sort in `Transition` (modes + direction + dirs-first) | `[x]` | `6e646c0` |
 | 6e.2 | Hidden-file toggle | `[ ]` | |
 | 6e.3 | Cursor memory (entry name, LRU-capped) | `[ ]` | |
 | 6e.4 | Rename (overlay TextBox) | `[ ]` | |
