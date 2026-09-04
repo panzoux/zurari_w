@@ -6,7 +6,8 @@ GUI版zurari。Windows特化、multi-column(Finder風)ファイラー。
 ## コマンド
 
 ```powershell
-scripts/check.ps1          # format検証 + build + 全テスト。完了の定義 = これがgreen
+scripts/check.ps1          # format検証 + build + 全テスト + plan status検証。完了の定義 = これがgreen
+scripts/status.ps1         # plan/*.md のテスト数と `(this commit)` を実際の値に書き換える
 dotnet format Zurari.sln   # フォーマット修正
 dotnet build Zurari.sln
 dotnet test Zurari.sln
@@ -56,4 +57,8 @@ pre-commit フックが check.ps1 を実行する(`git config core.hooksPath scr
 - 設計: docs/superpowers/specs/ / **フェーズ計画: plan/(1フェーズ=1ファイル)+ plan/roadmap.md**
   docs/superpowers/plans/ は着手時の原文(日付付きファイル名)で、更新されない。現行の計画は plan/ を見ること
 - タスク完了の条件: planの項目を満たす AND `scripts/check.ps1` green。証跡(テスト出力)を残す
+- **plan/roadmap.md と plan/phase*.md の「N テスト green」は手で書かない。**`scripts/status.ps1` が
+  書き、check.ps1 が古ければ落とす(format と同じ「検証はcheck、修正は別コマンド」の形)。
+  Status 表の commit 欄は、その行を書く時点ではまだ存在しないので `(this commit)` と書いておき、
+  コミット後に `scripts/status.ps1` が HEAD の短縮ハッシュに置き換える
 - コミットは小さく。コミット前に check.ps1(フックが強制)

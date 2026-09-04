@@ -18,8 +18,12 @@ Phase 6 was sixteen loose checkboxes. Grilling turned it into decisions, and fou
 
 # Status
 
-Branch `phase6a-location-foundation`, 36 commits, **nothing merged to main** (see R-1).
+Branch `phase6a-location-foundation`, **nothing merged to main** (see R-1).
 640 tests, `scripts/check.ps1` green.
+
+<sub>The test count is written by `scripts/status.ps1`, and `check.ps1` refuses to pass while it is
+stale. Do not edit it by hand. A commit count used to live here too; it was removed because it is
+wrong the moment the next commit lands - `git log --oneline main..` is the honest form of it.</sub>
 
 | | Item | Status | Commit |
 |---|---|---|---|

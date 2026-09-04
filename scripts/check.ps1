@@ -14,8 +14,16 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
 
     Write-Host '== test ==' -ForegroundColor Cyan
-    dotnet test Zurari.sln --no-build
+    $trxDir = Join-Path $root 'artifacts/testresults'
+    if (Test-Path $trxDir) { Remove-Item $trxDir -Recurse -Force }
+    dotnet test Zurari.sln --no-build --logger trx --results-directory $trxDir
     if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
+
+    # The plan documents restate the test total. A number kept by hand goes stale by omission, and
+    # it did, repeatedly - so it is checked here rather than remembered. The .trx files the test run
+    # just wrote are the source, so this costs nothing.
+    Write-Host '== plan status ==' -ForegroundColor Cyan
+    & (Join-Path $PSScriptRoot 'status.ps1') -Verify -NoBuild
 
     Write-Host 'ALL CHECKS GREEN' -ForegroundColor Green
 }
