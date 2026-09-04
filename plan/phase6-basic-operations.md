@@ -82,6 +82,10 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   written to prevent. Corrected, and the script now refuses to substitute unless the working tree is
   clean, saying so rather than doing it silently.
 
+  A second bug in the same tool, found the same way: it matched the placeholder as a *substring*, so
+  the sentence above - which contains those words as prose - was itself a candidate for having a
+  commit hash written into it. It now matches a whole table cell.
+
 - **6d-17** `[x]` **Live refresh, 6d.9 - and `SHCNRF_NewDelivery` is 0x8000, not 0x1000.** The drive
   pane now notices a stick going in or a disc coming out without an F5.
   `SHChangeNotifyRegister` rather than `WM_DEVICECHANGE`: it reports a superset of the same events

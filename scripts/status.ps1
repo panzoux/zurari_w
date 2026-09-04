@@ -53,12 +53,15 @@ try {
         $updated = [regex]::Replace($updated, '\d+(?= tests, `scripts/check\.ps1` green)', $total)
         $updated = [regex]::Replace($updated, '\d+(?= テスト green)', $total)
 
-        # A Status row written before the commit it describes existed. Only once it does.
+        # A Status row written before the commit it describes existed. Matched as a whole table
+        # cell, because the same words appear in prose describing this very mechanism - and a
+        # substring match happily rewrote that sentence into a hash.
+        $placeholder = '| (this commit) |'
         if ($clean) {
-            $updated = $updated.Replace('(this commit)', "``$head``")
+            $updated = $updated.Replace($placeholder, "| ``$head`` |")
         }
-        elseif ($updated.Contains('(this commit)')) {
-            Write-Host "  (this commit) left alone in $($doc.Name) - commit first, then run this again" -ForegroundColor DarkYellow
+        elseif ($updated.Contains($placeholder)) {
+            Write-Host "  a (this commit) cell is left alone in $($doc.Name) - commit first, then run this again" -ForegroundColor DarkYellow
         }
 
         if ($updated -ne $text) {
