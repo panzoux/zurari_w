@@ -238,6 +238,9 @@ public sealed class WorkerRuntime : IDisposable
             case Effect.CancelPreview cancelPreview:
                 CancelInFlightPreview(cancelPreview.Generation);
                 break;
+            case Effect.CreateFolder createFolder:
+                ExecuteCreateFolder(createFolder);
+                break;
             case Effect.SetViewOptions setView:
                 _settings.Update(s => s with
                 {
@@ -403,6 +406,45 @@ public sealed class WorkerRuntime : IDisposable
                 settings.SortDescending ?? SortOrder.Default.Descending,
                 settings.DirectoriesFirst ?? SortOrder.Default.DirectoriesFirst),
             settings.ShowHidden ?? ViewOptions.Default.ShowHidden);
+    }
+
+    /// <summary>
+    /// Creates a new folder, picking a name nothing else in the directory has.
+    /// </summary>
+    /// <remarks>
+    /// The name is decided here rather than in Core because deciding it means looking at what is
+    /// already there. Explorer's own behaviour: 新しいフォルダー, then 新しいフォルダー (2) and so on.
+    /// </remarks>
+    private void ExecuteCreateFolder(Effect.CreateFolder effect)
+    {
+        if (effect.Location.FilesystemPath is not { } parent)
+        {
+            _post(new Msg.NoticeRaised("ここにはフォルダーを作れません"));
+            return;
+        }
+
+        try
+        {
+            for (var attempt = 1; attempt <= 1000; attempt++)
+            {
+                var name = attempt == 1 ? "新しいフォルダー" : $"新しいフォルダー ({attempt})";
+                var path = Path.Combine(parent, name);
+                if (Directory.Exists(path) || File.Exists(path))
+                {
+                    continue;
+                }
+
+                Directory.CreateDirectory(path);
+                _post(new Msg.FolderCreated(effect.ColumnIndex, effect.Location, name));
+                return;
+            }
+
+            _post(new Msg.NoticeRaised("空いている名前が見つかりません"));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            _post(new Msg.NoticeRaised($"フォルダーを作れません: {ex.Message}"));
+        }
     }
 
     private void ExecuteReadDirectory(Effect.ReadDirectory effect)

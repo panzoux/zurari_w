@@ -76,6 +76,7 @@ internal static class NativeMethods
     public const uint SEE_MASK_NOASYNC = 0x00000100;
     public const uint SEE_MASK_INVOKEIDLIST = 0x0000000C;
     public const int SW_HIDE = 0;
+    public const int SW_SHOWNORMAL = 1;
 
     /// <summary>Arguments for <see cref="ShellExecuteExW"/>.</summary>
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]

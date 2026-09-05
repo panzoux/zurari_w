@@ -373,6 +373,14 @@ public abstract record Msg
     /// </summary>
     public sealed record ViewRestored(ViewOptions View) : Msg;
 
+    /// <summary>Make a new folder in the focused column's location.</summary>
+    public sealed record CreateFolderRequested(int ColumnIndex) : Msg;
+
+    /// <summary>
+    /// A folder was created. Re-reads the column and puts the cursor on it once its row arrives.
+    /// </summary>
+    public sealed record FolderCreated(int ColumnIndex, Location Location, string Name) : Msg;
+
     /// <summary>
     /// Something to tell the user in the status bar - see <see cref="AppState.Notice"/>. Replaces
     /// whatever was there.

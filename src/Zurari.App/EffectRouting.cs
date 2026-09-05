@@ -54,6 +54,8 @@ public static class EffectRouting
             Effect.SetCollapsedGroups => EffectTarget.Runtime,
             Effect.SetViewOptions => EffectTarget.Runtime,
             Effect.MountImage => EffectTarget.Shell,
+            Effect.OpenWithDefaultApp => EffectTarget.Shell,
+            Effect.CreateFolder => EffectTarget.Runtime,
             Effect.LoadPreview => EffectTarget.Preview,
             Effect.CancelPreview => EffectTarget.Preview,
             Effect.DeleteToRecycleBin => EffectTarget.Shell,

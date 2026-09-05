@@ -135,6 +135,25 @@ public abstract record Effect
     public sealed record MountImage(string Path) : Effect;
 
     /// <summary>
+    /// Opens <paramref name="Path"/> with whatever Windows opens it with - the double-click.
+    /// </summary>
+    /// <remarks>
+    /// The shell's own UI is deliberately left on for this one, unlike every other verb this app
+    /// invokes: a file with no association is supposed to raise "how do you want to open this?", and
+    /// suppressing that would turn a normal prompt into a keypress that did nothing.
+    /// </remarks>
+    public sealed record OpenWithDefaultApp(string Path) : Effect;
+
+    /// <summary>
+    /// Creates a new folder in <paramref name="Location"/>, reporting the name it ended up with.
+    /// </summary>
+    /// <remarks>
+    /// The name is the Runtime's to decide, because deciding it means looking at what is already
+    /// there: "新しいフォルダー" may be taken, and finding that out is a directory read.
+    /// </remarks>
+    public sealed record CreateFolder(int ColumnIndex, Location Location) : Effect;
+
+    /// <summary>
     /// Remembers how listings are shown, so they come back the way they were left.
     /// </summary>
     public sealed record SetViewOptions(ViewOptions View) : Effect;

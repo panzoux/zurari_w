@@ -190,6 +190,8 @@ public static class Transition
             Msg.PlacesChanged => ReloadDrivePanes(state),
             Msg.ImageMounted m => ReloadDrivePanes(state with { RevealTarget = m.DriveRoot }),
             Msg.NoticeRaised m => (state with { Notice = m.Message }, NoEffects),
+            Msg.CreateFolderRequested m => CreateFolder(state, m.ColumnIndex),
+            Msg.FolderCreated m => RereadColumn(state, m.ColumnIndex, m.Location, reveal: m.Name),
             Msg.SetSortMode m => Rederive(
                 state, state.View with { Sort = state.View.Sort.Select(m.Mode) }, remember: true),
             Msg.ToggleDirectoriesFirst => Rederive(
@@ -284,11 +286,17 @@ public static class Transition
             fileTruncated = fileTruncated.SetItem(columnIndex, column with { Cursor = entryIndex });
             var fileState = state with { Columns = fileTruncated, FocusedColumn = columnIndex };
 
+            if (entry.Kind != EntryKind.File || EntryPath(column, entry) is not { } filePath)
+            {
+                return (fileState, NoEffects);
+            }
+
             // A disc image is a container the filesystem cannot open, so opening it means asking the
-            // shell to make it one - after which it is an ordinary drive like any other.
-            return entry.Kind == EntryKind.File && IsDiscImage(entry.Name) && EntryPath(column, entry) is { } imagePath
-                ? (fileState, new Effect[] { new Effect.MountImage(imagePath) })
-                : (fileState, NoEffects);
+            // shell to make it one - after which it is an ordinary drive like any other. Anything
+            // else opens the way double-clicking it in Explorer would.
+            return IsDiscImage(entry.Name)
+                ? (fileState, new Effect[] { new Effect.MountImage(filePath) })
+                : (fileState, new Effect[] { new Effect.OpenWithDefaultApp(filePath) });
         }
 
         var childLocation = ChildLocation(column, entry);
@@ -349,6 +357,41 @@ public static class Transition
         return remember
             ? (next, new Effect[] { new Effect.SetViewOptions(view) })
             : (next, NoEffects);
+    }
+
+    /// <summary>
+    /// Asks for a new folder where the column is pointing. Refused where there is no such place -
+    /// the drive pane holds places, not files, and the recycle bin is not somewhere to put things.
+    /// </summary>
+    private static (AppState, IReadOnlyList<Effect>) CreateFolder(AppState state, int columnIndex)
+    {
+        if (!InRange(state, columnIndex))
+        {
+            return (state, NoEffects);
+        }
+
+        var column = state.Columns[columnIndex];
+        return column.Location is Location.RealDirectory
+            ? (state, new Effect[] { new Effect.CreateFolder(columnIndex, column.Location) })
+            : (state with { Notice = "ここにはフォルダーを作れません" }, NoEffects);
+    }
+
+    /// <summary>
+    /// Re-reads one column, optionally putting the cursor on <paramref name="reveal"/> once it is
+    /// there. Ignores a report about a column that has since moved elsewhere.
+    /// </summary>
+    private static (AppState, IReadOnlyList<Effect>) RereadColumn(
+        AppState state, int columnIndex, Location location, string? reveal)
+    {
+        if (!InRange(state, columnIndex) || state.Columns[columnIndex].Location != location)
+        {
+            return (state, NoEffects);
+        }
+
+        var loading = WithColumn(state, columnIndex, state.Columns[columnIndex] with { Load = LoadState.Loading });
+        return (
+            loading with { RevealTarget = reveal },
+            new Effect[] { new Effect.ReadDirectory(columnIndex, location) });
     }
 
     private static AppState GoToParent(AppState state, int columnIndex)

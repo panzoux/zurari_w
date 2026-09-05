@@ -198,4 +198,64 @@ public class WorkerRuntimeTests
             TempDirectory.Delete(dir);
         }
     }
+
+    [Fact]
+    public void Creating_a_folder_reports_the_name_it_got()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var queue = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(queue.Enqueue);
+
+            runtime.Submit(new Effect.CreateFolder(0, new Location.RealDirectory(dir)));
+            var created = Assert.IsType<Msg.FolderCreated>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
+
+            Assert.Equal("新しいフォルダー", created.Name);
+            Assert.True(Directory.Exists(Path.Combine(dir, created.Name)));
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
+
+    /// <summary>
+    /// The name has to be decided where the directory can be looked at - which is the reason it is
+    /// picked here rather than in Core.
+    /// </summary>
+    [Fact]
+    public void A_second_folder_gets_a_name_that_is_free()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(dir, "新しいフォルダー"));
+
+            var queue = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(queue.Enqueue);
+
+            runtime.Submit(new Effect.CreateFolder(0, new Location.RealDirectory(dir)));
+            var created = Assert.IsType<Msg.FolderCreated>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
+
+            Assert.Equal("新しいフォルダー (2)", created.Name);
+            Assert.True(Directory.Exists(Path.Combine(dir, created.Name)));
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
+
+    [Fact]
+    public void Creating_a_folder_where_there_is_no_directory_says_so()
+    {
+        var queue = new ConcurrentQueue<Msg>();
+        using var runtime = new WorkerRuntime(queue.Enqueue);
+
+        runtime.Submit(new Effect.CreateFolder(0, Location.Drives.Instance));
+        var msg = WaitForMsg(queue, TimeSpan.FromSeconds(10));
+
+        Assert.IsType<Msg.NoticeRaised>(msg);
+    }
 }

@@ -794,6 +794,12 @@ public sealed partial class MainWindow : Window, IDisposable
             Dispatch(new Msg.PinFocusedLocation(loop.State.FocusedColumn));
             e.Handled = true;
         }
+        else if (e.Key == Key.N && Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
+        {
+            // Ctrl+Shift+N is Explorer's own, so it needs no explaining.
+            Dispatch(new Msg.CreateFolderRequested(loop.State.FocusedColumn));
+            e.Handled = true;
+        }
         else if (e.Key is Key.Apps || (e.Key == Key.F10 && Keyboard.Modifiers == ModifierKeys.Shift))
         {
             ShowContextMenuAtCursor();

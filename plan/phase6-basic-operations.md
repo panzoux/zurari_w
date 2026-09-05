@@ -20,7 +20,7 @@ Phase 6 was sixteen loose checkboxes. Grilling turned it into decisions, and fou
 
 **6a-6d, 6f and 6g are on `main`** - fast-forwarded from `phase6a-location-foundation` on
 2026-09-05, once 6d was complete (see R-1). 6e and 6c.5 remain.
-686 tests, `scripts/check.ps1` green.
+698 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`, and `check.ps1` refuses to pass while it is
 stale. Do not edit it by hand. A commit count used to live here too; it was removed because it is
@@ -52,8 +52,8 @@ wrong the moment the next commit lands - `git log --oneline main..` is the hones
 | 6e.2 | Hidden-file toggle | `[x]` | `06ce820` |
 | 6e.3 | Cursor memory (entry name, LRU-capped) | `[x]` | `cbc9505` |
 | 6e.4 | Rename (overlay TextBox) | `[ ]` | |
-| 6e.5 | New folder | `[ ]` | |
-| 6e.6 | Open with default app | `[ ]` | |
+| 6e.5 | New folder (`Ctrl+Shift+N`) | `[x]` | (this commit) |
+| 6e.6 | Open with default app (`Enter`) | `[x]` | (this commit) |
 | 6e.7 | Status bar, key hints / help screen | `[ ]` | |
 | **6e-bis** | **Smooth cursor movement** | `[x]` | `f61c46b` `593194e` |
 | **6g** | **Finder-style auto-extend**: the column beside the cursor | `[x]` | `75f84f9` |
@@ -75,6 +75,21 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
 `[ ]` = still open.
 
 ## Open
+
+- **6e-56** `[x]` **Open with the default app (6e.6) and new folder (6e.5).** `Enter` on a file now
+  opens it the way double-clicking would; before, it selected the file and did nothing else. An
+  `.iso` still mounts instead, since opening a disc image means making it a drive.
+
+  **The shell's own UI is deliberately left on for `open`**, unlike every other verb this app
+  invokes. A file with no association is *supposed* to raise "how do you want to open this?", and
+  suppressing that would turn a normal prompt into a keypress that appears to do nothing - the same
+  failure mode as a silent eject.
+
+  `Ctrl+Shift+N` makes a folder, Explorer's own binding. **The name is the Runtime's to choose**,
+  because choosing it means looking at what is already there: 新しいフォルダー, then (2), and so on.
+  Core refuses where there is no directory to create in - the drive pane holds places, the bin is not
+  somewhere to put things - and says so rather than failing quietly. The cursor lands on the new
+  folder through `RevealTarget`, which 6d.8 already built for the mounted-drive case.
 
 - **6e-3** `[x]` **Cursor memory, 6e.3.** Coming back to a place lands on the entry you left it on,
   by name and never by index - an index means something different after a sort or a delete, and the

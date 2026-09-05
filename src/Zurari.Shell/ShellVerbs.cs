@@ -26,16 +26,27 @@ internal static class ShellVerbs
     /// before it has finished with the arguments. <c>SEE_MASK_FLAG_NO_UI</c> suppresses the shell's
     /// own error box - the refusal comes back here instead, so it can be said in the status bar.
     /// </remarks>
-    public static Win32Exception? Invoke(string verb, string path)
+    public static Win32Exception? Invoke(string verb, string path) => Invoke(verb, path, suppressUi: true);
+
+    /// <summary>
+    /// As <see cref="Invoke(string, string)"/>, with <paramref name="suppressUi"/> controlling
+    /// whether the shell may put its own dialogs on screen.
+    /// </summary>
+    /// <remarks>
+    /// Opening a file is the one case that wants them: a file with no association is supposed to
+    /// raise "how do you want to open this?", and suppressing that turns a normal prompt into a
+    /// keypress that appears to do nothing.
+    /// </remarks>
+    public static Win32Exception? Invoke(string verb, string path, bool suppressUi)
     {
         var info = new NativeMethods.SHELLEXECUTEINFOW
         {
             cbSize = Marshal.SizeOf<NativeMethods.SHELLEXECUTEINFOW>(),
-            fMask = NativeMethods.SEE_MASK_FLAG_NO_UI | NativeMethods.SEE_MASK_NOASYNC
-                | NativeMethods.SEE_MASK_INVOKEIDLIST,
+            fMask = NativeMethods.SEE_MASK_NOASYNC | NativeMethods.SEE_MASK_INVOKEIDLIST
+                | (suppressUi ? NativeMethods.SEE_MASK_FLAG_NO_UI : 0),
             lpVerb = verb,
             lpFile = path,
-            nShow = NativeMethods.SW_HIDE,
+            nShow = suppressUi ? NativeMethods.SW_HIDE : NativeMethods.SW_SHOWNORMAL,
         };
 
         return NativeMethods.ShellExecuteExW(ref info) ? null : new Win32Exception(Marshal.GetLastWin32Error());

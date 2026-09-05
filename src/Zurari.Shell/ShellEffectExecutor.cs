@@ -116,6 +116,9 @@ public sealed class ShellEffectExecutor : IDisposable
             case Effect.ShellCopyOrMove shellCopyOrMove:
                 ExecuteShellCopyOrMove(shellCopyOrMove);
                 break;
+            case Effect.OpenWithDefaultApp open:
+                ExecuteOpen(open);
+                break;
             case Effect.MountImage mountImage:
                 ExecuteMountImage(mountImage);
                 break;
@@ -162,6 +165,17 @@ public sealed class ShellEffectExecutor : IDisposable
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             post(new Msg.DirectoryLoadFailed(effect.ColumnIndex, effect.Location, ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Opens a file the way double-clicking it would, letting the shell show its own UI.
+    /// </summary>
+    private void ExecuteOpen(Effect.OpenWithDefaultApp effect)
+    {
+        if (ShellVerbs.Invoke("open", effect.Path, suppressUi: false) is { } error)
+        {
+            post(new Msg.NoticeRaised($"開けません: {error.Message}"));
         }
     }
 
