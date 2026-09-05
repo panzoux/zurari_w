@@ -52,8 +52,8 @@ wrong the moment the next commit lands - `git log --oneline main..` is the hones
 | 6e.2 | Hidden-file toggle | `[x]` | `06ce820` |
 | 6e.3 | Cursor memory (entry name, LRU-capped) | `[x]` | `cbc9505` |
 | 6e.4 | Rename (overlay TextBox) | `[ ]` | |
-| 6e.5 | New folder (`Ctrl+Shift+N`) | `[x]` | (this commit) |
-| 6e.6 | Open with default app (`Enter`) | `[x]` | (this commit) |
+| 6e.5 | New folder (`Ctrl+Shift+N`) | `[x]` | `b43a6a1` |
+| 6e.6 | Open with default app (`Enter`) | `[x]` | `b43a6a1` |
 | 6e.7 | Status bar, key hints / help screen | `[ ]` | |
 | **6e-bis** | **Smooth cursor movement** | `[x]` | `f61c46b` `593194e` |
 | **6g** | **Finder-style auto-extend**: the column beside the cursor | `[x]` | `75f84f9` |
