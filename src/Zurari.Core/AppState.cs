@@ -576,6 +576,11 @@ public sealed record PreviewMetadata(
     int? PixelHeight = null,
     int? BitsPerPixel = null);
 
+/// <summary>Where the cursor was in one place the user has been.</summary>
+/// <param name="Location">The place.</param>
+/// <param name="EntryName">The <see cref="Entry.Name"/> the cursor was on.</param>
+public readonly record struct RememberedCursor(Location Location, string EntryName);
+
 /// <summary>
 /// Immutable snapshot of the entire application. The UI is a projection of this
 /// value; the only way it changes is <see cref="Transition.Apply"/>.
@@ -616,6 +621,24 @@ public sealed record AppState
     public string? Notice { get; init; }
 
     /// <summary>
+    /// Where the cursor was, per place the user has been. Most recent first.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// By entry <em>name</em>, never index: an index means something different after a sort, a
+    /// delete, or anything appearing above it - and the whole point is to come back to the file you
+    /// were looking at, not to the fourth row.
+    /// </para>
+    /// <para>
+    /// Capped at <see cref="MaxRememberedCursors"/> and dropped oldest-first, which is what makes
+    /// the cap an invariant rather than a hope: without one this grows for as long as the app runs,
+    /// and the property tests would grow it without bound in a few thousand generated messages.
+    /// Session-only, deliberately - where you were an hour ago is a memory, not a preference.
+    /// </para>
+    /// </remarks>
+    public ImmutableArray<RememberedCursor> CursorMemory { get; init; } = [];
+
+    /// <summary>
     /// An entry name to put the cursor on as soon as a listing containing it arrives, or
     /// <c>null</c>. Consumed and cleared by the first <see cref="Msg.DirectoryLoaded"/> that has it.
     /// </summary>
@@ -647,6 +670,53 @@ public sealed record AppState
     /// Intended for tests (property-based tests call this after every transition), not production
     /// hot paths.
     /// </summary>
+    /// <summary>
+    /// How many places <see cref="CursorMemory"/> keeps. Deep enough to cover a session's worth of
+    /// moving around, small enough that a linear scan of it is not worth thinking about.
+    /// </summary>
+    public const int MaxRememberedCursors = 64;
+
+    /// <summary>
+    /// Records where the cursor is in <paramref name="location"/>, moving it to the front and
+    /// dropping the oldest once the cap is reached.
+    /// </summary>
+    public AppState RememberCursor(Location location, string entryName)
+    {
+        ArgumentNullException.ThrowIfNull(location);
+        ArgumentNullException.ThrowIfNull(entryName);
+
+        var kept = ImmutableArray.CreateBuilder<RememberedCursor>(Math.Min(CursorMemory.Length + 1, MaxRememberedCursors));
+        kept.Add(new RememberedCursor(location, entryName));
+        foreach (var remembered in CursorMemory)
+        {
+            if (kept.Count == MaxRememberedCursors)
+            {
+                break;
+            }
+
+            if (remembered.Location != location)
+            {
+                kept.Add(remembered);
+            }
+        }
+
+        return this with { CursorMemory = kept.ToImmutable() };
+    }
+
+    /// <summary>The entry the cursor was last on in <paramref name="location"/>, or <c>null</c>.</summary>
+    public string? RecallCursor(Location location)
+    {
+        foreach (var remembered in CursorMemory)
+        {
+            if (remembered.Location == location)
+            {
+                return remembered.EntryName;
+            }
+        }
+
+        return null;
+    }
+
     public IReadOnlyList<string> CheckInvariants()
     {
         var violations = new List<string>();
@@ -702,6 +772,24 @@ public sealed record AppState
             // Now a row carries its own Entry.Target, so a column can legitimately point somewhere
             // unrelated to the one on its left - that is exactly what a favorite, a pinned network
             // share, or the recycle bin does. String containment would reject all of them.
+        }
+
+        if (CursorMemory.Length > MaxRememberedCursors)
+        {
+            violations.Add(
+                $"CursorMemory holds {CursorMemory.Length} entries, over the cap of {MaxRememberedCursors}.");
+        }
+
+        if (!CursorMemory.IsDefaultOrEmpty)
+        {
+            var seenLocations = new HashSet<Location>();
+            foreach (var remembered in CursorMemory)
+            {
+                if (!seenLocations.Add(remembered.Location))
+                {
+                    violations.Add($"CursorMemory holds {remembered.Location} more than once.");
+                }
+            }
         }
 
         if (!Jobs.IsDefaultOrEmpty)

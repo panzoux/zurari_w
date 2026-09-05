@@ -20,7 +20,7 @@ Phase 6 was sixteen loose checkboxes. Grilling turned it into decisions, and fou
 
 **6a-6d, 6f and 6g are on `main`** - fast-forwarded from `phase6a-location-foundation` on
 2026-09-05, once 6d was complete (see R-1). 6e and 6c.5 remain.
-675 tests, `scripts/check.ps1` green.
+686 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`, and `check.ps1` refuses to pass while it is
 stale. Do not edit it by hand. A commit count used to live here too; it was removed because it is
@@ -50,7 +50,7 @@ wrong the moment the next commit lands - `git log --oneline main..` is the hones
 | **6e** | **Sorting, hidden files, cursor memory, rename** | `[ ]` | |
 | 6e.1 | Sort in `Transition` (modes + direction + dirs-first) | `[x]` | `6e646c0` |
 | 6e.2 | Hidden-file toggle | `[x]` | `06ce820` |
-| 6e.3 | Cursor memory (entry name, LRU-capped) | `[ ]` | |
+| 6e.3 | Cursor memory (entry name, LRU-capped) | `[x]` | (this commit) |
 | 6e.4 | Rename (overlay TextBox) | `[ ]` | |
 | 6e.5 | New folder | `[ ]` | |
 | 6e.6 | Open with default app | `[ ]` | |
@@ -75,6 +75,21 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
 `[ ]` = still open.
 
 ## Open
+
+- **6e-3** `[x]` **Cursor memory, 6e.3.** Coming back to a place lands on the entry you left it on,
+  by name and never by index - an index means something different after a sort or a delete, and the
+  point is to come back to the file rather than to the fourth row. Session-only: where you were an
+  hour ago is a memory, not a preference.
+
+  Three rules it needed. **Only the focused column records** - a column that opened beside the cursor
+  has a cursor nobody chose, and recording it would overwrite where the user actually was. **Only a
+  column with no cursor recalls** - re-reading a column someone is standing in must not jump them
+  back to where they were earlier, which `WithAllEntries` already handles. And **an explicit reveal
+  outranks the memory**: the drive a disc image was just mounted as is something asked for now.
+
+  The cap is a checked invariant, as the plan required. Same trap as the auto-extend, hit again:
+  recording on every `Apply` made a message that was supposed to be ignored return a different state,
+  and the fix is the same - compare with what came before and do nothing when nothing moved.
 
 - **6e-2** `[x]` **Hidden files, 6e.2 - and `SortOrder` became `ViewOptions`.** The Runtime reports
   `IsHidden` on every entry (hidden *or* system: Explorer treats them as one class behind one switch,

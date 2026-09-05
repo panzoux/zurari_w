@@ -17,8 +17,42 @@ public static class Transition
         ArgumentNullException.ThrowIfNull(msg);
 
         var (applied, effects) = ApplyCore(state, msg);
-        var (withChild, withChildEffects) = ReconcileChildColumn(state, applied, effects);
+        var remembered = RememberFocusedCursor(state, applied);
+        var (withChild, withChildEffects) = ReconcileChildColumn(state, remembered, effects);
         return ReconcilePreview(state, withChild, withChildEffects);
+    }
+
+    /// <summary>
+    /// Notes where the cursor is in the focused column's location, so coming back here later lands
+    /// on the same entry.
+    /// </summary>
+    /// <remarks>
+    /// The focused column only. A column that opened beside the cursor has a cursor nobody chose -
+    /// recording that would overwrite where the user actually was the last time they went in.
+    /// </remarks>
+    private static AppState RememberFocusedCursor(AppState oldState, AppState state)
+    {
+        if (!InRange(state, state.FocusedColumn))
+        {
+            return state;
+        }
+
+        var column = state.Columns[state.FocusedColumn];
+        if (column.CursorName is not { } name)
+        {
+            return state;
+        }
+
+        // Only on an actual move. Recording unconditionally would mean a message that changed
+        // nothing still returned a different state, which is the difference between "ignored" and
+        // "ignored except for the bookkeeping" - and every test asserting the former would fail.
+        var previous = FocusedColumnOrNull(oldState);
+        if (previous is not null && previous.Location == column.Location && previous.CursorName == name)
+        {
+            return state;
+        }
+
+        return state.RememberCursor(column.Location, name);
     }
 
     /// <summary>
@@ -367,11 +401,25 @@ public static class Transition
         // Something was waiting for this listing to exist before it could be pointed at - the drive
         // a disc image was just mounted as. Now that its row is here, put the cursor on it.
         var revealed = state.RevealTarget is { } target ? IndexOfName(updated.Entries, target) : -1;
+        if (revealed >= 0)
+        {
+            var focused = WithColumn(state, columnIndex, updated with { Cursor = revealed });
+            return focused with { FocusedColumn = columnIndex, RevealTarget = null };
+        }
 
-        var withColumn = WithColumn(state, columnIndex, revealed >= 0 ? updated with { Cursor = revealed } : updated);
-        return revealed >= 0
-            ? withColumn with { FocusedColumn = columnIndex, RevealTarget = null }
-            : withColumn;
+        // Otherwise, if this is somewhere the user has been, put the cursor back where they left it.
+        // Only for a column that had none: re-reading a column the user is standing in must not move
+        // their cursor, and WithAllEntries has already kept it on its entry.
+        if (column.Cursor < 0 && state.RecallCursor(location) is { } recalled)
+        {
+            var index = IndexOfName(updated.Entries, recalled);
+            if (index >= 0)
+            {
+                return WithColumn(state, columnIndex, updated with { Cursor = index });
+            }
+        }
+
+        return WithColumn(state, columnIndex, updated);
     }
 
     /// <summary>Index of the entry called <paramref name="name"/>, or -1.</summary>
