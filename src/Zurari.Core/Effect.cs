@@ -134,8 +134,10 @@ public abstract record Effect
     /// </remarks>
     public sealed record MountImage(string Path) : Effect;
 
-    /// <summary>Remembers the sort order, so a listing comes back in the order it was left in.</summary>
-    public sealed record SetSortOrder(SortOrder Order) : Effect;
+    /// <summary>
+    /// Remembers how listings are shown, so they come back the way they were left.
+    /// </summary>
+    public sealed record SetViewOptions(ViewOptions View) : Effect;
 
     /// <summary>
     /// Remembers which sections of the drive pane are collapsed, so they come back that way.

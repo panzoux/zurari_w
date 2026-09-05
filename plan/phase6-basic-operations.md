@@ -20,7 +20,7 @@ Phase 6 was sixteen loose checkboxes. Grilling turned it into decisions, and fou
 
 **6a-6d, 6f and 6g are on `main`** - fast-forwarded from `phase6a-location-foundation` on
 2026-09-05, once 6d was complete (see R-1). 6e and 6c.5 remain.
-669 tests, `scripts/check.ps1` green.
+675 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`, and `check.ps1` refuses to pass while it is
 stale. Do not edit it by hand. A commit count used to live here too; it was removed because it is
@@ -49,7 +49,7 @@ wrong the moment the next commit lands - `git log --oneline main..` is the hones
 | 6d.9 | Live refresh (`SHChangeNotifyRegister`) | `[x]` | `ef5d7a3` |
 | **6e** | **Sorting, hidden files, cursor memory, rename** | `[ ]` | |
 | 6e.1 | Sort in `Transition` (modes + direction + dirs-first) | `[x]` | `6e646c0` |
-| 6e.2 | Hidden-file toggle | `[ ]` | |
+| 6e.2 | Hidden-file toggle | `[x]` | (this commit) |
 | 6e.3 | Cursor memory (entry name, LRU-capped) | `[ ]` | |
 | 6e.4 | Rename (overlay TextBox) | `[ ]` | |
 | 6e.5 | New folder | `[ ]` | |
@@ -75,6 +75,21 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
 `[ ]` = still open.
 
 ## Open
+
+- **6e-2** `[x]` **Hidden files, 6e.2 - and `SortOrder` became `ViewOptions`.** The Runtime reports
+  `IsHidden` on every entry (hidden *or* system: Explorer treats them as one class behind one switch,
+  and a listing that showed `pagefile.sys` but not a hidden folder would be explaining a distinction
+  nobody asked about) and filters nothing. Core hides them, so revealing them reads nothing.
+
+  The parameter list was the tell. `Derive` had grown to four arguments and each new filter would
+  touch every call site, so what a listing is filtered and ordered by is now one `ViewOptions`
+  record. `AppState.Sort` became `AppState.View`, and `Msg.SortOrderRestored` / `Effect.SetSortOrder`
+  became `ViewRestored` / `SetViewOptions` rather than growing a third and fourth of each.
+
+  Two details worth keeping. A **header is never hidden** - it is ours, not the filesystem's, and
+  hiding one would take away the row that brings its section back. And a listing with nothing hidden
+  in it still hands back the *same array instance*, which is what lets the projection skip rebuilding
+  every row on a cursor move (6e-bis); there is a test pinning that.
 
 - **6e-1** `[x]` **Sorting, 6e.1 - and the 6b invariant it broke.** Name (natural), extension, size
   and modified; direction; folders-first as a switch that composes with every mode rather than a mode

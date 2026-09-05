@@ -16,7 +16,7 @@ public class SortTests
         {
             Columns = [new Column(new Location.RealDirectory(@"C:\"), [], Cursor: -1, Load: LoadState.Loaded)],
             FocusedColumn = 0,
-            Sort = sort,
+            View = new ViewOptions(sort),
         };
 
     /// <summary>Runs a listing through the real path a listing takes: a load, then the derived view.</summary>
@@ -206,8 +206,8 @@ public class SortTests
         Assert.Equal(["b.txt", "a.txt"], next.Columns[0].Entries.Select(e => e.Name));
         Assert.Equal(["d.txt", "c.txt"], next.Columns[1].Entries.Select(e => e.Name));
         Assert.Equal(
-            new Effect.SetSortOrder(new SortOrder(SortMode.Size)),
-            Assert.Single(effects.OfType<Effect.SetSortOrder>()));
+            new Effect.SetViewOptions(new ViewOptions(new SortOrder(SortMode.Size))),
+            Assert.Single(effects.OfType<Effect.SetViewOptions>()));
     }
 
     /// <summary>
@@ -238,11 +238,11 @@ public class SortTests
         var state = new AppState { Columns = [column], FocusedColumn = 0 };
 
         var (next, effects) = Transition.Apply(
-            state, new Msg.SortOrderRestored(new SortOrder(SortMode.Size)));
+            state, new Msg.ViewRestored(new ViewOptions(new SortOrder(SortMode.Size))));
 
         Assert.Equal(["b.txt", "a.txt"], next.Columns[0].Entries.Select(e => e.Name));
-        Assert.Equal(new SortOrder(SortMode.Size), next.Sort);
-        Assert.Empty(effects.OfType<Effect.SetSortOrder>());
+        Assert.Equal(new SortOrder(SortMode.Size), next.View.Sort);
+        Assert.Empty(effects.OfType<Effect.SetViewOptions>());
     }
 
     [Fact]
@@ -269,13 +269,109 @@ public class SortTests
         {
             Columns = [new Column(new Location.RealDirectory(@"C:\"), [], Cursor: -1, Load: LoadState.Loaded)],
             FocusedColumn = 0,
-            Sort = new SortOrder(SortMode.Size, Descending: true),
+            View = new ViewOptions(new SortOrder(SortMode.Size, Descending: true)),
         };
 
         var (next, _) = Transition.Apply(state, new Msg.ToggleDirectoriesFirst());
 
-        Assert.Equal(SortMode.Size, next.Sort.Mode);
-        Assert.True(next.Sort.Descending);
-        Assert.False(next.Sort.DirectoriesFirst);
+        Assert.Equal(SortMode.Size, next.View.Sort.Mode);
+        Assert.True(next.View.Sort.Descending);
+        Assert.False(next.View.Sort.DirectoriesFirst);
+    }
+
+    private static Entry Hidden(string name) =>
+        new(name, EntryKind.File, SizeBytes: 0, IsHidden: true);
+
+    [Fact]
+    public void Hidden_entries_are_out_of_sight_but_still_in_the_listing()
+    {
+        var state = With(SortOrder.Default);
+
+        var (loaded, _) = Transition.Apply(
+            state,
+            new Msg.DirectoryLoaded(
+                0, new Location.RealDirectory(@"C:\"), [File("a.txt"), Hidden("desktop.ini"), File("b.txt")]));
+
+        Assert.Equal(["a.txt", "b.txt"], loaded.Columns[0].Entries.Select(e => e.Name));
+        Assert.Equal(3, loaded.Columns[0].AllEntries.Length);
+    }
+
+    /// <summary>
+    /// Revealing them is a pure change of view: the rows were read and kept, so nothing is read
+    /// again - which is the whole reason AllEntries exists.
+    /// </summary>
+    [Fact]
+    public void Showing_hidden_entries_reads_nothing()
+    {
+        var state = With(SortOrder.Default);
+        var (loaded, _) = Transition.Apply(
+            state,
+            new Msg.DirectoryLoaded(
+                0, new Location.RealDirectory(@"C:\"), [File("a.txt"), Hidden("desktop.ini")]));
+
+        var (shown, effects) = Transition.Apply(loaded, new Msg.ToggleHiddenFiles());
+
+        Assert.Equal(["a.txt", "desktop.ini"], shown.Columns[0].Entries.Select(e => e.Name));
+        Assert.True(shown.View.ShowHidden);
+        Assert.Empty(effects.OfType<Effect.ReadDirectory>());
+        Assert.Single(effects.OfType<Effect.SetViewOptions>());
+
+        var (hiddenAgain, _) = Transition.Apply(shown, new Msg.ToggleHiddenFiles());
+        Assert.Equal(["a.txt"], hiddenAgain.Columns[0].Entries.Select(e => e.Name));
+    }
+
+    /// <summary>
+    /// A section header is ours, not the filesystem's - it has no attributes and must never be
+    /// filtered out, or its section would lose the row that brings it back.
+    /// </summary>
+    [Fact]
+    public void A_header_is_never_hidden()
+    {
+        var pane = new Column(
+            Location.Drives.Instance,
+            [
+                new Entry("ドライブ", EntryKind.Header, Group: EntryGroups.Drives),
+                new Entry(@"C:\", EntryKind.Drive, Group: EntryGroups.Drives, IsHidden: true),
+            ],
+            Cursor: 0,
+            Load: LoadState.Loaded);
+        var state = new AppState { Columns = [pane], FocusedColumn = 0 };
+
+        var (next, _) = Transition.Apply(state, new Msg.ViewRestored(ViewOptions.Default));
+
+        Assert.Equal("ドライブ", next.Columns[0].Entries[0].Name);
+    }
+
+    /// <summary>
+    /// The cheap path matters: a directory with nothing hidden in it hands back the very same array,
+    /// which is what lets the projection skip rebuilding every row on a cursor move.
+    /// </summary>
+    [Fact]
+    public void A_listing_with_nothing_to_hide_is_not_copied()
+    {
+        var column = new Column(
+            Location.Drives.Instance, [new Entry("a", EntryKind.Drive)], Cursor: 0, Load: LoadState.Loaded);
+
+        var derived = column.WithView(ViewOptions.Default);
+
+        Assert.Equal(derived.AllEntries, derived.Entries);
+    }
+
+    [Fact]
+    public void Cursor_on_a_hidden_row_moves_somewhere_visible_when_it_disappears()
+    {
+        var state = With(SortOrder.Default) with { View = ViewOptions.Default with { ShowHidden = true } };
+        var (loaded, _) = Transition.Apply(
+            state,
+            new Msg.DirectoryLoaded(
+                0, new Location.RealDirectory(@"C:\"), [File("a.txt"), Hidden("hidden.txt")]));
+        var (onHidden, _) = Transition.Apply(loaded, new Msg.CursorTo(0, 1));
+        Assert.Equal("hidden.txt", onHidden.Columns[0].Entries[onHidden.Columns[0].Cursor].Name);
+
+        var (concealed, _) = Transition.Apply(onHidden, new Msg.ToggleHiddenFiles());
+
+        Assert.Equal(["a.txt"], concealed.Columns[0].Entries.Select(e => e.Name));
+        Assert.Equal(0, concealed.Columns[0].Cursor);
+        Assert.Empty(concealed.CheckInvariants());
     }
 }

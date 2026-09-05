@@ -238,12 +238,13 @@ public sealed class WorkerRuntime : IDisposable
             case Effect.CancelPreview cancelPreview:
                 CancelInFlightPreview(cancelPreview.Generation);
                 break;
-            case Effect.SetSortOrder setSortOrder:
+            case Effect.SetViewOptions setView:
                 _settings.Update(s => s with
                 {
-                    SortMode = setSortOrder.Order.Mode.ToString(),
-                    SortDescending = setSortOrder.Order.Descending,
-                    DirectoriesFirst = setSortOrder.Order.DirectoriesFirst,
+                    SortMode = setView.View.Sort.Mode.ToString(),
+                    SortDescending = setView.View.Sort.Descending,
+                    DirectoriesFirst = setView.View.Sort.DirectoriesFirst,
+                    ShowHidden = setView.View.ShowHidden,
                 });
                 break;
             case Effect.SetCollapsedGroups setCollapsedGroups:
@@ -384,22 +385,24 @@ public sealed class WorkerRuntime : IDisposable
     }
 
     /// <summary>
-    /// The stored sort order, falling back to the default for anything missing or unrecognized.
+    /// The stored view options, falling back to the default for anything missing or unrecognized.
     /// </summary>
     /// <remarks>
     /// The mode is stored by name rather than by its numeric value: renaming or reordering the enum
     /// would otherwise silently reinterpret an old settings file as a different mode.
     /// </remarks>
-    private static SortOrder ReadSortOrder(UserSettings settings)
+    private static ViewOptions ReadViewOptions(UserSettings settings)
     {
         var mode = Enum.TryParse<SortMode>(settings.SortMode, ignoreCase: true, out var parsed)
             ? parsed
             : SortOrder.Default.Mode;
 
-        return new SortOrder(
-            mode,
-            settings.SortDescending ?? SortOrder.Default.Descending,
-            settings.DirectoriesFirst ?? SortOrder.Default.DirectoriesFirst);
+        return new ViewOptions(
+            new SortOrder(
+                mode,
+                settings.SortDescending ?? SortOrder.Default.Descending,
+                settings.DirectoriesFirst ?? SortOrder.Default.DirectoriesFirst),
+            settings.ShowHidden ?? ViewOptions.Default.ShowHidden);
     }
 
     private void ExecuteReadDirectory(Effect.ReadDirectory effect)
@@ -427,7 +430,7 @@ public sealed class WorkerRuntime : IDisposable
                 var settings = _settings.Load();
                 _post(new Msg.CollapsedGroupsRestored(
                     effect.ColumnIndex, [.. settings.CollapsedGroups ?? []]));
-                _post(new Msg.SortOrderRestored(ReadSortOrder(settings)));
+                _post(new Msg.ViewRestored(ReadViewOptions(settings)));
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -723,6 +726,18 @@ public sealed class WorkerRuntime : IDisposable
         _ => "準備できていません",
     };
 
+    /// <summary>
+    /// Whether Windows considers this hidden. Hidden or system - Explorer treats them as one class
+    /// behind one switch, and a listing that showed pagefile.sys but not a hidden folder would be
+    /// explaining a distinction the user did not ask about.
+    /// </summary>
+    /// <remarks>
+    /// Reported on every entry rather than filtered out here. The visible list is Core's to derive,
+    /// and revealing hidden files has to cost nothing - see <c>ViewOptions.ShowHidden</c>.
+    /// </remarks>
+    private static bool IsHidden(FileAttributes attributes) =>
+        (attributes & (FileAttributes.Hidden | FileAttributes.System)) != 0;
+
     private static ImmutableArray<Entry> ReadDirectoryEntries(string path)
     {
         var directories = new List<Entry>();
@@ -733,7 +748,12 @@ public sealed class WorkerRuntime : IDisposable
         {
             try
             {
-                directories.Add(new Entry(dir.Name, EntryKind.Directory, SizeBytes: -1, Modified: dir.LastWriteTime));
+                directories.Add(new Entry(
+                    dir.Name,
+                    EntryKind.Directory,
+                    SizeBytes: -1,
+                    Modified: dir.LastWriteTime,
+                    IsHidden: IsHidden(dir.Attributes)));
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -745,7 +765,12 @@ public sealed class WorkerRuntime : IDisposable
         {
             try
             {
-                files.Add(new Entry(file.Name, EntryKind.File, SizeBytes: file.Length, Modified: file.LastWriteTime));
+                files.Add(new Entry(
+                    file.Name,
+                    EntryKind.File,
+                    SizeBytes: file.Length,
+                    Modified: file.LastWriteTime,
+                    IsHidden: IsHidden(file.Attributes)));
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {

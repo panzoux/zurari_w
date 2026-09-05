@@ -140,11 +140,11 @@ public class CollapsedSectionsTests
     }
 
     /// <summary>
-    /// The sort order rides the same seam as the collapsed sections: written when it changes, handed
+    /// The view options ride the same seam as the collapsed sections: written when it changes, handed
     /// back once when the drive pane is first read.
     /// </summary>
     [Fact]
-    public void The_sort_order_is_written_and_handed_back_on_the_first_read()
+    public void The_view_options_are_written_and_handed_back_on_the_first_read()
     {
         var dir = CreateTempDir();
         try
@@ -154,7 +154,7 @@ public class CollapsedSectionsTests
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: store);
 
-            runtime.Submit(new Effect.SetSortOrder(new SortOrder(SortMode.Size, Descending: true, DirectoriesFirst: false)));
+            runtime.Submit(new Effect.SetViewOptions(new ViewOptions(new SortOrder(SortMode.Size, Descending: true, DirectoriesFirst: false), ShowHidden: true)));
 
             var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
             while (store.Load().SortMode is null && DateTime.UtcNow < deadline)
@@ -167,9 +167,11 @@ public class CollapsedSectionsTests
             Assert.False(store.Load().DirectoriesFirst);
 
             runtime.Submit(new Effect.ReadDirectory(0, Location.Drives.Instance));
-            var restored = WaitFor<Msg.SortOrderRestored>(queue, TimeSpan.FromSeconds(10));
+            var restored = WaitFor<Msg.ViewRestored>(queue, TimeSpan.FromSeconds(10));
 
-            Assert.Equal(new SortOrder(SortMode.Size, Descending: true, DirectoriesFirst: false), restored.Order);
+            Assert.Equal(
+                new ViewOptions(new SortOrder(SortMode.Size, Descending: true, DirectoriesFirst: false), ShowHidden: true),
+                restored.View);
         }
         finally
         {
@@ -194,9 +196,9 @@ public class CollapsedSectionsTests
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(settingsDir));
 
             runtime.Submit(new Effect.ReadDirectory(0, Location.Drives.Instance));
-            var restored = WaitFor<Msg.SortOrderRestored>(queue, TimeSpan.FromSeconds(10));
+            var restored = WaitFor<Msg.ViewRestored>(queue, TimeSpan.FromSeconds(10));
 
-            Assert.Equal(SortOrder.Default.Mode, restored.Order.Mode);
+            Assert.Equal(SortOrder.Default.Mode, restored.View.Sort.Mode);
         }
         finally
         {

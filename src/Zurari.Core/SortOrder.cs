@@ -63,3 +63,22 @@ public sealed record SortOrder(
     public SortOrder Select(SortMode mode) =>
         mode == Mode ? this with { Descending = !Descending } : this with { Mode = mode, Descending = false };
 }
+
+/// <summary>
+/// Everything that turns what a read returned into what is on screen: what is hidden, and in what
+/// order.
+/// </summary>
+/// <param name="Sort">How the visible rows are ordered.</param>
+/// <param name="ShowHidden">
+/// Whether entries Windows marks hidden or system are shown. Off by default, as in Explorer.
+/// </param>
+/// <remarks>
+/// One record rather than a parameter each, because every one of these is an input to the same
+/// derivation and the list only grows - a filter box and a "folders only" mode are both foreseeable.
+/// Passing them individually meant every new one touched every call site.
+/// </remarks>
+public sealed record ViewOptions(SortOrder Sort, bool ShowHidden = false)
+{
+    /// <summary>Name order, folders first, hidden files out of sight.</summary>
+    public static ViewOptions Default { get; } = new(SortOrder.Default);
+}

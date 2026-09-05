@@ -12,13 +12,15 @@ namespace Zurari.Runtime;
 /// <param name="SortMode">Name of the <c>Zurari.Core.SortMode</c> last chosen.</param>
 /// <param name="SortDescending">Whether that mode was reversed.</param>
 /// <param name="DirectoriesFirst">Whether folders were kept above files.</param>
+/// <param name="ShowHidden">Whether hidden and system entries were being shown.</param>
 public sealed record UserSettings(
     double? PreviewWidth = null,
     IReadOnlyList<string>? PinnedPaths = null,
     IReadOnlyList<string>? CollapsedGroups = null,
     string? SortMode = null,
     bool? SortDescending = null,
-    bool? DirectoriesFirst = null);
+    bool? DirectoriesFirst = null,
+    bool? ShowHidden = null);
 
 /// <summary>
 /// Loads and saves <see cref="UserSettings"/> as JSON, by default under <c>%APPDATA%\zurari</c>.

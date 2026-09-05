@@ -61,6 +61,10 @@ public enum LoadState
 /// rather than presentation: a section-aware operation needs it, and the header rows themselves
 /// carry it so a collapse knows what it is hiding.
 /// </param>
+/// <param name="IsHidden">
+/// Whether Windows marks this hidden or system. Kept in the full listing and filtered out of the
+/// visible one, so revealing them costs no read - see <see cref="ViewOptions.ShowHidden"/>.
+/// </param>
 /// <param name="OriginalPath">
 /// Where a deleted item used to live, for rows in the recycle bin. The row is named by where the
 /// item is *now* - the shell's parsing name, which is what any operation on it needs - so this is
@@ -92,7 +96,8 @@ public sealed record Entry(
     string? DisplayName = null,
     string? Group = null,
     bool IsRemovable = false,
-    string? OriginalPath = null)
+    string? OriginalPath = null,
+    bool IsHidden = false)
 {
     /// <summary>What to render for this entry - <see cref="DisplayName"/> when it has one.</summary>
     public string Label => DisplayName ?? Name;
@@ -157,13 +162,13 @@ public sealed record Column(
     /// Collapses or expands <paramref name="group"/>, re-deriving the visible list and keeping the
     /// cursor on the same entry - which, for the header you just pressed, means it stays put.
     /// </summary>
-    public Column ToggleGroup(string group, SortOrder sort)
+    public Column ToggleGroup(string group, ViewOptions view)
     {
         // Remove hands back the very same set when the group was not in it, which is precisely
         // "this section was expanded" - so one call answers the question and does the work.
         var afterRemove = CollapsedGroups.Remove(group);
         var collapsed = ReferenceEquals(afterRemove, CollapsedGroups) ? CollapsedGroups.Add(group) : afterRemove;
-        return WithView(AllEntries, collapsed, sort);
+        return WithView(AllEntries, collapsed, view);
     }
 
     /// <summary>Name of the entry under the cursor, or <c>null</c> when there is none.</summary>
@@ -180,19 +185,19 @@ public sealed record Column(
     /// the name is the same principle the cursor memory uses, and re-deriving will need it anyway:
     /// re-sorting moves every row.
     /// </remarks>
-    public Column WithAllEntries(ImmutableArray<Entry> all, SortOrder sort) =>
-        WithView(all, CollapsedGroups, sort);
+    public Column WithAllEntries(ImmutableArray<Entry> all, ViewOptions view) =>
+        WithView(all, CollapsedGroups, view);
 
     /// <summary>
     /// Replaces the whole set of collapsed sections and re-derives the visible list. Used to restore
     /// what the user had collapsed when the app last ran; <see cref="ToggleGroup"/> is the
     /// one-section-at-a-time version.
     /// </summary>
-    public Column WithCollapsedGroups(ImmutableHashSet<string> collapsedGroups, SortOrder sort) =>
-        WithView(AllEntries, collapsedGroups, sort);
+    public Column WithCollapsedGroups(ImmutableHashSet<string> collapsedGroups, ViewOptions view) =>
+        WithView(AllEntries, collapsedGroups, view);
 
-    /// <summary>Re-derives the visible list under a different order, keeping the cursor on its entry.</summary>
-    public Column WithSort(SortOrder sort) => WithView(AllEntries, CollapsedGroups, sort);
+    /// <summary>Re-derives the visible list under different options, keeping the cursor on its entry.</summary>
+    public Column WithView(ViewOptions view) => WithView(AllEntries, CollapsedGroups, view);
 
     /// <summary>
     /// The single place that writes <see cref="AllEntries"/>, <see cref="Entries"/> and
@@ -205,11 +210,11 @@ public sealed record Column(
     /// redefines what "everything" means, and the full list is lost. Going through here instead
     /// makes that unrepresentable.
     /// </remarks>
-    private Column WithView(ImmutableArray<Entry> all, ImmutableHashSet<string> collapsedGroups, SortOrder sort)
+    private Column WithView(ImmutableArray<Entry> all, ImmutableHashSet<string> collapsedGroups, ViewOptions view)
     {
-        ArgumentNullException.ThrowIfNull(sort);
+        ArgumentNullException.ThrowIfNull(view);
         var previousName = CursorName;
-        var visible = Derive(all, collapsedGroups, sort, IsSortable);
+        var visible = Derive(all, collapsedGroups, view, IsSortable);
         return this with
         {
             AllEntries = all,
@@ -236,38 +241,65 @@ public sealed record Column(
     private static ImmutableArray<Entry> Derive(
         ImmutableArray<Entry> all,
         ImmutableHashSet<string> collapsedGroups,
-        SortOrder sort,
+        ViewOptions view,
         bool sortable)
     {
-        if (collapsedGroups.IsEmpty && !sortable)
+        var hidesAnything = !collapsedGroups.IsEmpty || (!view.ShowHidden && HasHidden(all));
+
+        if (!hidesAnything && !sortable)
         {
             // Returning the same instance matters beyond saving a copy: the projection reuses its
             // row array when Entries is reference-equal, which is what keeps cursor movement cheap.
             return all;
         }
 
-        if (collapsedGroups.IsEmpty)
+        if (!hidesAnything)
         {
-            return Sort(all, sort);
+            return Sort(all, view.Sort);
         }
 
         var builder = ImmutableArray.CreateBuilder<Entry>(all.Length);
         foreach (var entry in all)
         {
             // A header survives its own section being collapsed - otherwise there would be nothing
-            // left to press to bring it back.
-            if (entry.Kind == EntryKind.Header || entry.Group is not { } group || !collapsedGroups.Contains(group))
+            // left to press to bring it back. It is never hidden either: a section header is ours,
+            // not the filesystem's.
+            if (entry.Kind == EntryKind.Header)
+            {
+                builder.Add(entry);
+                continue;
+            }
+
+            if (entry.IsHidden && !view.ShowHidden)
+            {
+                continue;
+            }
+
+            if (entry.Group is not { } group || !collapsedGroups.Contains(group))
             {
                 builder.Add(entry);
             }
         }
 
-        if (sortable)
+        return sortable ? Sort(builder.ToImmutable(), view.Sort) : builder.ToImmutable();
+    }
+
+    /// <summary>
+    /// Whether anything in <paramref name="all"/> is hidden. Asked before building a new array,
+    /// because the common case is a directory with nothing hidden in it, and there the derived list
+    /// can stay the very same instance.
+    /// </summary>
+    private static bool HasHidden(ImmutableArray<Entry> all)
+    {
+        foreach (var entry in all)
         {
-            return Sort(builder.ToImmutable(), sort);
+            if (entry.IsHidden)
+            {
+                return true;
+            }
         }
 
-        return builder.ToImmutable();
+        return false;
     }
 
     /// <summary>
@@ -566,10 +598,10 @@ public sealed record AppState
     public PreviewState Preview { get; init; } = PreviewState.Initial;
 
     /// <summary>
-    /// How listings are ordered. Applies to every column that can be sorted at all - see
-    /// <see cref="Column.IsSortable"/>.
+    /// What turns a listing into what is on screen - order, and whether hidden files show. Applies
+    /// to every column that is derived at all; see <see cref="Column.IsSortable"/>.
     /// </summary>
-    public SortOrder Sort { get; init; } = SortOrder.Default;
+    public ViewOptions View { get; init; } = ViewOptions.Default;
 
     /// <summary>
     /// A short message for the status bar - the result of something the user asked for that has no

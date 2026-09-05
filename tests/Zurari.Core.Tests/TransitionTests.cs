@@ -2853,11 +2853,12 @@ public class TransitionProperties
         Gen.OneOfConst(SortMode.Name, SortMode.Extension, SortMode.Size, SortMode.Modified)
             .Select(m => (Msg)new Msg.SetSortMode(m)),
         Gen.Const<Msg>(new Msg.ToggleDirectoriesFirst()),
+        Gen.Const<Msg>(new Msg.ToggleHiddenFiles()),
         Gen.Select(
                 Gen.OneOfConst(SortMode.Name, SortMode.Size),
                 Gen.OneOfConst(true, false),
                 Gen.OneOfConst(true, false))
-            .Select(t => (Msg)new Msg.SortOrderRestored(new SortOrder(t.Item1, t.Item2, t.Item3))),
+            .Select(t => (Msg)new Msg.ViewRestored(new ViewOptions(new SortOrder(t.Item1, t.Item2, t.Item3)))),
         GenJobId.Select(g => (Msg)new Msg.PreviewCapacityLoaded(
             g, new PreviewCapacity("vol", "kind", UsedBytes: 1, TotalBytes: 2))),
         Gen.Const<Msg>(new Msg.PlacesChanged()));

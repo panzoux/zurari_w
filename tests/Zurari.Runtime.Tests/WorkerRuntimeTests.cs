@@ -167,4 +167,35 @@ public class WorkerRuntimeTests
             TempDirectory.Delete(dir);
         }
     }
+
+    /// <summary>
+    /// Hidden entries come back in the listing, marked. Filtering them out here would mean revealing
+    /// them cost a re-read, and Core could not tell "there are none" from "they are not shown".
+    /// </summary>
+    [Fact]
+    public void A_hidden_file_is_listed_and_marked_hidden()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var plain = Path.Combine(dir, "plain.txt");
+            var hidden = Path.Combine(dir, "hidden.txt");
+            File.WriteAllText(plain, "x");
+            File.WriteAllText(hidden, "y");
+            File.SetAttributes(hidden, File.GetAttributes(hidden) | FileAttributes.Hidden);
+
+            var queue = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(queue.Enqueue);
+            runtime.Submit(new Effect.ReadDirectory(0, new Location.RealDirectory(dir)));
+            var loaded = Assert.IsType<Msg.DirectoryLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
+
+            Assert.Equal(2, loaded.Entries.Length);
+            Assert.False(loaded.Entries.Single(e => e.Name == "plain.txt").IsHidden);
+            Assert.True(loaded.Entries.Single(e => e.Name == "hidden.txt").IsHidden);
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
 }

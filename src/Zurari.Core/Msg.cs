@@ -363,10 +363,15 @@ public abstract record Msg
     public sealed record ToggleDirectoriesFirst : Msg;
 
     /// <summary>
-    /// The order the user had when the app last ran, applied at startup. Ignored for a listing that
-    /// is not sorted at all.
+    /// Shows or hides the entries Windows marks hidden or system. Costs no read: they are already in
+    /// <see cref="Column.AllEntries"/> and only filtered out of the visible list.
     /// </summary>
-    public sealed record SortOrderRestored(SortOrder Order) : Msg;
+    public sealed record ToggleHiddenFiles : Msg;
+
+    /// <summary>
+    /// The view options the user had when the app last ran, applied at startup.
+    /// </summary>
+    public sealed record ViewRestored(ViewOptions View) : Msg;
 
     /// <summary>
     /// Something to tell the user in the status bar - see <see cref="AppState.Notice"/>. Replaces
