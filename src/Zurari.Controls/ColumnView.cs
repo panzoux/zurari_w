@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
@@ -1263,6 +1264,60 @@ public sealed class ColumnView : Control
         var index = List.ItemContainerGenerator.IndexFromContainer(item);
         return index >= 0 ? index : null;
     }
+
+    private RenameAdorner? renameAdorner;
+
+    /// <summary>Raised when a rename editor is accepted, with the typed name.</summary>
+    internal event EventHandler<RenameSubmittedEventArgs>? RenameSubmitted;
+
+    /// <summary>Raised when a rename editor is abandoned.</summary>
+    internal event EventHandler? RenameCancelled;
+
+    /// <summary>
+    /// Puts a rename editor over the row at <paramref name="entryIndex"/>, or moves/updates the one
+    /// already there. Does nothing if that row is not realized.
+    /// </summary>
+    internal void ShowRenameEditor(int entryIndex, string name, string? error)
+    {
+        if (List?.ItemContainerGenerator.ContainerFromIndex(entryIndex) is not ListBoxItem container)
+        {
+            return;
+        }
+
+        if (renameAdorner is not null)
+        {
+            // Same editor, new complaint: keep what was typed, which is the point of showing it.
+            renameAdorner.ShowError(error);
+            return;
+        }
+
+        if (AdornerLayer.GetAdornerLayer(container) is not { } layer)
+        {
+            return;
+        }
+
+        renameAdorner = new RenameAdorner(container, name, error);
+        renameAdorner.Submitted += (_, text) => RenameSubmitted?.Invoke(this, new RenameSubmittedEventArgs(text));
+        renameAdorner.Cancelled += (_, _) => RenameCancelled?.Invoke(this, EventArgs.Empty);
+        layer.Add(renameAdorner);
+        renameAdorner.Focus(selectAll: false);
+    }
+
+    /// <summary>Takes the rename editor away, if there is one.</summary>
+    internal void HideRenameEditor()
+    {
+        if (renameAdorner is null)
+        {
+            return;
+        }
+
+        AdornerLayer.GetAdornerLayer(renameAdorner.AdornedElement)?.Remove(renameAdorner);
+        renameAdorner = null;
+        List?.Focus();
+    }
+
+    /// <summary>Whether an editor is currently open here.</summary>
+    internal bool IsRenaming => renameAdorner is not null;
 
     /// <summary>
     /// Screen coordinates of the row at <paramref name="entryIndex"/>, for anchoring a context menu

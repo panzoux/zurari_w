@@ -373,6 +373,31 @@ public abstract record Msg
     /// </summary>
     public sealed record ViewRestored(ViewOptions View) : Msg;
 
+    /// <summary>
+    /// Start renaming the row under the cursor. Ignored where a rename means nothing - a header, a
+    /// drive, or anything in the drive pane, which holds places rather than files.
+    /// </summary>
+    public sealed record RenameRequested(int ColumnIndex) : Msg;
+
+    /// <summary>Abandons the rename in progress, changing nothing.</summary>
+    public sealed record RenameCancelled : Msg;
+
+    /// <summary>
+    /// The user finished typing. Refused names come straight back as an error on
+    /// <see cref="AppState.Rename"/> with the editor still open; anything else becomes
+    /// <see cref="Effect.RenameEntry"/>.
+    /// </summary>
+    public sealed record RenameSubmitted(string NewName) : Msg;
+
+    /// <summary>The rename happened. Closes the editor and puts the cursor on the new name.</summary>
+    public sealed record RenameCompleted(int ColumnIndex, Location Location, string NewName) : Msg;
+
+    /// <summary>
+    /// The rename was refused - a name already taken, a file in use, a permission. The editor stays
+    /// open with the text that needs fixing.
+    /// </summary>
+    public sealed record RenameFailed(string Error) : Msg;
+
     /// <summary>Make a new folder in the focused column's location.</summary>
     public sealed record CreateFolderRequested(int ColumnIndex) : Msg;
 

@@ -154,6 +154,8 @@ public sealed partial class MainWindow : Window, IDisposable
             new Msg.MarkRange(e.ColumnIndex, e.FromIndex, e.ToIndex, e.Additive));
         Browser.RubberBandStarted += OnRubberBandStarted;
         Browser.SectionToggleRequested += (_, e) => Dispatch(new Msg.ToggleSection(e.ColumnIndex, e.EntryIndex));
+        Browser.RenameSubmitted += (_, e) => Dispatch(new Msg.RenameSubmitted(e.NewName));
+        Browser.RenameCancelled += (_, _) => Dispatch(new Msg.RenameCancelled());
 
         // Restore the persisted preview-pane width (clamped: the XAML Min/star sizing keeps it
         // on-screen even if the saved value is larger than the current window).
@@ -794,6 +796,12 @@ public sealed partial class MainWindow : Window, IDisposable
             Dispatch(new Msg.PinFocusedLocation(loop.State.FocusedColumn));
             e.Handled = true;
         }
+        else if (e.Key == Key.F2 && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            // F2 is Explorer's own, so it needs no explaining.
+            Dispatch(new Msg.RenameRequested(loop.State.FocusedColumn));
+            e.Handled = true;
+        }
         else if (e.Key == Key.N && Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
         {
             // Ctrl+Shift+N is Explorer's own, so it needs no explaining.
@@ -1054,6 +1062,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
         RenderJobs(state);
         RenderPreview(state);
+        RenderRename(state);
 
         var focused = state.Columns[state.FocusedColumn];
         var focusedPath = focused.Location.FilesystemPath ?? "ドライブ";
@@ -1182,6 +1191,43 @@ public sealed partial class MainWindow : Window, IDisposable
     /// a display-formatting choice) - cached by <see cref="lastDecodedImageGeneration"/> so it only
     /// runs once per distinct preview, not on every unrelated re-render.
     /// </summary>
+    /// <summary>
+    /// Shows or hides the rename editor from whatever the state says, on every render.
+    /// </summary>
+    /// <remarks>
+    /// A projection like everything else: the editor exists because <see cref="AppState.Rename"/>
+    /// says a row is being renamed, and goes away when it stops saying so. Nothing here decides
+    /// anything - the control raises what the user did, and Core decides what that meant.
+    /// </remarks>
+    private void RenderRename(AppState state)
+    {
+        if (state.Rename is not { } rename || rename.ColumnIndex >= state.Columns.Length)
+        {
+            Browser.SyncRenameEditor(-1, -1, null, null);
+            return;
+        }
+
+        var column = state.Columns[rename.ColumnIndex];
+        var index = -1;
+        for (var i = 0; i < column.Entries.Length; i++)
+        {
+            if (string.Equals(column.Entries[i].Name, rename.EntryName, StringComparison.Ordinal))
+            {
+                index = i;
+                break;
+            }
+        }
+
+        if (index < 0)
+        {
+            // The row went away underneath the editor - a refresh, a delete from elsewhere.
+            Dispatch(new Msg.RenameCancelled());
+            return;
+        }
+
+        Browser.SyncRenameEditor(rename.ColumnIndex, index, column.Entries[index].Label, rename.Error);
+    }
+
     /// <summary>
     /// Draws how full a volume is: a summary line, a bar, and what is left.
     /// </summary>

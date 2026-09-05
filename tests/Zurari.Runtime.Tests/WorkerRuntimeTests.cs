@@ -258,4 +258,120 @@ public class WorkerRuntimeTests
 
         Assert.IsType<Msg.NoticeRaised>(msg);
     }
+
+    [Fact]
+    public void Renaming_a_file_moves_it_and_reports_the_new_name()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "before.txt"), "x");
+            var queue = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(queue.Enqueue);
+
+            runtime.Submit(new Effect.RenameEntry(0, new Location.RealDirectory(dir), "before.txt", "after.txt"));
+            var done = Assert.IsType<Msg.RenameCompleted>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
+
+            Assert.Equal("after.txt", done.NewName);
+            Assert.False(File.Exists(Path.Combine(dir, "before.txt")));
+            Assert.True(File.Exists(Path.Combine(dir, "after.txt")));
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
+
+    [Fact]
+    public void Renaming_a_folder_works_the_same_way()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(dir, "before"));
+            var queue = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(queue.Enqueue);
+
+            runtime.Submit(new Effect.RenameEntry(0, new Location.RealDirectory(dir), "before", "after"));
+            Assert.IsType<Msg.RenameCompleted>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
+
+            Assert.True(Directory.Exists(Path.Combine(dir, "after")));
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
+
+    /// <summary>
+    /// A name already taken is a refusal, not an overwrite. File.Move on Windows would happily
+    /// replace the other file, which for a rename is silent data loss.
+    /// </summary>
+    [Fact]
+    public void Renaming_onto_a_name_that_exists_refuses_rather_than_overwriting()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "before.txt"), "mine");
+            File.WriteAllText(Path.Combine(dir, "taken.txt"), "theirs");
+            var queue = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(queue.Enqueue);
+
+            runtime.Submit(new Effect.RenameEntry(0, new Location.RealDirectory(dir), "before.txt", "taken.txt"));
+            Assert.IsType<Msg.RenameFailed>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
+
+            Assert.Equal("mine", File.ReadAllText(Path.Combine(dir, "before.txt")));
+            Assert.Equal("theirs", File.ReadAllText(Path.Combine(dir, "taken.txt")));
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
+
+    /// <summary>
+    /// Changing only the casing is a real rename, and must not be mistaken for a collision with
+    /// itself - Windows compares names case-insensitively.
+    /// </summary>
+    [Fact]
+    public void Changing_only_the_casing_is_allowed()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "readme.txt"), "x");
+            var queue = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(queue.Enqueue);
+
+            runtime.Submit(new Effect.RenameEntry(0, new Location.RealDirectory(dir), "readme.txt", "README.TXT"));
+            var done = Assert.IsType<Msg.RenameCompleted>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
+
+            Assert.Equal("README.TXT", done.NewName);
+            Assert.Equal("README.TXT", new DirectoryInfo(dir).GetFiles()[0].Name);
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
+
+    [Fact]
+    public void Renaming_something_that_is_not_there_says_so()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var queue = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(queue.Enqueue);
+
+            runtime.Submit(new Effect.RenameEntry(0, new Location.RealDirectory(dir), "ghost.txt", "other.txt"));
+
+            Assert.IsType<Msg.RenameFailed>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
 }

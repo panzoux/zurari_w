@@ -576,6 +576,22 @@ public sealed record PreviewMetadata(
     int? PixelHeight = null,
     int? BitsPerPixel = null);
 
+/// <summary>
+/// A rename in progress: which row is being edited, and why the last attempt was refused.
+/// </summary>
+/// <param name="ColumnIndex">The column the row is in.</param>
+/// <param name="EntryName">The <see cref="Entry.Name"/> being renamed - the row's identity while editing.</param>
+/// <param name="Error">
+/// Why the last submission was refused, or <c>null</c>. The editor stays open showing this rather
+/// than closing and reporting elsewhere: the text that needs fixing is the text still on screen.
+/// </param>
+/// <remarks>
+/// The text being typed is deliberately <em>not</em> here. It belongs to the editor until the moment
+/// it is submitted; routing every keystroke through the state machine would buy nothing and would
+/// make IME composition - where a keystroke is not yet a character - something Core had to model.
+/// </remarks>
+public sealed record RenameState(int ColumnIndex, string EntryName, string? Error = null);
+
 /// <summary>Where the cursor was in one place the user has been.</summary>
 /// <param name="Location">The place.</param>
 /// <param name="EntryName">The <see cref="Entry.Name"/> the cursor was on.</param>
@@ -637,6 +653,9 @@ public sealed record AppState
     /// </para>
     /// </remarks>
     public ImmutableArray<RememberedCursor> CursorMemory { get; init; } = [];
+
+    /// <summary>The rename being typed, or <c>null</c> when nothing is being renamed.</summary>
+    public RenameState? Rename { get; init; }
 
     /// <summary>
     /// An entry name to put the cursor on as soon as a listing containing it arrives, or

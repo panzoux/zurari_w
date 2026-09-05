@@ -149,3 +149,9 @@ public sealed class RubberBandStartedEventArgs(int columnIndex, bool additive) :
     /// <summary>True when Ctrl was held at the moment the band activated (adds to existing marks).</summary>
     public bool Additive { get; } = additive;
 }
+
+/// <summary>Raised when the rename editor is accepted, carrying what was typed.</summary>
+public sealed class RenameSubmittedEventArgs(string newName) : EventArgs
+{
+    public string NewName { get; } = newName;
+}

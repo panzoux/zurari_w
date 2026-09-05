@@ -238,6 +238,9 @@ public sealed class WorkerRuntime : IDisposable
             case Effect.CancelPreview cancelPreview:
                 CancelInFlightPreview(cancelPreview.Generation);
                 break;
+            case Effect.RenameEntry renameEntry:
+                ExecuteRename(renameEntry);
+                break;
             case Effect.CreateFolder createFolder:
                 ExecuteCreateFolder(createFolder);
                 break;
@@ -406,6 +409,59 @@ public sealed class WorkerRuntime : IDisposable
                 settings.SortDescending ?? SortOrder.Default.Descending,
                 settings.DirectoriesFirst ?? SortOrder.Default.DirectoriesFirst),
             settings.ShowHidden ?? ViewOptions.Default.ShowHidden);
+    }
+
+    /// <summary>
+    /// Renames one entry in place.
+    /// </summary>
+    /// <remarks>
+    /// <c>File.Move</c>/<c>Directory.Move</c> rather than <c>IFileOperation</c>: this is a rename
+    /// within one directory, so there is no progress to report and no conflict resolution to offer -
+    /// a name already taken is simply a refusal, which the editor shows and the user fixes.
+    /// The destination is checked first because <c>Move</c> on Windows would otherwise overwrite a
+    /// file that happens to differ only in case-insensitive collation.
+    /// </remarks>
+    private void ExecuteRename(Effect.RenameEntry effect)
+    {
+        if (effect.Location.FilesystemPath is not { } parent)
+        {
+            _post(new Msg.RenameFailed("ここでは名前を変えられません"));
+            return;
+        }
+
+        try
+        {
+            var source = Path.Combine(parent, effect.OldName);
+            var destination = Path.Combine(parent, effect.NewName);
+
+            // Renaming to a different casing of the same name is a real rename, not a collision.
+            var sameEntry = string.Equals(source, destination, StringComparison.OrdinalIgnoreCase);
+            if (!sameEntry && (File.Exists(destination) || Directory.Exists(destination)))
+            {
+                _post(new Msg.RenameFailed($"{effect.NewName} は既にあります"));
+                return;
+            }
+
+            if (Directory.Exists(source))
+            {
+                Directory.Move(source, destination);
+            }
+            else if (File.Exists(source))
+            {
+                File.Move(source, destination);
+            }
+            else
+            {
+                _post(new Msg.RenameFailed($"{effect.OldName} が見つかりません"));
+                return;
+            }
+
+            _post(new Msg.RenameCompleted(effect.ColumnIndex, effect.Location, effect.NewName));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            _post(new Msg.RenameFailed(ex.Message));
+        }
     }
 
     /// <summary>

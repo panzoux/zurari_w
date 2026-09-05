@@ -20,7 +20,7 @@ Phase 6 was sixteen loose checkboxes. Grilling turned it into decisions, and fou
 
 **6a-6d, 6f and 6g are on `main`** - fast-forwarded from `phase6a-location-foundation` on
 2026-09-05, once 6d was complete (see R-1). 6e and 6c.5 remain.
-698 tests, `scripts/check.ps1` green.
+723 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`, and `check.ps1` refuses to pass while it is
 stale. Do not edit it by hand. A commit count used to live here too; it was removed because it is
@@ -51,10 +51,10 @@ wrong the moment the next commit lands - `git log --oneline main..` is the hones
 | 6e.1 | Sort in `Transition` (modes + direction + dirs-first) | `[x]` | `6e646c0` |
 | 6e.2 | Hidden-file toggle | `[x]` | `06ce820` |
 | 6e.3 | Cursor memory (entry name, LRU-capped) | `[x]` | `cbc9505` |
-| 6e.4 | Rename (overlay TextBox) | `[ ]` | |
+| 6e.4 | Rename (overlay TextBox, `F2`) | `[x]` | (this commit) |
 | 6e.5 | New folder (`Ctrl+Shift+N`) | `[x]` | `b43a6a1` |
 | 6e.6 | Open with default app (`Enter`) | `[x]` | `b43a6a1` |
-| 6e.7 | Status bar, key hints / help screen | `[ ]` | |
+| 6e.7 | Status bar, key hints / help screen | `[ ]` | **deferred by decision** - see 6e-7 |
 | **6e-bis** | **Smooth cursor movement** | `[x]` | `f61c46b` `593194e` |
 | **6g** | **Finder-style auto-extend**: the column beside the cursor | `[x]` | `75f84f9` |
 | **6f** | **Findings parked from 6a–6e** | `[~]` | |
@@ -75,6 +75,37 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
 `[ ]` = still open.
 
 ## Open
+
+- **6e-4** `[x]` **Rename, 6e.4.** `F2` opens a text box over the row, Explorer-style. An **adorner**
+  rather than an editable item template, as the plan called for: the list virtualizes with
+  `Recycling` and picks rows with a template selector, so an editable template would have to survive
+  both - and a recycled container could carry the editor onto an unrelated row. A plain `TextBox`
+  also means IME composition needs nothing from us, which matters here more than anywhere else. The
+  editor watches for `Key.ImeProcessed` so that Enter during composition belongs to the composition.
+
+  **What Core decides and what it does not.** Empty names, unchanged names and names containing
+  characters Windows forbids are refused immediately, with the editor still open and the text still
+  there - the thing that needs fixing is what is on screen. Whether a name is already *taken* is not
+  decided here: only the filesystem knows, and asking first would be a race. The Runtime checks the
+  destination before moving, because `File.Move` would otherwise overwrite it, and for a rename that
+  is silent data loss. Changing only the casing is a real rename, not a collision with itself.
+
+  The editor is a projection like everything else: it exists because `AppState.Rename` says a row is
+  being renamed. The control raises what the user did and Core decides what it meant. Its presence is
+  tested against a realized window - a mistake in the adorner plumbing produces no build error and
+  fails nothing else, it simply never shows. Verified by breaking it: all three tests fail.
+
+- **6e-7** `[ ]` **6e.7 (status bar, key hints, help) is deferred by your decision, not left undone.**
+  "help is a feature we will add in the future so we dont want F1 now", "we dont want to show obvious
+  hints", "we'll do status bar in another phase". The mock-up and the four zones are in this plan
+  ready for when it is wanted.
+
+  **Two things it leaves undiscoverable.** Sorting (6e.1) and the hidden-file toggle (6e.2) have no
+  gesture at all: neither has an Explorer convention to borrow - Explorer sorts by clicking a column
+  header, which a miller-columns view does not have, and hides files behind a ribbon checkbox. Every
+  other command added in 6e uses Explorer's own binding (`F2`, `Ctrl+Shift+N`, `Enter`), which is why
+  those did not need asking. The two that had nothing to borrow are waiting on the same decision as
+  the key map.
 
 - **6e-56** `[x]` **Open with the default app (6e.6) and new folder (6e.5).** `Enter` on a file now
   opens it the way double-clicking would; before, it selected the file and did nothing else. An

@@ -145,6 +145,8 @@ public sealed class ColumnBrowser : Control
         while (children.Count < columns.Count)
         {
             var view = new ColumnView();
+            view.RenameSubmitted += (_, e) => RenameSubmitted?.Invoke(this, e);
+            view.RenameCancelled += (_, _) => RenameCancelled?.Invoke(this, EventArgs.Empty);
             view.ResizeDelta += OnColumnResizeDelta;
             view.ResizeCompleted += OnColumnResizeCompleted;
             view.EntryPointerPressed += OnColumnEntryPointerPressed;
@@ -454,6 +456,42 @@ public sealed class ColumnBrowser : Control
     {
         CursorMoveRequested?.Invoke(
             this, new CursorMoveRequestedEventArgs(columnIndex, move, GetVisibleRowCount(columnIndex)));
+    }
+
+    /// <summary>Raised when a rename editor is accepted, with the typed name.</summary>
+    public event EventHandler<RenameSubmittedEventArgs>? RenameSubmitted;
+
+    /// <summary>Raised when a rename editor is abandoned.</summary>
+    public event EventHandler? RenameCancelled;
+
+    /// <summary>
+    /// Shows the rename editor over one row, or takes it away when <paramref name="name"/> is
+    /// <c>null</c>. Idempotent: called on every render from whatever the state currently says, which
+    /// is what keeps the editor a projection rather than something with a life of its own.
+    /// </summary>
+    public void SyncRenameEditor(int columnIndex, int entryIndex, string? name, string? error)
+    {
+        if (columnsPanel is null)
+        {
+            return;
+        }
+
+        for (var i = 0; i < columnsPanel.Children.Count; i++)
+        {
+            if (columnsPanel.Children[i] is not ColumnView view)
+            {
+                continue;
+            }
+
+            if (i == columnIndex && name is not null)
+            {
+                view.ShowRenameEditor(entryIndex, name, error);
+            }
+            else if (view.IsRenaming)
+            {
+                view.HideRenameEditor();
+            }
+        }
     }
 
     /// <summary>

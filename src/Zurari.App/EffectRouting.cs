@@ -56,6 +56,7 @@ public static class EffectRouting
             Effect.MountImage => EffectTarget.Shell,
             Effect.OpenWithDefaultApp => EffectTarget.Shell,
             Effect.CreateFolder => EffectTarget.Runtime,
+            Effect.RenameEntry => EffectTarget.Runtime,
             Effect.LoadPreview => EffectTarget.Preview,
             Effect.CancelPreview => EffectTarget.Preview,
             Effect.DeleteToRecycleBin => EffectTarget.Shell,

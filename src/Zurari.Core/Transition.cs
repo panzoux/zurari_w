@@ -190,6 +190,13 @@ public static class Transition
             Msg.PlacesChanged => ReloadDrivePanes(state),
             Msg.ImageMounted m => ReloadDrivePanes(state with { RevealTarget = m.DriveRoot }),
             Msg.NoticeRaised m => (state with { Notice = m.Message }, NoEffects),
+            Msg.RenameRequested m => (BeginRename(state, m.ColumnIndex), NoEffects),
+            Msg.RenameCancelled => (state with { Rename = null }, NoEffects),
+            Msg.RenameSubmitted m => SubmitRename(state, m.NewName),
+            Msg.RenameCompleted m => RenameCompleted(state, m.ColumnIndex, m.Location, m.NewName),
+            Msg.RenameFailed m => (
+                state.Rename is { } editing ? state with { Rename = editing with { Error = m.Error } } : state,
+                NoEffects),
             Msg.CreateFolderRequested m => CreateFolder(state, m.ColumnIndex),
             Msg.FolderCreated m => RereadColumn(state, m.ColumnIndex, m.Location, reveal: m.Name),
             Msg.SetSortMode m => Rederive(
@@ -357,6 +364,80 @@ public static class Transition
         return remember
             ? (next, new Effect[] { new Effect.SetViewOptions(view) })
             : (next, NoEffects);
+    }
+
+    /// <summary>
+    /// Opens the editor on the row under the cursor, where renaming means anything.
+    /// </summary>
+    /// <remarks>
+    /// Refused for a header, a drive, and anything in the drive pane - that pane holds places, and
+    /// renaming a favorite would mean renaming the folder it points at, which is not what the row
+    /// looks like it is offering.
+    /// </remarks>
+    private static AppState BeginRename(AppState state, int columnIndex)
+    {
+        if (!InRange(state, columnIndex))
+        {
+            return state;
+        }
+
+        var column = state.Columns[columnIndex];
+        if (column.Location is Location.Drives || column.Cursor < 0 || column.Cursor >= column.Entries.Length)
+        {
+            return state;
+        }
+
+        var entry = column.Entries[column.Cursor];
+        return entry.Kind is EntryKind.Header or EntryKind.Drive
+            ? state
+            : state with { Rename = new RenameState(columnIndex, entry.Name) };
+    }
+
+    /// <summary>
+    /// Turns a typed name into a rename, or into the reason it cannot be one.
+    /// </summary>
+    /// <remarks>
+    /// The checks that can be made without touching the disk are made here, so the answer is
+    /// immediate and the editor keeps the text. Whether the name is already taken is not one of
+    /// them - only the filesystem knows that, and asking first would be a race anyway.
+    /// </remarks>
+    private static (AppState, IReadOnlyList<Effect>) SubmitRename(AppState state, string newName)
+    {
+        if (state.Rename is not { } editing || !InRange(state, editing.ColumnIndex))
+        {
+            return (state, NoEffects);
+        }
+
+        var trimmed = newName.Trim();
+        if (trimmed.Length == 0)
+        {
+            return (state with { Rename = editing with { Error = "名前を入力してください" } }, NoEffects);
+        }
+
+        if (string.Equals(trimmed, editing.EntryName, StringComparison.Ordinal))
+        {
+            // Nothing to do, and nothing to complain about: closing is the right answer.
+            return (state with { Rename = null }, NoEffects);
+        }
+
+        if (trimmed.IndexOfAny(System.IO.Path.GetInvalidFileNameChars()) >= 0)
+        {
+            return (
+                state with { Rename = editing with { Error = @"名前に使えない文字があります: \ / : * ? "" < > |" } },
+                NoEffects);
+        }
+
+        var column = state.Columns[editing.ColumnIndex];
+        return (
+            state with { Rename = editing with { Error = null } },
+            new Effect[] { new Effect.RenameEntry(editing.ColumnIndex, column.Location, editing.EntryName, trimmed) });
+    }
+
+    private static (AppState, IReadOnlyList<Effect>) RenameCompleted(
+        AppState state, int columnIndex, Location location, string newName)
+    {
+        var closed = state with { Rename = null };
+        return RereadColumn(closed, columnIndex, location, reveal: newName);
     }
 
     /// <summary>

@@ -2846,6 +2846,11 @@ public class TransitionProperties
         Gen.Const<Msg>(new Msg.ToggleDirectoriesFirst()),
         Gen.Const<Msg>(new Msg.ToggleHiddenFiles()),
         GenColumnIndex.Select(i => (Msg)new Msg.CreateFolderRequested(i)),
+        GenColumnIndex.Select(i => (Msg)new Msg.RenameRequested(i)),
+        Gen.Const<Msg>(new Msg.RenameCancelled()),
+        Gen.OneOfConst("a", "", "bad:name").Select(n => (Msg)new Msg.RenameSubmitted(n)),
+        Gen.Select(GenColumnIndex, GenLocation).Select(t => (Msg)new Msg.RenameCompleted(t.Item1, t.Item2, "renamed")),
+        Gen.Const<Msg>(new Msg.RenameFailed("nope")),
         Gen.Select(GenColumnIndex, GenLocation).Select(t => (Msg)new Msg.FolderCreated(t.Item1, t.Item2, "new")),
         Gen.Select(
                 Gen.OneOfConst(SortMode.Name, SortMode.Size),

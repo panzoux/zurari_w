@@ -145,6 +145,12 @@ public abstract record Effect
     public sealed record OpenWithDefaultApp(string Path) : Effect;
 
     /// <summary>
+    /// Renames one entry, reporting back as <see cref="Msg.RenameCompleted"/> or
+    /// <see cref="Msg.RenameFailed"/>.
+    /// </summary>
+    public sealed record RenameEntry(int ColumnIndex, Location Location, string OldName, string NewName) : Effect;
+
+    /// <summary>
     /// Creates a new folder in <paramref name="Location"/>, reporting the name it ended up with.
     /// </summary>
     /// <remarks>
