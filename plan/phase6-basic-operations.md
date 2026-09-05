@@ -50,7 +50,7 @@ wrong the moment the next commit lands - `git log --oneline main..` is the hones
 | **6e** | **Sorting, hidden files, cursor memory, rename** | `[ ]` | |
 | 6e.1 | Sort in `Transition` (modes + direction + dirs-first) | `[x]` | `6e646c0` |
 | 6e.2 | Hidden-file toggle | `[x]` | `06ce820` |
-| 6e.3 | Cursor memory (entry name, LRU-capped) | `[x]` | (this commit) |
+| 6e.3 | Cursor memory (entry name, LRU-capped) | `[x]` | `cbc9505` |
 | 6e.4 | Rename (overlay TextBox) | `[ ]` | |
 | 6e.5 | New folder | `[ ]` | |
 | 6e.6 | Open with default app | `[ ]` | |
