@@ -35,7 +35,7 @@ wrong the moment the next commit lands - `git log --oneline main..` is the hones
 | 6c.2 | Cancellation: generation-aware, ordering-safe | `[x]` | `ae3219a` `593194e` `cf41efa` |
 | 6c.3 | Settle delay before touching the disk | `[x]` | `593194e` |
 | 6c.4 | Thumbnail cache, failures included | `[x]` | `2f4459c` |
-| 6c.5 | Shell thumbnails before ffmpeg (`IThumbnailCache`; never writes `Thumbs.db`) | `[x]` | (this commit) |
+| 6c.5 | Shell thumbnails before ffmpeg (`IThumbnailCache`; never writes `Thumbs.db`) | `[x]` | `1a5c096` |
 | **6d** | **The root pane** | `[x]` | |
 | 6d.1 | Sections, headers, cursor on header, `Space` collapses | `[x]` | `9082b8c` |
 | 6d.2 | Drive labels ("Windows (C:)"), marks refused in the pane | `[x]` | `9082b8c` |
