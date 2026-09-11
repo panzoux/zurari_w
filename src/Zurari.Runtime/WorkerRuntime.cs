@@ -1067,6 +1067,14 @@ public sealed class WorkerRuntime : IDisposable
                 return;
             }
 
+            // Before the text sniff: a PDF written without binary bytes decodes as ASCII, and would
+            // otherwise preview as its own source code.
+            if (DocumentLabel(effect.Path) is { } documentLabel
+                && TryPostShellThumbnail(effect, documentLabel, baseMetadata, !IsOnNetwork(stream.SafeFileHandle), token))
+            {
+                return;
+            }
+
             if (detected.Category == FileCategory.Image)
             {
                 PostImagePreview(effect, stream, detected, head, baseMetadata);
@@ -1120,11 +1128,10 @@ public sealed class WorkerRuntime : IDisposable
     }
 
     /// <summary>
-    /// Tries an external thumbnailer (see <see cref="VideoThumbnailer"/>) for a video file: on
-    /// success, reports it as a normal <see cref="PreviewKind.Image"/> preview (pixel dimensions
-    /// parsed cheaply from the generated PNG via <see cref="ImageHeaderParser"/> - it is a PNG we
-    /// just made, no external decoder needed); on failure (no tool installed, or the tool could not
-    /// produce a frame for this file), falls back to the same Binary preview as any other
+    /// A video's preview: Explorer's thumbnail, else an external thumbnailer's (see
+    /// <see cref="VideoThumbnailer"/>), reported as an <see cref="PreviewKind.Image"/> labelled with
+    /// the video's type (see <see cref="PostThumbnail"/>); on failure (no tool installed, or the tool
+    /// could not produce a frame for this file), falls back to the same Binary preview as any other
     /// non-renderable file, with a label noting the missing tool.
     /// </summary>
     private void ExecuteVideoPreview(
@@ -1136,11 +1143,13 @@ public sealed class WorkerRuntime : IDisposable
         bool onLocalVolume,
         CancellationToken token)
     {
+        var label = VideoLabel(detected, path);
+
         if (_thumbnailCache.Value.TryGet(path, out var cachedBytes, out var cachedFailure))
         {
             if (cachedBytes is not null)
             {
-                PostVideoThumbnail(effect, cachedBytes, baseMetadata);
+                PostThumbnail(effect, cachedBytes, label, baseMetadata);
             }
             else
             {
@@ -1150,13 +1159,9 @@ public sealed class WorkerRuntime : IDisposable
             return;
         }
 
-        // Explorer's own thumbnail first. Kept in this app's cache like an ffmpeg one, because the
-        // shell is told not to keep it anywhere itself - that is what keeps Thumbs.db out of a share.
-        if (onLocalVolume && _shellThumbnail?.Invoke(path, VideoThumbnailSize) is { Length: > 0 } shellPng)
+        // Explorer's own thumbnail first, then ffmpeg.
+        if (TryPostShellThumbnail(effect, label, baseMetadata, onLocalVolume, token))
         {
-            token.ThrowIfCancellationRequested();
-            _thumbnailCache.Value.StoreSuccess(path, shellPng);
-            PostVideoThumbnail(effect, shellPng, baseMetadata);
             return;
         }
 
@@ -1164,7 +1169,7 @@ public sealed class WorkerRuntime : IDisposable
         if (outcome.Bytes is not null)
         {
             _thumbnailCache.Value.StoreSuccess(path, outcome.Bytes);
-            PostVideoThumbnail(effect, outcome.Bytes, baseMetadata);
+            PostThumbnail(effect, outcome.Bytes, label, baseMetadata);
             return;
         }
 
@@ -1180,7 +1185,7 @@ public sealed class WorkerRuntime : IDisposable
 
     /// <summary>
     /// The size asked of the shell, matching what ffmpeg is asked for (<c>scale=512:-1</c>) so a
-    /// thumbnail looks the same whichever of the two produced it.
+    /// thumbnail looks the same whichever of the two produced it. Documents use it too.
     /// </summary>
     private const int VideoThumbnailSize = 512;
 
@@ -1218,10 +1223,85 @@ public sealed class WorkerRuntime : IDisposable
             && char.IsLetter(finalPath[4])
             && finalPath[5] == ':');
 
-    private void PostVideoThumbnail(Effect.LoadPreview effect, byte[] png, PreviewMetadata baseMetadata)
+    /// <summary>
+    /// Explorer's thumbnail for <paramref name="effect"/>'s file, from this app's cache or from the
+    /// shell, posted as the preview. Returns <c>false</c> - having posted nothing - when there is
+    /// none, so the caller carries on with whatever it would have shown instead.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A success is kept in this app's cache, because the shell is told to keep it nowhere: that is
+    /// what keeps <c>Thumbs.db</c> out of a share. A failure is not kept. It means no thumbnail
+    /// handler is installed for the type, which is a fact about the machine rather than the file -
+    /// installing Office or a PDF reader fixes it, and a remembered failure would outlive that.
+    /// </para>
+    /// <para>
+    /// Asking costs one call that fails fast when there is no handler. It never substitutes a generic
+    /// icon: measured for a PDF, a .docx, a .txt, an unknown extension and an .exe on a machine with
+    /// no handlers, every one came back <c>WTS_E_FAILEDEXTRACTION</c>.
+    /// </para>
+    /// </remarks>
+    private bool TryPostShellThumbnail(
+        Effect.LoadPreview effect, string label, PreviewMetadata baseMetadata, bool onLocalVolume, CancellationToken token)
     {
-        var metadata = WithPixelInfo(baseMetadata, png);
-        _post(new Msg.PreviewLoaded(effect.Generation, PreviewKind.Image, null, [.. png], null, metadata));
+        if (_shellThumbnail is null)
+        {
+            return false;
+        }
+
+        if (_thumbnailCache.Value.TryGet(effect.Path, out var cached, out _) && cached is not null)
+        {
+            PostThumbnail(effect, cached, label, baseMetadata);
+            return true;
+        }
+
+        if (!onLocalVolume || _shellThumbnail(effect.Path, VideoThumbnailSize) is not { Length: > 0 } png)
+        {
+            return false;
+        }
+
+        token.ThrowIfCancellationRequested();
+        _thumbnailCache.Value.StoreSuccess(effect.Path, png);
+        PostThumbnail(effect, png, label, baseMetadata);
+        return true;
+    }
+
+    /// <summary>
+    /// Posts a picture that stands in for a file which is not itself a picture - a video's frame, a
+    /// document's first page.
+    /// </summary>
+    /// <remarks>
+    /// Carries the file's own type, so the preview reads "PDF Document" or "MP4 Video" rather than
+    /// "画像ファイル". And it carries no pixel dimensions: the only ones to hand are the thumbnail's,
+    /// and showing 512 × 288 as the resolution of a 1920 × 1080 video - which the video path did until
+    /// this was written - is worse than showing none.
+    /// </remarks>
+    private void PostThumbnail(Effect.LoadPreview effect, byte[] png, string label, PreviewMetadata baseMetadata) =>
+        _post(new Msg.PreviewLoaded(effect.Generation, PreviewKind.Image, label, [.. png], null, baseMetadata));
+
+    /// <summary>
+    /// The type of a PDF or Microsoft Office document, by extension - or <c>null</c> for anything
+    /// else, which is then never offered to the shell for a thumbnail.
+    /// </summary>
+    /// <remarks>
+    /// By extension because that is what the shell's thumbnail handlers are registered by: a PDF
+    /// renamed to .bin gets no PDF thumbnail from Windows whatever its bytes say. And Office files
+    /// cannot be told apart by content anyway - a .docx is a ZIP and a .doc an OLE compound file.
+    /// Deliberately a list rather than "anything that would be a hex dump": everything else keeps the
+    /// preview it had.
+    /// </remarks>
+    internal static string? DocumentLabel(string path)
+    {
+        var extension = Path.GetExtension(path).ToUpperInvariant();
+        return extension switch
+        {
+            ".PDF" => "PDF Document",
+            ".DOC" or ".DOCX" or ".DOCM" or ".DOT" or ".DOTX" or ".DOTM" => "Word Document",
+            ".XLS" or ".XLSX" or ".XLSM" or ".XLSB" or ".XLT" or ".XLTX" or ".XLTM" => "Excel Workbook",
+            ".PPT" or ".PPTX" or ".PPTM" or ".POT" or ".POTX" or ".POTM" or ".PPS" or ".PPSX" or ".PPSM"
+                => "PowerPoint Presentation",
+            _ => null,
+        };
     }
 
     private void PostVideoFallback(

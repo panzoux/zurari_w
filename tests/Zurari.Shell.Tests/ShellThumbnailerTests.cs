@@ -190,6 +190,48 @@ public class ShellThumbnailerTests
         }
     }
 
+    /// <summary>
+    /// Documents go through the same call, and whether one gets a thumbnail depends on what is
+    /// installed - Office, a PDF reader, PowerToys. So this asserts what holds either way: a picture
+    /// that decodes, or nothing; no exception; no file left beside the document.
+    /// </summary>
+    /// <remarks>
+    /// On the machine this was written on no handler is installed, so every case here takes the
+    /// "nothing" branch - measured as <c>WTS_E_FAILEDEXTRACTION</c>, with no generic icon substituted.
+    /// The "picture" branch is exercised only where a handler exists.
+    /// </remarks>
+    [StaTheory]
+    [InlineData("paper.pdf")]
+    [InlineData("letter.docx")]
+    [InlineData("budget.xlsx")]
+    [InlineData("deck.pptx")]
+    public void A_document_yields_a_real_picture_or_nothing_and_leaves_nothing_behind(string name)
+    {
+        var dir = TempDirectory.Create("zurari-shellthumb");
+        try
+        {
+            var file = Path.Combine(dir, name);
+            File.WriteAllText(file, "%PDF-1.4\n%%EOF\n");
+
+            byte[]? png = null;
+            var exception = Record.Exception(() => png = ShellThumbnailer.TryGetPng(file, 256));
+            SettleShellWrites();
+
+            Assert.Null(exception);
+            if (png is not null)
+            {
+                var decoded = BitmapDecoder.Create(new MemoryStream(png), BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
+                Assert.True(decoded.Frames[0].PixelWidth > 0);
+            }
+
+            Assert.Equal([name], FilesIn(dir));
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
+
     [StaFact]
     public void A_file_that_does_not_exist_yields_nothing()
     {

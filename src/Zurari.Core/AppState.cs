@@ -508,7 +508,9 @@ public sealed record PreviewCapacity(
 /// Decoded text content when <see cref="Kind"/> is <see cref="PreviewKind.Text"/>. Doubles as the
 /// <see cref="FileTypeDetector"/> display label when <see cref="Kind"/> is
 /// <see cref="PreviewKind.Binary"/> (chosen over a separate label field to keep this record small -
-/// the two kinds never need both a body and a label at once). <c>null</c> otherwise.
+/// the two kinds never need both a body and a label at once). For <see cref="PreviewKind.Image"/>,
+/// the type of the file the picture stands in for when it is not itself an image - "MP4 Video",
+/// "PDF Document" - and <c>null</c> for an actual image. <c>null</c> otherwise.
 /// </param>
 /// <param name="ImageBytes">
 /// The whole file's bytes when <see cref="Kind"/> is <see cref="PreviewKind.Image"/>; a capped

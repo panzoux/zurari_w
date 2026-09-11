@@ -260,6 +260,24 @@ public class PreviewProjectionTests
         Assert.Contains("色深度: 24 bit", vm.MetadataText);
     }
 
+    /// <summary>
+    /// A thumbnail standing in for a document or video names that file's type, and the label stays
+    /// in the metadata block - it is not a text body to show over the picture.
+    /// </summary>
+    [Fact]
+    public void A_thumbnail_image_names_the_type_of_the_file_it_stands_for()
+    {
+        var metadata = new PreviewMetadata("paper.pdf", 204800, new DateTime(2024, 1, 1), new DateTime(2024, 1, 2));
+        var preview = new PreviewState(1, @"C:\paper.pdf", PreviewKind.Image, "PDF Document", [1, 2, 3], null, metadata);
+
+        var vm = StateProjection.ProjectPreview(StateWithPreview(preview));
+
+        Assert.Contains("種類: PDF Document", vm.MetadataText);
+        Assert.DoesNotContain("画像ファイル", vm.MetadataText);
+        Assert.DoesNotContain("解像度", vm.MetadataText);
+        Assert.Null(vm.Text);
+    }
+
     [Fact]
     public void Binary_kind_metadata_reuses_the_detected_type_label_as_the_kind_line()
     {

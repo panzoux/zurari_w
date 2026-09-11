@@ -230,7 +230,8 @@ public abstract record Msg
     /// dedicated one. <paramref name="ImageBytes"/> is likewise reused for <see cref="PreviewKind.Binary"/>:
     /// rather than add a dedicated field, it carries the file's head (up to a few KB - the Runtime's
     /// job to cap) so the App layer's hex-dump view (<see cref="HexDump.Format"/>) has bytes to
-    /// format; for <see cref="PreviewKind.Image"/> it is the whole file, and for every other kind
+    /// format; for <see cref="PreviewKind.Image"/> it is the whole file (or a thumbnail standing in
+    /// for a video or document, with <paramref name="Text"/> naming that file's type), and for every other kind
     /// it is empty. <paramref name="Metadata"/> carries Finder-style inspector data (size/dates,
     /// plus pixel dimensions/depth for images) gathered alongside the load - present for every
     /// kind, not just images; see <see cref="PreviewState.Metadata"/>.

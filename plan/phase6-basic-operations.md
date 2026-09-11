@@ -1,16 +1,16 @@
-# Phase 6 — 基本操作の穴埋め + プレビュー刷新
+# Phase 6 窶・蝓ｺ譛ｬ謫堺ｽ懊・遨ｴ蝓九ａ + 繝励Ξ繝薙Η繝ｼ蛻ｷ譁ｰ
 
-**位置づけ**: [roadmap.md](roadmap.md) の Phase 6。着手時の原文ではなく、進行中の現況(表と Records は随時更新)。
+**菴咲ｽｮ縺･縺・*: [roadmap.md](roadmap.md) 縺ｮ Phase 6縲ら捩謇区凾縺ｮ蜴滓枚縺ｧ縺ｯ縺ｪ縺上・ｲ陦御ｸｭ縺ｮ迴ｾ豕・陦ｨ縺ｨ Records 縺ｯ髫乗凾譖ｴ譁ｰ)縲・
 
 ## Context
 
 Phase 6 was sixteen loose checkboxes. Grilling turned it into decisions, and four reshaped it:
 
-- **The drive pane becomes a virtual folder** — drives, shares, mounted images and Trash, the way
+- **The drive pane becomes a virtual folder** 窶・drives, shares, mounted images and Trash, the way
   Finder's sidebar lists Locations. It was filed as a preview-pane item; it is not one.
 - **Phase 8 comes first.** `Location` replaces `Column.Path`, which *dissolves* several problems
   rather than relocating them.
-- **The preview pipeline becomes cancellable** — not just video. Opening a handle on a slow or
+- **The preview pipeline becomes cancellable** 窶・not just video. Opening a handle on a slow or
   cloud-backed disk stalls, and it runs on every keystroke.
 - **This is the GUI version, so it uses Windows' own facilities.** Inventory with decisions below.
 
@@ -19,8 +19,8 @@ Phase 6 was sixteen loose checkboxes. Grilling turned it into decisions, and fou
 # Status
 
 **6a-6d, 6f and 6g are on `main`** - fast-forwarded from `phase6a-location-foundation` on
-2026-09-05, once 6d was complete (see R-1). 6e and 6c.5 remain.
-746 tests, `scripts/check.ps1` green.
+2026-09-05, once 6d was complete (see R-1). 6c and 6e.1-6e.6 followed; 6e.7 is deferred.
+776 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`, and `check.ps1` refuses to pass while it is
 stale. Do not edit it by hand. A commit count used to live here too; it was removed because it is
@@ -36,16 +36,17 @@ wrong the moment the next commit lands - `git log --oneline main..` is the hones
 | 6c.3 | Settle delay before touching the disk | `[x]` | `593194e` |
 | 6c.4 | Thumbnail cache, failures included | `[x]` | `2f4459c` |
 | 6c.5 | Shell thumbnails before ffmpeg (`IThumbnailCache`; never writes `Thumbs.db`) | `[x]` | `1a5c096` |
+| 6c.6 | PDF and Office documents preview as Explorer's thumbnail, where a handler is installed | `[x]` | (this commit) |
 | **6d** | **The root pane** | `[x]` | |
 | 6d.1 | Sections, headers, cursor on header, `Space` collapses | `[x]` | `9082b8c` |
 | 6d.2 | Drive labels ("Windows (C:)"), marks refused in the pane | `[x]` | `9082b8c` |
 | 6d.3 | Favorites section (`SHGetKnownFolderPath`; labels qualified on collision) | `[x]` | `2ae7810` |
 | 6d.4 | Pinned places (Ctrl+D pins, Delete unpins), persisted | `[x]` | `f76b684` |
 | 6d.5 | Trash as its own group, enumerable via the shell namespace | `[x]` | `3a1d56c` |
-| 6d.5a | ゴミ箱 usable: its own context menu, readable rows, real drive/bin icons | `[x]` | `0faeecd` |
+| 6d.5a | 繧ｴ繝溽ｮｱ usable: its own context menu, readable rows, real drive/bin icons | `[x]` | `0faeecd` |
 | 6d.6 | Collapse state persisted | `[x]` | `7923fb9` |
 | 6d.7 | Drive / share capacity preview | `[x]` | `a39b004` |
-| 6d.8 | ISO mount on activate (eject: see roadmap 見送った案) | `[x]` | `5e7b402` |
+| 6d.8 | ISO mount on activate (eject: see roadmap 隕矩√▲縺滓｡・ | `[x]` | `5e7b402` |
 | 6d.9 | Live refresh (`SHChangeNotifyRegister`) | `[x]` | `ef5d7a3` |
 | **6e** | **Sorting, hidden files, cursor memory, rename** | `[~]` | |
 | 6e.1 | Sort in `Transition` (modes + direction + dirs-first) | `[x]` | `6e646c0` |
@@ -57,7 +58,7 @@ wrong the moment the next commit lands - `git log --oneline main..` is the hones
 | 6e.7 | Status bar, key hints / help screen | `[ ]` | **deferred by decision** - see 6e-7 |
 | **6e-bis** | **Smooth cursor movement** | `[x]` | `f61c46b` `593194e` |
 | **6g** | **Finder-style auto-extend**: the column beside the cursor | `[x]` | `75f84f9` |
-| **6f** | **Findings parked from 6a–6e** | `[~]` | |
+| **6f** | **Findings parked from 6a窶・e** | `[~]` | |
 | 6f.1 | Settings store: injectable path, atomic save | `[x]` | `134fce0` |
 | 6f.2 | `JobEngineTests` cancel race | `[ ]` | |
 | 6f.3 | Unguarded `Directory.Delete` in test cleanup (89, not 57) | `[x]` | `eb5ad3e` |
@@ -111,9 +112,46 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
 
   **Scope, stated.** Video only - "before ffmpeg" is where ffmpeg is used. PDF and Office documents
   would get Explorer thumbnails from the same call instead of a hex dump; that changes what a preview
-  *is* for those files, so it is a question for you rather than something done in passing. And an
+  *is* for those files, so it is a question for you rather than something done in passing
+  (answered: do them - see 6c-8). And an
   ffmpeg failure verdict cached before this change still wins over the shell for that one file until
   the 30-day sweep; those are files ffmpeg rejected, where the shell most likely fails too.
+
+- **6c-8** `[x]` **PDF and Office thumbnails, 6c.6 - built and tested, but inert on this machine.**
+  A document with a PDF or Office extension is now offered to the same shell call as a video, before
+  the text sniff and the hex dump. With a thumbnail it previews as that picture, labelled with the
+  file's type; without one it previews exactly as before.
+
+  **Nothing on this machine can produce one.** Measured before building, through the real
+  `ShellThumbnailer`: a PDF, a .docx with an embedded `docProps/thumbnail.jpeg`, a .txt, an unknown
+  extension and `notepad.exe` all came back `WTS_E_FAILEDEXTRACTION` (`0x8004B200`), and no file was
+  written. No Office, Acrobat or PowerToys is installed, and this Windows 10 has no PDF or Office
+  thumbnail handler that works here either. Also measured: when there is no handler the call **does not
+  substitute a generic icon**, so no "thumbnail" here is ever just the type's icon. So the only
+  end-to-end evidence is for the "no handler" path; the "picture" path is tested with an injected
+  shell and has never shown a real document's page. **Wants a manual run on a machine with Office or
+  a PDF thumbnail handler installed** - preview a .pdf and a .docx, and confirm the page appears and
+  the folder gains no `Thumbs.db` (it cannot: same flag, same three guards as 6c-7).
+
+  Decisions made in passing, each small:
+  1. **An explicit extension list, not "anything that would otherwise be a hex dump".** Handlers are
+     registered by extension, and a .docx is indistinguishable from any ZIP by content.
+     Archives, executables, text and real pictures are never offered - tested.
+  2. **Before the text sniff.** A PDF can be all ASCII and would otherwise preview as its own source.
+     Tested with exactly such a PDF; moving the branch after the sniff fails the test.
+  3. **A success is cached, a failure is not.** No handler is a fact about the machine: install
+     Office and the next look should find it, not a remembered failure. Tested both ways.
+  4. **A thumbnail is labelled with its file's type** ("PDF Document", "MP4 Video"), not 逕ｻ蜒上ヵ繧｡繧､繝ｫ,
+     **and carries no resolution.** This corrected video too: since 6c.5 - and for ffmpeg thumbnails
+     long before - a video's preview said 逕ｻ蜒上ヵ繧｡繧､繝ｫ and gave the 512-wide thumbnail's size as the
+     video's resolution. Showing none beats showing that; the real resolution needs the MP4 parsing
+     still open in the roadmap.
+
+  Every new Runtime and App test was mutation-checked: 8 mutations (branch order, share guard ignored,
+  failure cached, every file a document, label dropped, pixel info restored, projection ignoring the
+  label, label shown as a text body), each failing at least one test. The first attempt at the
+  branch-order mutation survived - because the mutation itself was wrong, reinserting the branch
+  before the sniff; corrected, it fails.
 
 - **6f-6** `[x]` **Tests were writing into the user's real thumbnail cache.** Found while checking
   6c.5: `LoadPreview_of_a_video_extension_with_no_magic_match_is_routed_as_video` built a
@@ -181,7 +219,7 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   failure mode as a silent eject.
 
   `Ctrl+Shift+N` makes a folder, Explorer's own binding. **The name is the Runtime's to choose**,
-  because choosing it means looking at what is already there: 新しいフォルダー, then (2), and so on.
+  because choosing it means looking at what is already there: 譁ｰ縺励＞繝輔か繝ｫ繝繝ｼ, then (2), and so on.
   Core refuses where there is no directory to create in - the drive pane holds places, the bin is not
   somewhere to put things - and says so rather than failing quietly. The cursor lands on the new
   folder through `RevealTarget`, which 6d.8 already built for the mounted-drive case.
@@ -315,7 +353,7 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   `DeleteToRecycleBin`, and xUnit runs test classes in parallel - so it landed between the two
   `Enumerate()` calls that `RecycleBinFolderTests` was comparing. Proved directly rather than
   inferred: enumerate (581), recycle one file, enumerate again (582), difference is exactly
-  `…\zurari-6f4-…\victim.txt`. Both classes were behaving correctly; the test was asserting that a
+  `窶ｦ\zurari-6f4-窶ｦ\victim.txt`. Both classes were behaving correctly; the test was asserting that a
   shared machine-wide resource holds still.
 
   **What I got wrong, specifically.** I saw a strong statistical signal (5 failures in 6 with
@@ -331,19 +369,19 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
 
 - **6c-5** `[ ]` **The preview stall relief has no automated test.** Reproducing it needs a preview
   that genuinely blocks, which needs ffmpeg guaranteed present or a seam for injecting one. The
-  guard test that exists says so in its own remarks. **Wants a manual run:** hold ↓ through a folder
-  of large videos and confirm navigation stays responsive. **Do it on a fresh build — see 6c-6.**
+  guard test that exists says so in its own remarks. **Wants a manual run:** hold 竊・through a folder
+  of large videos and confirm navigation stays responsive. **Do it on a fresh build 窶・see 6c-6.**
 - **6c-6** `[ ]` **`publish/` holds a two-week-old build, and instances of it were still running.**
-  Diagnosed 2026-08-30: three `Zurari.App` processes were live at once — two from
+  Diagnosed 2026-08-30: three `Zurari.App` processes were live at once 窶・two from
   `publish\Zurari.App.exe` (built 2026-08-22 12:23, predating every Phase 6 commit) and one from
   `publish-sc\` (current). That one fact explained two separate symptoms: the drive pane showing no
-  section headers, and `dotnet publish -o publish` failing with `GenerateBundle` →
+  section headers, and `dotnet publish -o publish` failing with `GenerateBundle` 竊・
   `IOException: being used by another process`. The running app was holding its own exe open.
   Nothing was wrong with the source or the build command.
 
   The stale exe also still contains the ffmpegthumbnailer code path (the literal appears 293 times as
   UTF-16 inside it; a plain `grep` misses it because .NET stores string literals that way), with
-  `ffmpegthumbnailer.exe` beside it — which is what prompted the question.
+  `ffmpegthumbnailer.exe` beside it 窶・which is what prompted the question.
 
   **Still open because the trap is still there.** `publish/` looks current and is not; it has already
   cost one debugging session. Deleting the directory removes the ambiguity, but that is the user's
@@ -361,7 +399,7 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
      an image file and changes system state.
   2. **Live refresh with physical media** - plugging in a USB stick, inserting a disc. The test
      broadcasts the event; it does not produce it.
-  3. **Unmounting through the context menu's 取り出し** on a mounted image.
+  3. **Unmounting through the context menu's 蜿悶ｊ蜃ｺ縺・* on a mounted image.
   4. **Drive types this machine does not have** - a mapped network drive, a RAM disk - for their
      labels, icons and capacity panel.
 - **6f-2** `[ ]` **`JobEngineTests.CancelJob_mid_copy_deletes_the_incomplete_destination_file` is
@@ -387,27 +425,27 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
 
 - **6d-6** `[x]` **Every place gesture was a no-op in the running app.** The composition root routed
   effects with a `switch` statement and `Effect.SetPinned` had no case, so it fell through and was
-  silently discarded — Ctrl+B, Ctrl+D, Delete-to-unpin and drop-to-add all did nothing.
+  silently discarded 窶・Ctrl+B, Ctrl+D, Delete-to-unpin and drop-to-add all did nothing.
   `Effect.CancelPreview` was unrouted too, so preview cancellation never reached the runtime in the
   real app after 6c. **No test could have caught it:** every test submits effects straight to the
-  executor it is about, so nothing exercised the router at all. Fixed in `76baaa1` — routing is a
+  executor it is about, so nothing exercised the router at all. Fixed in `76baaa1` 窶・routing is a
   switch *expression* that throws, with a reflection walk over the (closed) `Effect` hierarchy
   asserting each one routes, plus a test that the walk itself is not vacuous.
 - **6d-7** `[x]` **Four passing interop tests proved nothing.** The recycle-bin tests asserted "does
-  not throw" and "empty implies empty" — all satisfied by `Enumerate()` returning `[]` from its
+  not throw" and "empty implies empty" 窶・all satisfied by `Enumerate()` returning `[]` from its
   catch block. A throwaway probe established the truth: 373 items in the bin, 373 returned,
   agreeing with `SHQueryRecycleBin`. The tests now assert both directions of that agreement.
 
 - **6d-16** `[x]` **The eject key was reviewed away, and the drive rows were the real problem.**
   Reviewing the status-bar design turned up three corrections, all of them right.
 
-  **`Ctrl+E` is withdrawn.** It is not an Explorer convention, and 取り出し is already in the shell
+  **`Ctrl+E` is withdrawn.** It is not an Explorer convention, and 蜿悶ｊ蜃ｺ縺・is already in the shell
   context menu on any drive row - so a dedicated key bought speed alone, at the price of a key, a
   help line, and `Msg.EjectAtCursor` / `Effect.EjectDrive` / `Entry.IsEjectable` in Core. All removed;
-  the reasoning is in the roadmap's 見送った案 so re-adding it is a decision rather than a rediscovery.
+  the reasoning is in the roadmap's 隕矩√▲縺滓｡・so re-adding it is a decision rather than a rediscovery.
   Mount stays: opening an `.iso` is the existing "open this" gesture, not a new key.
 
-  **"Windows (C:) は取り出せません" was the wrong answer to the wrong question.** An operation that
+  **"Windows (C:) 縺ｯ蜿悶ｊ蜃ｺ縺帙∪縺帙ｓ" was the wrong answer to the wrong question.** An operation that
   cannot apply should not be accepted and then explained - it should not be offered. Moot now that the
   key is gone, but the principle stands for whatever replaces it.
 
@@ -417,9 +455,9 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   volume has no name, and the code fell back to the letter. Explorer does not; it substitutes a type
   name. `ShellDisplayName.For` (`SIGDN_NORMALDISPLAY`, already listed as "Adopt" in the facilities
   inventory) now supplies it, injected into Runtime as a delegate for the same reason favorites and
-  the bin are. Measured on this machine: `ローカル ディスク (C:)`, `USB ドライブ (D:)`,
-  `BD-ROM ドライブ (E:)` - localized, per-machine correct, and better than the hand-written
-  「E: (光学ドライブ)」 it replaces.
+  the bin are. Measured on this machine: `繝ｭ繝ｼ繧ｫ繝ｫ 繝・ぅ繧ｹ繧ｯ (C:)`, `USB 繝峨Λ繧､繝・(D:)`,
+  `BD-ROM 繝峨Λ繧､繝・(E:)` - localized, per-machine correct, and better than the hand-written
+  縲窪: (蜈牙ｭｦ繝峨Λ繧､繝・縲・it replaces.
 
   **The title bar now shows only `zurari <version>`.** It was repeating the focused path, which the
   status bar already carries - a duplicate occupying the most visible line in the window.
@@ -460,7 +498,7 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   before and after, so a message that was ignored stays ignored rather than rebuilding the pane
   underneath it - without that, 51 existing tests failed, all of them correctly. And `EnterDirectory`
   now **moves into the column that is already showing the folder** instead of discarding a loaded
-  listing and re-reading it, which would flash 読み込み中… over contents already on screen.
+  listing and re-reading it, which would flash 隱ｭ縺ｿ霎ｼ縺ｿ荳ｭ窶ｦ over contents already on screen.
 
   The speculative read is marked as such on the effect and **debounced in the App exactly like a
   preview** (same gate, same 150 ms): a held-down arrow would otherwise put one directory listing on
@@ -470,7 +508,7 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
 - **6d-14** `[x]` **A not-ready drive said only that something had gone wrong.** It was reported as a
   failed preview, so an empty optical drive read as an error. It is not an error - it is an empty
   drive, and what kind of drive it is stays worth saying. `PreviewCapacity` gained a `Status` and
-  nullable byte counts, so the pane shows 光学ドライブ / 準備できていません with no bar and no figures.
+  nullable byte counts, so the pane shows 蜈牙ｭｦ繝峨Λ繧､繝・/ 貅門ｙ縺ｧ縺阪※縺・∪縺帙ｓ with no bar and no figures.
   `DriveType` needs no disc; `VolumeLabel` and `DriveFormat` would both throw there.
 
 - **6d-12** `[note]` **The preview effect had to learn what it is previewing.** A drive's `C:\` is
@@ -495,7 +533,7 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   `%APPDATA%\zurari\settings.json`: `"PinnedPaths": null`, in a session where a folder had definitely
   been pinned.
 
-  `MainWindow`'s `Closed` handler saved `new UserSettings(PreviewWidth: …)` - a **fresh** record. The
+  `MainWindow`'s `Closed` handler saved `new UserSettings(PreviewWidth: 窶ｦ)` - a **fresh** record. The
   store writes the file wholesale, so every close threw away every pinned place and collapsed
   section, keeping only the pane width. The save half of persistence had tests; the restore half was
   only ever asserted as "the value reached the file", which is where the missing half hid.
@@ -510,7 +548,7 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   nothing to recover.
 
 - **6d-10** `[x]` **The bin's icon was a folder with a badge on it - `SIID_RECYCLER` is 31, not 32.**
-  Reported as "ゴミ箱のアイコンは考えなおしてください". The stock-icon set is addressed by bare integers,
+  Reported as "繧ｴ繝溽ｮｱ縺ｮ繧｢繧､繧ｳ繝ｳ縺ｯ閠・∴縺ｪ縺翫＠縺ｦ縺上□縺輔＞". The stock-icon set is addressed by bare integers,
   so being one off is completely silent: the call succeeds and returns a perfectly valid icon of
   something else. A probe dumping ids 30-34 as PNGs settled it in one look.
 
@@ -529,7 +567,7 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
      path, cached per drive. The test compares *pixels*, not references: two HICONs are never the
      same instance, so a reference check would have passed either way. Verified it fails without the
      fix.
-  2. **The ゴミ箱 row had no context menu**, so ゴミ箱を空にする was unreachable. Its `Location` has no
+  2. **The 繧ｴ繝溽ｮｱ row had no context menu**, so 繧ｴ繝溽ｮｱ繧堤ｩｺ縺ｫ縺吶ｋ was unreachable. Its `Location` has no
      filesystem path, so `ResolveFullPath` returned `null` and the menu was skipped before anything
      was drawn. `Location.ShellParsingName` is the fix - the bin's CLSID (`::{645FF040-...}`), kept
      separate from `FilesystemPath` so a caller that wants a *path* still correctly sees nothing. A
@@ -549,7 +587,7 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
 
 - **6d-5** `[x]` **Delete on a favorite would have recycled the folder it pointed at.** Favorites
   arrived in `2ae7810` as `EntryKind.Directory` rows in the Drives column, and `DeleteEntry` only
-  refused `Drive` and `Header` — so Delete on ホーム resolved to the profile path and returned
+  refused `Drive` and `Header` 窶・so Delete on 繝帙・繝 resolved to the profile path and returned
   `DeleteToRecycleBin` targeting the whole of the user profile folder. Verified before fixing, then fixed in `621acf3`:
   the pane holds places, not files, so nothing in it is a deletion target. Delete now means
   "unpin" on a pinned row and nothing anywhere else in that pane.
@@ -559,23 +597,23 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   check, was discarded, and left the column stuck in `LoadState.Loading`. Pre-existing; surfaced by
   the type change. Fixed in `2b74c1a`.
 - **6a-2** `[x]` **The plan was wrong about `NormalizePath`.** I had recorded its `TrimEnd` as a latent
-  bug. Tracing every call site showed it is comparison-only and that the `C:\`→`C:` collapse is what
-  makes root equality work — "fixing" it would have broken documented behaviour. Renamed to
+  bug. Tracing every call site showed it is comparison-only and that the `C:\`竊蛋C:` collapse is what
+  makes root equality work 窶・"fixing" it would have broken documented behaviour. Renamed to
   `PathComparisonKey` so it cannot be misused instead.
 - **6a-3** `[x]` **I deleted five files from version control by accident.** A stray
   `git rm --cached` while investigating left the removal staged and `9d55e8f` swept it up, deleting
-  `docs/superpowers/plans/` (385 lines) unmentioned — while that same commit message and my report
+  `docs/superpowers/plans/` (385 lines) unmentioned 窶・while that same commit message and my report
   claimed the files were being left alone. Restored byte-identical in `06dde17`; branch audited for
   other deletions, there are none.
 - **6b-1** `[x]` A test fixture with **two entries both named `a.txt`** forced mark identity from
   name to **instance**. Names are unique in a directory listing but would not be across a
   `SearchResult` location gathering hits from several directories.
 - **6c-1** `[x]` **`CancelPreview` ignored its generation**, so a cancel executing after the load it
-  was meant to precede killed the new preview — pane loading forever. Mine, introduced `53bc98c`,
+  was meant to precede killed the new preview 窶・pane loading forever. Mine, introduced `53bc98c`,
   fixed `ae3219a`. Found only as an intermittent test timeout.
-- **6c-2** `[x]` **The invisible gate flake was `UCEERR_RENDERTHREADFAILURE`** — the WPF compositor
+- **6c-2** `[x]` **The invisible gate flake was `UCEERR_RENDERTHREADFAILURE`** 窶・the WPF compositor
   dying and taking the test host with it. The run aborts mid-assembly, *no test fails*, every summary
-  prints 成功, and `dotnet test` still exits non-zero. Fixed by software rendering in the test host
+  prints 謌仙粥, and `dotnet test` still exits non-zero. Fixed by software rendering in the test host
   (`a7877d1`); production still renders on the GPU.
 - **6c-3** `[x]` Two more ordering races, both mine: the CTS was disposed while its task still read
   the token (`WaitHandle` throws once disposed, unlike `IsCancellationRequested`), and
@@ -583,15 +621,15 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
 - **6c-4** `[x]` `Dispose`'s `_previewCts?.Dispose()` was **unreachable dead code satisfying CA2213
   with a no-op**, and its comment asserted the opposite of the only case it claimed to cover.
   Removed `cf41efa`, suppression made explicit instead.
-- **6d-1** `[x]` **Headers moved into Core, reversing the projection-only decision** — because the
+- **6d-1** `[x]` **Headers moved into Core, reversing the projection-only decision** 窶・because the
   cursor lands on them and `Cursor` indexes `Entries`. Costs a new `EntryKind` across 88 sites; saves
   `EntryVm.CoreIndex` and its translation layer entirely.
 - **6d-2** `[x]` **`AllEntries` shrank along with the view.** It falls back to `Entries` when its
-  backing field was never set, so a bare `with { Entries = … }` silently redefined "everything".
+  backing field was never set, so a bare `with { Entries = 窶ｦ }` silently redefined "everything".
   Caught by the collapse tests; `Column.WithView` is now the only writer of the three fields.
 - **6d-3** `[x]` Pins and collapse persistence blocked on 6f.1, which was pulled forward and done.
-- **6e-bis-1** `[x]` The double `ScrollIntoView` measured **0.7–0.9 ms** per move and was
-  **deliberately left alone** — it is a documented fix for scrolling stalling at the viewport edge
+- **6e-bis-1** `[x]` The double `ScrollIntoView` measured **0.7窶・.9 ms** per move and was
+  **deliberately left alone** 窶・it is a documented fix for scrolling stalling at the viewport edge
   (`43d6358`, `16f2283`), and under a millisecond is not worth risking a visible bug.
 - **6e-bis-2** `[x]` `RenderJobs` is O(jobs), normally zero; `RenderPreview` guards image decoding by
   generation and only formats a hex dump for a `Binary` preview, which a moving cursor never shows.
@@ -599,10 +637,10 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
 
 ---
 
-# 6a — Location foundation (was Phase 8) — **DONE** (`2b74c1a`)
+# 6a 窶・Location foundation (was Phase 8) 窶・**DONE** (`2b74c1a`)
 
-**Evidence:** `scripts/check.ps1` → `ALL CHECKS GREEN`, run by the pre-commit hook. **471 tests,
-0 failed** — Arch 7, Gallery 21, Runtime 44, App 78, Controls 106, Shell 22, Core 193. Same count as
+**Evidence:** `scripts/check.ps1` 竊・`ALL CHECKS GREEN`, run by the pre-commit hook. **471 tests,
+0 failed** 窶・Arch 7, Gallery 21, Runtime 44, App 78, Controls 106, Shell 22, Core 193. Same count as
 before the change: no test added, removed, or skipped.
 
 **Behavioural equivalence held.** Every line added to a test names a `Location`; no assertion changed
@@ -616,18 +654,18 @@ Two defects surfaced by the type change and fixed in the same commit:
   aborted *row-granular* drop failed that check, was discarded, and left the column stuck in
   `LoadState.Loading`.
 - `NormalizePath` turned out to be comparison-only, never used to build a path. Its `TrimEnd` maps
-  `C:\` to `C:` — which is load-bearing for making `C:\` and `C:` compare equal, not the bug the plan
+  `C:\` to `C:` 窶・which is load-bearing for making `C:\` and `C:` compare equal, not the bug the plan
   assumed. Changing the trimming would have broken that; renamed to `PathComparisonKey` instead so
   it cannot be misused as a path producer.
 
 ## Why first
 
-Child paths are built by concatenation — `Path.Combine(column.Path, entry.Name)`
+Child paths are built by concatenation 窶・`Path.Combine(column.Path, entry.Name)`
 (`Transition.cs:137`). Everything awkward downstream traces to that line: `CheckInvariants` must
 enforce `Columns[i].Path.StartsWith(Columns[i-1].Path)` (`AppState.cs:249`); favorites, pins and
 Trash point *outside* their parent and so fight that invariant; and `""` means "drive list" in
-**19 places** (`plan/phase8-virtual-locations.md` claims one — it is wrong). zurari hit the same wall
-and used a `::DRIVES::` sentinel string (`..\zurari\Program.cs:6137`) — the hack `Location` replaces.
+**19 places** (`plan/phase8-virtual-locations.md` claims one 窶・it is wrong). zurari hit the same wall
+and used a `::DRIVES::` sentinel string (`..\zurari\Program.cs:6137`) 窶・the hack `Location` replaces.
 
 **`Entry.Target: Location`** removes all three at once: a row carries where it opens to, which need
 not be under its parent. The `StartsWith` invariant is **deleted, not preserved**.
@@ -643,12 +681,12 @@ Location = RealDirectory(path)
 ## Steps
 
 1. `Location` as a record union next to `Msg`/`Effect`. Add `Entry.Target`.
-2. Migrate `Column.Path` → `Column.Location`, `Effect.ReadDirectory`, and title generation in
+2. Migrate `Column.Path` 竊・`Column.Location`, `Effect.ReadDirectory`, and title generation in
    `StateProjection` (from the `Location`, not by parsing a path). All 19 `""` sites go.
 3. **Delete the `StartsWith` invariant**; a child column's `Location` is whatever the parent row's
    `Target` said.
 4. `DirectoryWatcher` narrows to `RealDirectory`. Virtual locations are not watchable.
-5. Fix `NormalizePath` (`Transition.cs:477`) — `TrimEnd('\\','/')` maps `"C:\"` → `"C:"`, which
+5. Fix `NormalizePath` (`Transition.cs:477`) 窶・`TrimEnd('\\','/')` maps `"C:\"` 竊・`"C:"`, which
    Windows reads as *relative*.
 
 Verification is behavioural equivalence: the 471 tests migrate for types only. Any test whose
@@ -656,19 +694,19 @@ Verification is behavioural equivalence: the 471 tests migrate for types only. A
 
 ---
 
-# 6b — Column data model: raw list, derived view — **DONE** (`2cfbfee`)
+# 6b 窶・Column data model: raw list, derived view 窶・**DONE** (`2cfbfee`)
 
 **Evidence:** `check.ps1` green via the pre-commit hook. **491 tests, 0 failed** (5 new in Core).
 All pre-existing tests pass unedited.
 
 Built: `Column.AllEntries` with `Entries` derived from it (identity for now); marks recorded on
-`AllEntries` and identified **by instance**, not by name — deriving carries the same `Entry` objects
+`AllEntries` and identified **by instance**, not by name 窶・deriving carries the same `Entry` objects
 across, so reference identity assumes nothing about name uniqueness, which a `SearchResult` location
 would break. New invariant: `Entries` is a subsequence of `AllEntries`.
 
 **One deliberate behaviour change:** re-reading a directory keeps the cursor on the same *entry*
 rather than the same index, falling back to the index only when the entry is gone. Previously a file
-appearing or disappearing above the cursor silently moved it onto a different file — which then
+appearing or disappearing above the cursor silently moved it onto a different file 窶・which then
 became what the next Delete or Enter acted on.
 
 **Not yet exercised by the property tests:** no `Msg` produces a narrowed view, so `GenMsg` cannot
@@ -676,13 +714,13 @@ reach one. The subsequence invariant becomes load-bearing when collapse lands in
 joins `GenMsg`.
 
 **Was a prerequisite for 6d, not just for 6e.** Collapsible sections hide rows, and hiding rows
-through the projection alone desyncs the cursor from `Column.Entries` — the same defect the
+through the projection alone desyncs the cursor from `Column.Entries` 窶・the same defect the
 hidden-file toggle would have caused. Collapse becomes one more filter feeding the derived list, so
-it needs this model first. Order is therefore **6b → 6d**.
+it needs this model first. Order is therefore **6b 竊・6d**.
 
 
 **Corrected from the previous draft.** Filter belongs in `Transition` alongside sort, not in Runtime.
-Making one pure and the other a disk re-read was an inconsistency with no justification — and a
+Making one pure and the other a disk re-read was an inconsistency with no justification 窶・and a
 filter change needs no data the app does not already hold.
 
 ```
@@ -690,7 +728,7 @@ Column {
   Location
   AllEntries      // exactly what the last read returned
   Entries         // derived: AllEntries filtered, then sorted
-  Cursor          // indexes Entries — "what can be viewed is the source"
+  Cursor          // indexes Entries 窶・"what can be viewed is the source"
   ScrollOffset
 }
 ```
@@ -702,46 +740,46 @@ worker, no spinner.
 
 - `CheckInvariants` checks `Cursor` against `Entries`, and additionally that `Entries` is a
   subsequence of `AllEntries`.
-- **Re-sorting silently moves the cursor** — `Cursor` is an index. Fixed by the principle you gave
+- **Re-sorting silently moves the cursor** 窶・`Cursor` is an index. Fixed by the principle you gave
   for cursor memory: capture the cursor's entry *name*, re-derive, find the name again. Same for
   `ScrollOffset`.
-- **Marks on filtered-out entries — settled: visible marks only.** Marks live on `Entry`, so hiding a
+- **Marks on filtered-out entries 窶・settled: visible marks only.** Marks live on `Entry`, so hiding a
   marked file keeps its mark alive but invisible. Operations act on the **visible** list only, so a
   hidden marked file is never copied or deleted, and unhiding brings its mark back rather than
   discarding the user's selection. Consistent with "what can be viewed is the source", and it means
   the invisible-file-in-a-bulk-delete hazard cannot occur.
 
-## Sort modes — the enumeration that was missing
+## Sort modes 窶・the enumeration that was missing
 
 | Mode | Key field | Notes |
 |---|---|---|
-| Name | `Name` | **Natural/numeric ordering is in** — `file2` before `file10`. Confirmed, not optional |
+| Name | `Name` | **Natural/numeric ordering is in** 窶・`file2` before `file10`. Confirmed, not optional |
 | Extension | derived from `Name` | Ties to name as secondary |
 | Size | `SizeBytes` | Directories are `-1`; where they land is a sub-decision |
 | Modified | `Modified` | Present today |
 | Created | **missing** | `Entry` has no `Created` field. Adding it costs a `FileInfo` read already being done |
 | Deleted-on | **missing** | Recycle Bin only; a distinct field the shell supplies |
-| Type | shell type name | **Effectively free** — see below |
+| Type | shell type name | **Effectively free** 窶・see below |
 
 Plus **direction** (asc/desc) and **directories-first**, which per your correction is a *mode that
 composes*, not a permanent grouping.
 
-### Sorting by "type" — which type, and what it really costs
+### Sorting by "type" 窶・which type, and what it really costs
 
 The instinct that a filer is fast because it reads names and touches attributes only when needed is
 right. For *this* comparison it cuts the other way, which is worth stating plainly:
 
 | | Input it needs | Touches each file? | Cost profile |
 |---|---|---|---|
-| **Our `FileTypeDetector`** | the file's first bytes | **Yes — open + read every file** | Ruinous when sorting a directory; fine for the one file being previewed |
+| **Our `FileTypeDetector`** | the file's first bytes | **Yes 窶・open + read every file** | Ruinous when sorting a directory; fine for the one file being previewed |
 | **Shell `SHGFI_TYPENAME`** | path string + attributes | **No** | Registry association lookup per *distinct extension*, then cached |
 
-`FileTypeDetector` is magic-bytes only and takes a byte array, not a path — its own doc comment says
+`FileTypeDetector` is magic-bytes only and takes a byte array, not a path 窶・its own doc comment says
 it "has no extension-based fallback (Core never sees a path here)" (`FileTypeDetector.cs:34`). So
 sorting a column by our type means opening and reading the head of **every file in it**. That is the
 disk access to avoid, and it is on our side, not the shell's.
 
-`SHGFI_USEFILEATTRIBUTES` means the shell must *not* access the file — it answers from the path
+`SHGFI_USEFILEATTRIBUTES` means the shell must *not* access the file 窶・it answers from the path
 string and the attributes passed in. Not literally free: it is a registry lookup, and for some types
 the shell may load a handler DLL, so the first call per extension costs milliseconds. But it is
 per-extension and cached, not per-file.
@@ -751,7 +789,7 @@ per-extension and cached, not per-file.
 `ShellIconCache` makes exactly this call keyed by extension (`ShellIconCache.cs:35`, `:82`). Adding
 `SHGFI_TYPENAME` is one more flag on a call already being made.
 
-**Proposal — split sort key from displayed label:**
+**Proposal 窶・split sort key from displayed label:**
 
 - **Sort by the shell type name.** Filename-only, already-cached, no per-file I/O.
 - **Keep our detector for the preview** and for the extension-mismatch warning, where the head has
@@ -767,21 +805,21 @@ becomes a real cost again and would need its own extension-keyed pass.
 
 | Location | Sortable? |
 |---|---|
-| `Drives` (root pane) | **No.** Curated order — sections and their fixed contents. A user sort would fight the headers |
+| `Drives` (root pane) | **No.** Curated order 窶・sections and their fixed contents. A user sort would fight the headers |
 | `RealDirectory` | All modes |
 | `RecycleBin` | Name / size / deleted-on |
 | `Archive` (Phase 9) | Name / size / modified |
 | `SearchResult` (later) | Path / relevance |
 
-So sort state is **per-`Location`-kind**, not global — and the root pane simply has none.
+So sort state is **per-`Location`-kind**, not global 窶・and the root pane simply has none.
 
 ---
 
-# 6c — Cancellable preview pipeline — **done**
+# 6c 窶・Cancellable preview pipeline 窶・**done**
 
 **Done:** dedicated single-slot preview executor off the worker pool; `Effect.CancelPreview` emitted
 by `ReconcilePreview` when a load is abandoned; `CancellationToken` through the head read and
-ffmpeg's wait loop (kills the process rather than waiting out its budget); poll interval 4s → 250ms.
+ffmpeg's wait loop (kills the process rather than waiting out its budget); poll interval 4s 竊・250ms.
 
 **Evidence:** `check.ps1` green via the pre-commit hook. **477 tests, 0 failed** (6 new: 3 Core for
 cancel emission, 3 Runtime for cancel handling and slot reuse).
@@ -789,10 +827,10 @@ cancel emission, 3 Runtime for cancel handling and slot reuse).
 **Verification gap, stated plainly:** the stall relief itself has no automated test. Reproducing it
 needs a preview that genuinely blocks, which needs either ffmpeg guaranteed present or a seam for
 injecting a slow preview; a text preview completes in microseconds so the guard test would have
-passed before the fix too. The test says so in its own remarks. **Still wants a manual run**: hold ↓
+passed before the fix too. The test says so in its own remarks. **Still wants a manual run**: hold 竊・
 through a folder of large videos and confirm navigation stays responsive.
 
-**Thumbnail cache — done** (`2f4459c`). Key = path + last-write + length; failures cached too, but
+**Thumbnail cache 窶・done** (`2f4459c`). Key = path + last-write + length; failures cached too, but
 *only* verdicts ffmpeg actually reached (`ThumbnailFailure.FileRejected` vs `Unavailable`), so a
 missing ffmpeg or a timeout is never remembered against a file. Temp-file-then-move so a crash
 cannot leave a half-written entry. Sweep: 30 days, then oldest-first to 256MB, off-thread from the
@@ -800,14 +838,14 @@ constructor. Directory injectable.
 
 **A defect in 6c part 1, found and fixed** (`ae3219a`): `CancelPreview` carried a generation that the
 runtime ignored, cancelling whatever was current. Since `ReconcilePreview` emits cancel+load together
-into a channel drained by several workers, the cancel could execute *after* the load and kill it —
-leaving the pane on 読み込み中… forever. Caught only as an intermittent test timeout.
+into a channel drained by several workers, the cancel could execute *after* the load and kill it 窶・
+leaving the pane on 隱ｭ縺ｿ霎ｼ縺ｿ荳ｭ窶ｦ forever. Caught only as an intermittent test timeout.
 
 **6c.5 landed** - shell thumbnails before ffmpeg. See record 6c-7 for why it is `IThumbnailCache` rather than the `IShellItemImageFactory` named below.
 
 ## What is actually broken
 
-Not the spinner — `PreviewKind.Loading` renders 読み込み中… (`MainWindow.xaml.cs:865`). Two gaps:
+Not the spinner 窶・`PreviewKind.Loading` renders 隱ｭ縺ｿ霎ｼ縺ｿ荳ｭ窶ｦ (`MainWindow.xaml.cs:865`). Two gaps:
 
 1. **Nothing cancels in-flight work.** `ReconcilePreview` bumps the generation and discards the stale
    result, but the worker runs to completion. `Effect.CancelJob` exists; `CancelPreview` does not.
@@ -822,16 +860,16 @@ cannot be dequeued, so a cancel signal has nothing to act on.
 
 - **Dedicated single-slot preview executor**, separate from the effect pool; a new request cancels
   the one in flight. `ReadDirectory` can never queue behind a preview.
-- `Effect.CancelPreview`, emitted by `ReconcilePreview` — Core stays authoritative about what is abandoned.
+- `Effect.CancelPreview`, emitted by `ReconcilePreview` 窶・Core stays authoritative about what is abandoned.
 - `CancellationToken` through the file open, head read, and `VideoThumbnailer` (async wait + kill).
 - **Shell thumbnail first, ffmpeg as fallback** (see inventory).
 - **Thumbnail cache** for the ffmpeg path only, keyed on path + `LastWriteTimeUtc` + length per
-  zurari's `GetVideoCachePath`. **Cache failures too** — a corrupt `.mp4` otherwise re-spins for the
+  zurari's `GetVideoCachePath`. **Cache failures too** 窶・a corrupt `.mp4` otherwise re-spins for the
   full timeout on every cursor landing. `%LOCALAPPDATA%` means owning eviction: a size or age budget.
 
 
 ---
-# 6d — The root pane — **done**
+# 6d 窶・The root pane 窶・**done**
 
 All nine items are in and tested (see the Status table for commits). What remains is the manual
 pass on real hardware in record 6d-4; everything below this line is the design as it was decided,
@@ -841,19 +879,19 @@ kept for the reasoning.
 
 | Row | Kind | Target | Preview |
 |---|---|---|---|
-| Section header | **`Header`** (new) | none | unreachable — not selectable |
+| Section header | **`Header`** (new) | none | unreachable 窶・not selectable |
 | Fixed / removable / optical / RAM drive | `Drive` | `RealDirectory("D:\")` | capacity panel |
 | Network drive (mapped) | `Drive` | `RealDirectory("Z:\")` | capacity; label via `WNetGetConnection` |
 | Mounted image | `Drive` | `RealDirectory("E:\")` | capacity; eject offered |
-| Not-ready drive (empty optical) | `Drive` | — | "Not ready", not enterable |
-| Pinned UNC share | `Directory` | `RealDirectory(@"\\srv\share")` | capacity via `GetDiskFreeSpaceEx` — **`DriveInfo` throws on UNC** (verified) |
+| Not-ready drive (empty optical) | `Drive` | 窶・| "Not ready", not enterable |
+| Pinned UNC share | `Directory` | `RealDirectory(@"\\srv\share")` | capacity via `GetDiskFreeSpaceEx` 窶・**`DriveInfo` throws on UNC** (verified) |
 | Favorite (known folder) | `Directory` | `RealDirectory(path)` | as a directory |
 | **Trash** | `Directory` | **`RecycleBin`** | item count + total size via `SHQueryRecycleBin` |
 | Directory / file | `Directory` / `File` | as today | as today |
 | Link / junction | `Directory`/`File` + reparse flag | resolved target | target path in metadata |
 
 One new `EntryKind` (`Header`), plus `Entry.Target`, `DisplayName`, `Group`, and a drive-subtype
-field. **Drive subtype is a field, not a kind** — folding five `DriveType` values into `EntryKind`
+field. **Drive subtype is a field, not a kind** 窶・folding five `DriveType` values into `EntryKind`
 would multiply its 88 usage sites.
 
 **Per-row-kind operation rules are needed.** zurari blocks copy, move and bookmark on the drive list
@@ -861,10 +899,10 @@ by name (`..\zurari\Program.cs:3581`, `:3602`, `:6267`). With Trash, pins and fa
 finer: Trash accepts *restore* and *empty* but not paste; a favorite is a normal directory for
 operations; a not-ready drive accepts nothing. This becomes a table on `Location`, not scattered guards.
 
-## Headers — the design does not exist
+## Headers 窶・the design does not exist
 
 Honest answer to "where is it stated?": **nowhere.** There are no mockups, no color spec, and no
-design tokens anywhere in the repo — `Generic.xaml` uses inline hex literals (`#FFB0B0B0`,
+design tokens anywhere in the repo 窶・`Generic.xaml` uses inline hex literals (`#FFB0B0B0`,
 `#FF3A86E0`), row padding `6,2`, icon height 16, and no named brush resources. zurari has no
 precedent either: its drive list is a flat `DriveInfo.GetDrives()` with no sections.
 
@@ -881,12 +919,12 @@ Recommendation: introduce named brush resources at the same time, since inventin
 against hardcoded literals just adds a sixth. And render the mockup against the *real* row metrics
 already in `Generic.xaml` (padding `6,2`, icon 16px) so what is approved is what ships.
 
-## Headers live in Core — reversed again, deliberately
+## Headers live in Core 窶・reversed again, deliberately
 
 **The cursor lands on the section name, and `Space` collapses/expands it.** That decides the
 question: a row the cursor can reach must be in `Column.Entries`, because `Cursor` is an index into
 it. So `EntryKind.Header` goes into Core after all, and the projection-only design below is
-superseded — kept for the reasoning, which is still what makes the *rest* of the rules right.
+superseded 窶・kept for the reasoning, which is still what makes the *rest* of the rules right.
 
 What this costs, knowingly:
 
@@ -894,17 +932,17 @@ What this costs, knowingly:
 - `GenMsg` must generate states containing headers, and the property tests then explore them.
 - Marks must exclude headers (`DeleteMarked` and rectangle-selection already skip `Drive`; `Header`
   joins it), and `Space` becomes context-dependent: mark at cursor normally, collapse on a header.
-- Search must still skip headers — narrowing to "ドライブ" makes no sense. That is now a filter
+- Search must still skip headers 窶・narrowing to "繝峨Λ繧､繝・ makes no sense. That is now a filter
   inside search rather than a structural guarantee.
 
 What it saves: **`EntryVm.CoreIndex` is no longer needed.** Headers being real entries means the VM
 index and the Core index stay 1:1, so the translation layer through `ColumnBrowser`/`ColumnView` -
 which was the sharp edge of the projection-only design - disappears entirely.
 
-### Key bindings — all three already exist, verified
+### Key bindings 窶・all three already exist, verified
 
-- `←` is already inert in the root pane: `GoToParent` returns unchanged at column 0. Left alone.
-- `→` keeps descend-or-advance-focus (`HandleRight`). Not repurposed.
+- `竊秦 is already inert in the root pane: `GoToParent` returns unchanged at column 0. Left alone.
+- `竊蛋 keeps descend-or-advance-focus (`HandleRight`). Not repurposed.
 - **Device refresh is already `F5`** (and `Ctrl+R`): `Msg.Refresh` re-reads every column, and the
   root column's read *is* `ReadDrives()`. No new binding, and nothing slow on an accidental arrow.
 
@@ -915,7 +953,7 @@ Only `Space`-on-a-header is new.
 Headers are not entries. Search must not narrow to "Drives"; the cursor must never land on one;
 they have no target, no size, no date, and no operations. Putting them in `Column.Entries` would
 mean adding an `EntryKind` member across 88 sites, a "`Cursor` never points at a `Header`"
-invariant, `GenMsg` cases, and header-skipping in every navigation path — all to model something
+invariant, `GenMsg` cases, and header-skipping in every navigation path 窶・all to model something
 that then has to be excluded from each of them in turn.
 
 Keeping them out of Core makes every one of those costs vanish rather than be paid and then worked
@@ -924,7 +962,7 @@ because there are no headers in the list they walk.
 
 **Design:**
 
-- `Entry.Group` lives in Core as **data** — it is a real property of a row (which section it belongs
+- `Entry.Group` lives in Core as **data** 窶・it is a real property of a row (which section it belongs
   to), and features like "select all in this section" can use it.
 - `StateProjection` synthesizes header rows from `Group`.
 - `EntryVm.CoreIndex` carries the real index, and `ColumnBrowser` reports *that* rather than the raw
@@ -934,11 +972,11 @@ because there are no headers in the list they walk.
 
 Headers turned out not to belong in Core, but the class of error is real and these do:
 
-- **`DisplayName` must be searchable** — search should match "Data (D:)", not just `D:\`. On `Entry`
+- **`DisplayName` must be searchable** 窶・search should match "Data (D:)", not just `D:\`. On `Entry`
   already, but only by luck.
 - **Sorting must be in Core** or Leap and search index a different order than `Transition` holds. (6b.)
 - **Filtering must not be a view filter** or marks and cursor desync. (6b.)
-- **Cursor memory keys on entry name**, which requires the name to be in Core — it is.
+- **Cursor memory keys on entry name**, which requires the name to be in Core 窶・it is.
 - **`Entry.Group` must be in Core**, even though headers are not: "select all in this section" and
   any section-aware navigation need it as data.
 - **`CoreIndex` translation is the sharp edge.** Every event path from `ColumnBrowser` and every
@@ -947,7 +985,7 @@ Headers turned out not to belong in Core, but the class of error is real and the
 
 ## Commands, keys and help
 
-Every command added here needs a keybinding **and** a help entry — the key-hint/help screen is
+Every command added here needs a keybinding **and** a help entry 窶・the key-hint/help screen is
 already a Phase 6 item, and it is the only way any of this is discoverable. Eject is the example that
 prompted this, but it applies to mount, pin/unpin, sort mode, sort direction, hidden toggle, preview
 toggle, new folder, rename, and open-with-default-app. A single command table drives both the
@@ -956,54 +994,54 @@ key dispatch and the help screen, so the two cannot drift.
 ## Remaining decisions
 
 - Surface `DriveType` / `VolumeLabel` / `IsReady`, all discarded today at `WorkerRuntime.cs:155`.
-- Enter on `.iso` invokes the shell `mount` verb — `Windows.IsoFile` registers it (verified), no
+- Enter on `.iso` invokes the shell `mount` verb 窶・`Windows.IsoFile` registers it (verified), no
   elevation. VHD/VHDX deferred (`AttachVirtualDisk` needs admin). On success, refresh and put the
   cursor on the new drive; do not auto-descend.
-- `Effect.LoadPreview` carries a target kind, not a bare path — a drive's `C:\` is also a valid
+- `Effect.LoadPreview` carries a target kind, not a bare path 窶・a drive's `C:\` is also a valid
   directory path. `PreviewKind` gains `Drive`. Port zrr's `LoadDrive` (`..\zurari\Program.cs:2545`).
-- **No `Environment.SpecialFolder.Downloads`** (verified) — needs `SHGetKnownFolderPath`.
+- **No `Environment.SpecialFolder.Downloads`** (verified) 窶・needs `SHGetKnownFolderPath`.
 
 ---
 
-# 6e — Sorting, hidden files, cursor memory, rename
+# 6e 窶・Sorting, hidden files, cursor memory, rename
 
 Data model and sort tables are in 6b. Remaining:
 
 **Hidden files.** `Entries` is the derived visible list, so the toggle is pure. Runtime must return
 hidden entries in `AllEntries` for the filter to have anything to reveal.
 
-**Cursor memory.** Entry name, never index — index breaks on sort change, deletion and refresh.
-Matches zurari's LRU-capped `path → entry name` map (`..\zurari\Program.cs:2929`), session-only.
+**Cursor memory.** Entry name, never index 窶・index breaks on sort change, deletion and refresh.
+Matches zurari's LRU-capped `path 竊・entry name` map (`..\zurari\Program.cs:2929`), session-only.
 Belongs on `AppState` as an `ImmutableDictionary`; **the LRU cap must be a checked invariant** or the
 map grows without bound inside the property tests. Headers excluded.
 
-**Rename.** Explorer overlays a just-sized TextBox on the filename — here a WPF Adorner over the
+**Rename.** Explorer overlays a just-sized TextBox on the filename 窶・here a WPF Adorner over the
 row's `ListBoxItem`, not an editable item template, so `VirtualizationMode="Recycling"` and
 template-selector concerns do not apply. `ColumnView` already computes container bounds for
-rectangle-selection. `TextBox` handles IME natively. Conflict → inline message, editor stays open
+rectangle-selection. `TextBox` handles IME natively. Conflict 竊・inline message, editor stays open
 with the text selected.
 
-Also here: new folder (cursor lands on it) and open-with-default-app — `Enter` already reaches Core
-as `EntryActivated` → `Msg.EnterDirectory` (`MainWindow.xaml.cs:95`), so it is a branch on
+Also here: new folder (cursor lands on it) and open-with-default-app 窶・`Enter` already reaches Core
+as `EntryActivated` 竊・`Msg.EnterDirectory` (`MainWindow.xaml.cs:95`), so it is a branch on
 `EntryKind` plus a Shell effect, not a new input path.
 
 ---
 
-# 6e-bis — Smooth cursor movement
+# 6e-bis 窶・Smooth cursor movement
 
-**Objective: ↑/↓ stays responsive regardless of directory size.** This is a named goal, not a
-one-off fix — the projection rebuild below is the first cause found, and further ones are expected
+**Objective: 竊・竊・stays responsive regardless of directory size.** This is a named goal, not a
+one-off fix 窶・the projection rebuild below is the first cause found, and further ones are expected
 to surface behind it once it is gone. Each gets measured before and after.
 
-## Cause 1: the projection rebuilds everything on every keystroke — **fixed** (`f61c46b`)
+## Cause 1: the projection rebuilds everything on every keystroke 窶・**fixed** (`f61c46b`)
 
-**Measured, projection only, per cursor move:** 1k 1.09 → 0.016 ms; 10k 15.19 → 0.001 ms;
-50k 92.14 → **0.002 ms**. The row array is now reused, so WPF's `ItemsSource` assignment is a no-op
+**Measured, projection only, per cursor move:** 1k 1.09 竊・0.016 ms; 10k 15.19 竊・0.001 ms;
+50k 92.14 竊・**0.002 ms**. The row array is now reused, so WPF's `ItemsSource` assignment is a no-op
 and the container rebuild is gone as well.
 
 
 Measured cost of `StateProjection.Project` for a **single column with the cursor moving up/down**
-(not switching columns): 1k entries 0.89 ms, 10k 17.1 ms, **50k 83.9 ms** — before WPF does anything.
+(not switching columns): 1k entries 0.89 ms, 10k 17.1 ms, **50k 83.9 ms** 窶・before WPF does anything.
 
 A cursor move changes one integer, but `Project` rebuilds every `EntryVm` in the column (resolving
 an icon each) into a **new array**. `Generic.xaml` binds `ItemsSource="{Binding Column.Entries}"`, so
@@ -1017,7 +1055,7 @@ move (verified), so the work is pure waste.
 `Location`, and the cut-pending set. Handing WPF the same array reference makes the `ItemsSource`
 setter a no-op and the container rebuild disappears.
 
-## Remaining candidates — all measured, one acted on
+## Remaining candidates 窶・all measured, one acted on
 
 Measured through the **full WPF cycle** (a real off-screen window, `Columns` assigned, dispatcher
 pumped), per cursor move:
@@ -1030,7 +1068,7 @@ pumped), per cursor move:
 Cursor cost is now essentially flat in directory size, and ~1.7 ms against a ~33 ms budget at
 key-repeat rate.
 
-- **Double `ScrollIntoView`: measured 0.7–0.9 ms, deliberately left alone.** The second call is a
+- **Double `ScrollIntoView`: measured 0.7窶・.9 ms, deliberately left alone.** The second call is a
   documented workaround for scrolling stalling at the viewport edge (`43d6358`, `16f2283`). Removing
   it would reclaim well under a millisecond and risk reintroducing a visible bug.
 - **`RenderPreview` / `RenderJobs`: negligible, no change.** `RenderJobs` is O(jobs), normally zero.
@@ -1046,7 +1084,7 @@ cancelling side disposed the `CancellationTokenSource` while its task still held
 settle wait started using it), and `StartPreview` could run out of order and let a stale generation
 win, leaving the pane loading forever.
 
-# 6f — Findings parked from 6a–6e
+# 6f 窶・Findings parked from 6a窶・e
 
 Not in the original scope, found while doing it, and all touching "basic operations" rather than any
 one feature. Recorded so they are not lost.
@@ -1066,21 +1104,21 @@ one feature. Recorded so they are not lost.
   temp-file-then-move, so a crash partway cannot leave a truncated file that loads as defaults and
   discards every preference rather than the one being written.
 
-# Configuration — following rwf and zurari
+# Configuration 窶・following rwf and zurari
 
 ## The problem is already in the repo
 
 `UserSettingsStore` resolves its path from a **static** property with no injection point. So
 `tests/Zurari.Runtime.Tests/UserSettingsStoreTests.cs` writes to the **real** `%APPDATA%` and
 save-restores around it, and its second test carries the comment *"Cannot safely delete the real
-settings file"* — the corrupt and missing cases are untestable today.
+settings file"* 窶・the corrupt and missing cases are untestable today.
 
-**Both references already solved this.** rwf has `ConfigManager::with_paths(…)` beside the
+**Both references already solved this.** rwf has `ConfigManager::with_paths(窶ｦ)` beside the
 `dirs::config_dir()` default. zurari has `_pathOverride` on its `Bookmarks` store
 (`..\zurari\Program.cs:1310`). zurari_w is the outlier.
 
 Correcting my earlier note: zurari is not config-free. It has no *settings* file by design, but it
-does persist bookmarks to `%APPDATA%\zurari\bookmarks.txt` — the same directory zurari_w already uses.
+does persist bookmarks to `%APPDATA%\zurari\bookmarks.txt` 窶・the same directory zurari_w already uses.
 
 ## Decisions
 
@@ -1092,31 +1130,31 @@ does persist bookmarks to `%APPDATA%\zurari\bookmarks.txt` — the same director
 
 ---
 
-# Windows facilities — inventory and decisions
+# Windows facilities 窶・inventory and decisions
 
 Already wrapped in `NativeMethods.cs`: `SHGetFileInfoW`, `SHCreateItemFromParsingName`,
-`SHParseDisplayName`, `SHBindToParent` — so `IShellItem` is one hop away, not new ground.
+`SHParseDisplayName`, `SHBindToParent` 窶・so `IShellItem` is one hop away, not new ground.
 
 | Facility | API | What it buys | Decision |
 |---|---|---|---|
-| Directory change | `FileSystemWatcher` | in use today | **Keep** for `RealDirectory`. On buffer overflow or share disconnect, `OnError` fires and that path silently stops being watched (`DirectoryWatcher.cs:175`) — needs a re-arm, not just a log |
-| Shell change | **`SHChangeNotifyRegister`** | drive add/remove, media insert/eject, network share, renames — a **superset** of the drive events `WM_DEVICECHANGE` gives, via one window message | **Adopt for the root pane** |
+| Directory change | `FileSystemWatcher` | in use today | **Keep** for `RealDirectory`. On buffer overflow or share disconnect, `OnError` fires and that path silently stops being watched (`DirectoryWatcher.cs:175`) 窶・needs a re-arm, not just a log |
+| Shell change | **`SHChangeNotifyRegister`** | drive add/remove, media insert/eject, network share, renames 窶・a **superset** of the drive events `WM_DEVICECHANGE` gives, via one window message | **Adopt for the root pane** |
 | Device arrival | `WM_DEVICECHANGE` | volume arrival/removal, no registration | **Skip** unless testing shows `SHChangeNotifyRegister` gaps |
-| Thumbnails | **`IShellItemImageFactory::GetImage`** | Explorer's own thumbnails for video, PDF, Office — no ffmpeg, and **Windows caches them itself** | **Try first, ffmpeg fallback.** Inverts the dependency correctly and shrinks our cache to the fallback path. Depends on installed extractors; must run off the UI thread |
+| Thumbnails | **`IShellItemImageFactory::GetImage`** | Explorer's own thumbnails for video, PDF, Office 窶・no ffmpeg, and **Windows caches them itself** | **Try first, ffmpeg fallback.** Inverts the dependency correctly and shrinks our cache to the fallback path. Depends on installed extractors; must run off the UI thread |
 | Display names | `IShellItem::GetDisplayName(SIGDN_NORMALDISPLAY)` | "Data (D:)" exactly as Explorer renders it | **Adopt** for drive `DisplayName` |
-| Type names | `SHGetFileInfo` + `SHGFI_TYPENAME` | Explorer's Type text ("PNG ファイル"). **One extra flag on the call `ShellIconCache` already makes**, sharing its extension-keyed cache | **Adopt** — makes sort-by-type cheap and gives the preview a real type line |
-| Known folders | `SHGetKnownFolderPath` | Downloads — no `SpecialFolder` member exists | **Required** for favorites |
+| Type names | `SHGetFileInfo` + `SHGFI_TYPENAME` | Explorer's Type text ("PNG 繝輔ぃ繧､繝ｫ"). **One extra flag on the call `ShellIconCache` already makes**, sharing its extension-keyed cache | **Adopt** 窶・makes sort-by-type cheap and gives the preview a real type line |
+| Known folders | `SHGetKnownFolderPath` | Downloads 窶・no `SpecialFolder` member exists | **Required** for favorites |
 | Recycle Bin contents | shell namespace (`FOLDERID_RecycleBinFolder`) | listing Trash as a column | **Required** for the Trash row |
-| Recycle Bin stats | **`SHQueryRecycleBin`** | item count and total size | **Adopt** — this is the Trash row's preview |
+| Recycle Bin stats | **`SHQueryRecycleBin`** | item count and total size | **Adopt** 窶・this is the Trash row's preview |
 | UNC capacity | `GetDiskFreeSpaceEx` | free/total on a share; `DriveInfo` throws on UNC | **Required** for pinned shares |
-| Mapped-drive target | `WNetGetConnection` | `Z:` → `\\srv\share` for the label | **Adopt**, cheap |
+| Mapped-drive target | `WNetGetConnection` | `Z:` 竊・`\\srv\share` for the label | **Adopt**, cheap |
 | ISO mount | shell `mount` verb via `ShellExecuteEx` | mount without elevation | **Adopt** |
 | Placeholder files | `FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS` / `FILE_ATTRIBUTE_OFFLINE` | detect files that **hydrate on open** | **Adopt**: never auto-preview one; show a "press to load" affordance |
-| Taskbar progress | `ITaskbarList3::SetProgressValue` | job progress on the taskbar icon | **Defer** — polish, no dependency |
+| Taskbar progress | `ITaskbarList3::SetProgressValue` | job progress on the taskbar icon | **Defer** 窶・polish, no dependency |
 | Dark title bar | `DwmSetWindowAttribute` | native dark chrome | **Defer** |
 
 **On placeholders:** OneDrive is only the common example. The attribute is set by any Cloud Files API
-provider — OneDrive, Dropbox, Google Drive, iCloud for Windows — and `FILE_ATTRIBUTE_OFFLINE` also
+provider 窶・OneDrive, Dropbox, Google Drive, iCloud for Windows 窶・and `FILE_ATTRIBUTE_OFFLINE` also
 covers HSM and archive tiers. Detect the attribute, never a vendor.
 
 ---
@@ -1131,16 +1169,16 @@ covers HSM and archive tiers. Detect the attribute, never a vendor.
   the same as Explorer. `ResolveCanonicalPath` plus a visited-set (`:4042`) becomes the design to
   copy only if the chain is ever extended more than one deep at a time. Link *display* is cheap and
   rides along in 6d.
-- **VHD/VHDX mounting** — needs elevation.
-- Extension-mismatch warning, audio/exe/PDF metadata, MP4 self-parsing — small and unblocked; the
+- **VHD/VHDX mounting** 窶・needs elevation.
+- Extension-mismatch warning, audio/exe/PDF metadata, MP4 self-parsing 窶・small and unblocked; the
   shell-thumbnail decision may make MP4 self-parsing unnecessary.
 
 # Documentation fixes to fold in
 
 - `plan/roadmap.md:4` says HEAD `16f2283`; it is `b561d45`.
-- The three video-thumbnail rows marked 実装済み(未コミット) were committed in `b561d45`.
+- The three video-thumbnail rows marked 螳溯｣・ｸ医∩(譛ｪ繧ｳ繝溘ャ繝・ were committed in `b561d45`.
 - CLAUDE.md points at `docs/superpowers/plans/`; the live plans are in `plan/`. A fresh session reads
   the stale copies and never sees `phase6-basic-operations.md`.
-- `plan/phase8-virtual-locations.md` says the `""` special case exists in one place. It is 19 — and
+- `plan/phase8-virtual-locations.md` says the `""` special case exists in one place. It is 19 窶・and
   that file folds into 6a.
 - Phase 8 is no longer separate; the roadmap table needs resequencing.

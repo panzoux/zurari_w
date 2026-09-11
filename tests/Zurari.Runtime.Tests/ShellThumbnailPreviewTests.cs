@@ -5,8 +5,9 @@ using Zurari.Runtime;
 namespace Zurari.Runtime.Tests;
 
 /// <summary>
-/// Where Explorer's thumbnail sits in the video preview (6c.5): before ffmpeg, cached here, and never
-/// asked for a file whose bytes live on a share.
+/// Where Explorer's thumbnail sits in the preview: before ffmpeg for video (6c.5), before the text
+/// sniff and hex dump for PDF and Office documents, cached here, and never asked for a file whose
+/// bytes live on a share.
 /// </summary>
 public class ShellThumbnailPreviewTests
 {
@@ -63,6 +64,11 @@ public class ShellThumbnailPreviewTests
             Assert.Equal(PreviewKind.Image, loaded.Kind);
             Assert.Equal(OnePixelPng, loaded.ImageBytes);
             Assert.Equal(1, asked);
+
+            // The picture is the video's, so it says so - and its own 1x1 size is not the video's
+            // resolution.
+            Assert.Equal("MP4 Video", loaded.Text);
+            Assert.Null(loaded.Metadata!.PixelWidth);
         }
         finally
         {
@@ -176,6 +182,279 @@ public class ShellThumbnailPreviewTests
         {
             TempDirectory.Delete(dir);
         }
+    }
+
+    /// <summary>A PDF whose bytes are all ASCII - legal, and common for small generated ones.</summary>
+    private const string AsciiPdf =
+        "%PDF-1.4\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n";
+
+    /// <summary>A ZIP local-file header: what a .docx, .xlsx or .pptx starts with.</summary>
+    private static readonly byte[] ZipHead = [0x50, 0x4B, 0x03, 0x04, 0x14, 0x00, 0x06, 0x00, 0x08, 0x00];
+
+    /// <summary>An OLE compound-file header: what a .doc, .xls or .ppt starts with.</summary>
+    private static readonly byte[] OleHead = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1, 0x00, 0x00];
+
+    private static Msg.PreviewLoaded LoadOnce(string dir, string file, Func<string, int, byte[]?> shellThumbnail)
+    {
+        var queue = new ConcurrentQueue<Msg>();
+        using var runtime = new WorkerRuntime(
+            queue.Enqueue,
+            thumbnailCache: new ThumbnailCache(Path.Combine(dir, "cache")),
+            shellThumbnail: shellThumbnail);
+
+        runtime.Submit(new Effect.LoadPreview(1, file));
+        return WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
+    }
+
+    /// <summary>
+    /// The ASCII PDF matters: it decodes as text, so if the document branch sat after the text sniff
+    /// the preview would be the PDF's own source.
+    /// </summary>
+    [Fact]
+    public void A_pdf_previews_as_explorers_thumbnail_labelled_as_a_pdf()
+    {
+        var dir = TempDirectory.Create("zurari-shellpreview");
+        try
+        {
+            var pdf = Path.Combine(dir, "paper.pdf");
+            File.WriteAllText(pdf, AsciiPdf);
+            var askedFor = new ConcurrentQueue<(string Path, int Size)>();
+
+            var loaded = LoadOnce(dir, pdf, (path, size) =>
+            {
+                askedFor.Enqueue((path, size));
+                return OnePixelPng;
+            });
+
+            Assert.Equal(PreviewKind.Image, loaded.Kind);
+            Assert.Equal(OnePixelPng, loaded.ImageBytes);
+            Assert.Equal("PDF Document", loaded.Text);
+            Assert.Null(loaded.Metadata!.PixelWidth);
+            Assert.Equal([(pdf, 512)], askedFor);
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
+
+    [Theory]
+    [InlineData("letter.docx", "zip", "Word Document")]
+    [InlineData("old-letter.doc", "ole", "Word Document")]
+    [InlineData("budget.xlsx", "zip", "Excel Workbook")]
+    [InlineData("old-budget.xls", "ole", "Excel Workbook")]
+    [InlineData("deck.pptx", "zip", "PowerPoint Presentation")]
+    [InlineData("SHOUTING.PDF", "zip", "PDF Document")]
+    public void Office_documents_are_offered_by_their_extension(string name, string head, string label)
+    {
+        var dir = TempDirectory.Create("zurari-shellpreview");
+        try
+        {
+            var file = Path.Combine(dir, name);
+            File.WriteAllBytes(file, head == "zip" ? ZipHead : OleHead);
+
+            var loaded = LoadOnce(dir, file, (_, _) => OnePixelPng);
+
+            Assert.Equal(PreviewKind.Image, loaded.Kind);
+            Assert.Equal(label, loaded.Text);
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
+
+    /// <summary>
+    /// With no thumbnail handler installed - this machine, as it happens - a document previews
+    /// exactly as it did before documents were offered to the shell at all.
+    /// </summary>
+    [Fact]
+    public void Without_a_handler_a_document_keeps_the_preview_it_had()
+    {
+        var dir = TempDirectory.Create("zurari-shellpreview");
+        try
+        {
+            var pdf = Path.Combine(dir, "paper.pdf");
+            File.WriteAllText(pdf, AsciiPdf);
+            var docx = Path.Combine(dir, "letter.docx");
+            File.WriteAllBytes(docx, ZipHead);
+            var asked = 0;
+            byte[]? NoHandler(string path, int size)
+            {
+                Interlocked.Increment(ref asked);
+                return null;
+            }
+
+            var pdfPreview = LoadOnce(dir, pdf, NoHandler);
+            var docxPreview = LoadOnce(dir, docx, NoHandler);
+
+            Assert.Equal(2, asked);
+            Assert.Equal(PreviewKind.Text, pdfPreview.Kind);
+            Assert.Equal(AsciiPdf, pdfPreview.Text);
+            Assert.Equal(PreviewKind.Binary, docxPreview.Kind);
+            Assert.Equal("ZIP Archive", docxPreview.BinaryLabel);
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
+
+    /// <summary>
+    /// No handler is a fact about the machine, not the file: install Office and the next look should
+    /// get a thumbnail, not a remembered failure.
+    /// </summary>
+    [Fact]
+    public void A_missing_handler_is_not_remembered_against_the_file()
+    {
+        var dir = TempDirectory.Create("zurari-shellpreview");
+        try
+        {
+            var docx = Path.Combine(dir, "letter.docx");
+            File.WriteAllBytes(docx, ZipHead);
+            var handlerInstalled = false;
+            var queue = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(
+                queue.Enqueue,
+                thumbnailCache: new ThumbnailCache(Path.Combine(dir, "cache")),
+                shellThumbnail: (_, _) => Volatile.Read(ref handlerInstalled) ? OnePixelPng : null);
+
+            runtime.Submit(new Effect.LoadPreview(1, docx));
+            var before = WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
+            Volatile.Write(ref handlerInstalled, true);
+            runtime.Submit(new Effect.LoadPreview(2, docx));
+            var after = WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
+
+            Assert.Equal(PreviewKind.Binary, before.Kind);
+            Assert.Equal(PreviewKind.Image, after.Kind);
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
+
+    [Fact]
+    public void A_document_thumbnail_is_kept_so_the_shell_is_not_asked_twice()
+    {
+        var dir = TempDirectory.Create("zurari-shellpreview");
+        try
+        {
+            var pdf = Path.Combine(dir, "paper.pdf");
+            File.WriteAllText(pdf, AsciiPdf);
+            var asked = 0;
+            var queue = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(
+                queue.Enqueue,
+                thumbnailCache: new ThumbnailCache(Path.Combine(dir, "cache")),
+                shellThumbnail: (_, _) =>
+                {
+                    Interlocked.Increment(ref asked);
+                    return OnePixelPng;
+                });
+
+            runtime.Submit(new Effect.LoadPreview(1, pdf));
+            WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
+            runtime.Submit(new Effect.LoadPreview(2, pdf));
+            var second = WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
+
+            Assert.Equal(PreviewKind.Image, second.Kind);
+            Assert.Equal("PDF Document", second.Text);
+            Assert.Equal(1, asked);
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
+
+    /// <summary>
+    /// A list, not "anything that would otherwise be a hex dump": archives, executables, text and
+    /// real pictures keep the previews they had, and the shell is not asked about them.
+    /// </summary>
+    [Fact]
+    public void Files_that_are_not_documents_are_never_offered()
+    {
+        var dir = TempDirectory.Create("zurari-shellpreview");
+        try
+        {
+            File.WriteAllBytes(Path.Combine(dir, "archive.zip"), ZipHead);
+            File.WriteAllBytes(Path.Combine(dir, "app.exe"), [0x4D, 0x5A, 0x90, 0x00, 0x03, 0x00]);
+            File.WriteAllText(Path.Combine(dir, "notes.txt"), "hello");
+            File.WriteAllText(Path.Combine(dir, "pdf"), AsciiPdf);
+            File.WriteAllBytes(Path.Combine(dir, "picture.png"), OnePixelPng);
+            var asked = 0;
+            byte[]? Shell(string path, int size)
+            {
+                Interlocked.Increment(ref asked);
+                return OnePixelPng;
+            }
+
+            var picture = LoadOnce(dir, Path.Combine(dir, "picture.png"), Shell);
+            foreach (var name in new[] { "archive.zip", "app.exe", "notes.txt", "pdf" })
+            {
+                Assert.NotEqual(PreviewKind.Image, LoadOnce(dir, Path.Combine(dir, name), Shell).Kind);
+            }
+
+            Assert.Equal(0, asked);
+            Assert.Equal(PreviewKind.Image, picture.Kind);
+            Assert.Null(picture.Text);
+            Assert.Equal(1, picture.Metadata!.PixelWidth);
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
+
+    /// <summary>The same third guard as for video, for a document reached through a share.</summary>
+    [Fact]
+    public void A_document_on_a_share_is_never_offered_to_the_shell()
+    {
+        var dir = TempDirectory.Create("zurari-shellpreview-unc");
+        try
+        {
+            var viaShare = @"\\localhost\" + dir[0] + "$" + dir[2..];
+            if (!Directory.Exists(viaShare))
+            {
+                return; // no loopback share on this machine.
+            }
+
+            File.WriteAllText(Path.Combine(dir, "paper.pdf"), AsciiPdf);
+            var asked = 0;
+
+            var loaded = LoadOnce(dir, Path.Combine(viaShare, "paper.pdf"), (_, _) =>
+            {
+                Interlocked.Increment(ref asked);
+                return OnePixelPng;
+            });
+
+            Assert.Equal(0, asked);
+            Assert.Equal(PreviewKind.Text, loaded.Kind);
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
+
+    [Theory]
+    [InlineData("paper.pdf", "PDF Document")]
+    [InlineData(@"C:\Docs\PAPER.PDF", "PDF Document")]
+    [InlineData("letter.docm", "Word Document")]
+    [InlineData("template.dotx", "Word Document")]
+    [InlineData("binary.xlsb", "Excel Workbook")]
+    [InlineData("template.xltm", "Excel Workbook")]
+    [InlineData("show.ppsx", "PowerPoint Presentation")]
+    [InlineData("template.potx", "PowerPoint Presentation")]
+    [InlineData("archive.zip", null)]
+    [InlineData("paper.pdf.txt", null)]
+    [InlineData("pdf", null)]
+    [InlineData(@"C:\folder.pdf\notes", null)]
+    [InlineData("", null)]
+    public void Documents_are_recognised_by_extension_alone(string path, string? label)
+    {
+        Assert.Equal(label, WorkerRuntime.DocumentLabel(path));
     }
 
     [Theory]

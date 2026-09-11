@@ -299,7 +299,10 @@ public static class StateProjection
     /// <see cref="ImageBytes"/> - so the App layer can show both in the same monospace box it
     /// already uses for <see cref="PreviewKind.Text"/>, no separate widget needed.
     /// </param>
-    /// <param name="ImageBytes">Whole-file bytes when <see cref="Kind"/> is <see cref="PreviewKind.Image"/>.</param>
+    /// <param name="ImageBytes">
+    /// Whole-file bytes when <see cref="Kind"/> is <see cref="PreviewKind.Image"/> - or a thumbnail
+    /// standing in for a video or document.
+    /// </param>
     /// <param name="Error">Set when the most recent load for this generation failed.</param>
     /// <param name="MetadataText">
     /// Finder-inspector-style metadata block (file name, size, dates, and - for images - pixel
@@ -350,7 +353,14 @@ public static class StateProjection
         var displayPath = preview.OriginalPath ?? preview.Path;
         var fileName = displayPath is null ? null : LastPathSegment(displayPath);
         var originalDirectory = preview.OriginalPath is null ? null : ParentPath(preview.OriginalPath);
-        var text = preview.Kind == PreviewKind.Binary ? FormatBinaryText(preview) : preview.Text;
+        var text = preview.Kind switch
+        {
+            PreviewKind.Binary => FormatBinaryText(preview),
+
+            // An image's Text is a type label for the metadata block, never a body to show.
+            PreviewKind.Image => null,
+            _ => preview.Text,
+        };
         var metadataText = FormatMetadata(preview);
         return new PreviewVm(
             preview.Generation,
@@ -469,13 +479,14 @@ public static class StateProjection
     /// <summary>
     /// Short "種類" (kind) label for the metadata block. Binary reuses the
     /// <see cref="FileTypeDetector"/> label already carried in <see cref="PreviewState.Text"/> for
-    /// that kind (e.g. "PE Executable") since it is more informative than a generic word; Image
-    /// and Text kinds get a plain Japanese label since there is no equivalent per-kind detail to
-    /// surface for them.
+    /// that kind (e.g. "PE Executable") since it is more informative than a generic word. Image does
+    /// the same when the picture is a thumbnail of something else ("PDF Document"), and says
+    /// 画像ファイル for an actual image; Text gets a plain Japanese label.
     /// </summary>
     private static string PreviewKindLabel(PreviewState preview) => preview.Kind switch
     {
-        PreviewKind.Image => "画像ファイル",
+        // A thumbnail standing in for a video or a document carries that file's own type.
+        PreviewKind.Image => preview.Text ?? "画像ファイル",
         PreviewKind.Text => "テキストファイル",
         PreviewKind.Binary => preview.Text ?? "バイナリファイル",
         _ => "",
