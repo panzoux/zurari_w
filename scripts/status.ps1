@@ -30,7 +30,7 @@ try {
     if (-not (Test-Path $trxDir)) { throw "No test results in $trxDir. Run without -NoBuild." }
 
     # From the .trx rather than the console summary: the console output is localized, and parsing
-    # "合格:" would work here and nowhere else.
+    # the Japanese "passed" label would work here and nowhere else.
     $total = 0
     foreach ($trx in Get-ChildItem $trxDir -Filter *.trx) {
         $total += [int]([xml](Get-Content -LiteralPath $trx.FullName)).TestRun.ResultSummary.Counters.total
@@ -39,13 +39,21 @@ try {
 
     $changes = @()
 
+    # Named explicitly, both ways. Windows PowerShell 5.1 - which the pre-commit hook falls back to,
+    # and which `powershell` starts - reads a BOM-less file as the ANSI code page, so on a Japanese
+    # system every non-ASCII character in the plans came back as mojibake and was written out that
+    # way. It happened, in a932bab.
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+
     foreach ($doc in Get-ChildItem (Join-Path $root 'plan') -Filter *.md) {
-        $text = Get-Content -LiteralPath $doc.FullName -Raw
+        $text = [System.IO.File]::ReadAllText($doc.FullName, $utf8)
         $updated = $text
 
-        # "640 tests, `scripts/check.ps1` green." and "640 テスト green"
+        # "640 tests, `scripts/check.ps1` green." and "640 (tesuto, in katakana) green". The katakana
+        # is written as \u escapes because this script has no BOM, so Windows PowerShell 5.1 reads
+        # it as the ANSI code page and a literal would never match; keep this file ASCII.
         $updated = [regex]::Replace($updated, '\d+(?= tests, `scripts/check\.ps1` green)', $total)
-        $updated = [regex]::Replace($updated, '\d+(?= テスト green)', $total)
+        $updated = [regex]::Replace($updated, '\d+(?= \u30C6\u30B9\u30C8 green)', $total)
 
         # A Status row written before the commit it describes existed. Each placeholder is filled
         # with the commit that introduced *that row* - found with git log -G - rather than with HEAD.
@@ -94,7 +102,7 @@ try {
         if ($updated -ne $text) {
             $changes += $doc.Name
             if (-not $Verify) {
-                [System.IO.File]::WriteAllText($doc.FullName, $updated)
+                [System.IO.File]::WriteAllText($doc.FullName, $updated, $utf8)
             }
         }
     }
