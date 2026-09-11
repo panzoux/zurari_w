@@ -135,7 +135,8 @@ public sealed partial class MainWindow : Window, IDisposable
 
         runtime = new WorkerRuntime(
             post: PostToLoop, places: RootPlaces, trash: TrashPlaceRow, settings: settingsStore,
-            displayName: Zurari.Shell.ShellDisplayName.For);
+            displayName: Zurari.Shell.ShellDisplayName.For,
+            shellThumbnail: Zurari.Shell.ShellThumbnailer.TryGetPng);
         shellExecutor = new ShellEffectExecutor(post: PostToLoop);
         jobEngine = new JobEngine(post: PostToLoop);
         directoryWatcher = new DirectoryWatcher(post: PostToLoop);

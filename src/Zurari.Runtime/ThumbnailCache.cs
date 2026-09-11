@@ -46,8 +46,8 @@ public sealed class ThumbnailCache
     {
         _directory = directory ?? DefaultDirectory();
 
-        // Eviction runs off-thread: the cache is constructed during startup, and enumerating a
-        // large directory there would delay the first window. Losing a sweep costs nothing.
+        // Eviction runs off-thread: enumerating a large directory on the thread that first needs a
+        // thumbnail would stall that preview. Losing a sweep costs nothing.
         InitialSweep = Task.Run(Sweep);
     }
 

@@ -37,12 +37,6 @@ try {
     }
     if ($total -le 0) { throw "Read a test total of $total, which cannot be right." }
 
-    $head = (git rev-parse --short HEAD).Trim()
-
-    # A "(this commit)" placeholder means the hash of the commit that is about to be made. HEAD is
-    # only that commit once it exists - so with a dirty tree, HEAD is the *previous* commit and
-    # filling it in writes the wrong hash. That happened the first time this script was used.
-    $clean = -not (git status --porcelain)
     $changes = @()
 
     foreach ($doc in Get-ChildItem (Join-Path $root 'plan') -Filter *.md) {
@@ -53,16 +47,49 @@ try {
         $updated = [regex]::Replace($updated, '\d+(?= tests, `scripts/check\.ps1` green)', $total)
         $updated = [regex]::Replace($updated, '\d+(?= テスト green)', $total)
 
-        # A Status row written before the commit it describes existed. Matched as a whole table
-        # cell, because the same words appear in prose describing this very mechanism - and a
-        # substring match happily rewrote that sentence into a hash.
-        $placeholder = '| (this commit) |'
-        if ($clean) {
-            $updated = $updated.Replace($placeholder, "| ``$head`` |")
+        # A Status row written before the commit it describes existed. Each placeholder is filled
+        # with the commit that introduced *that row* - found with git log -G - rather than with HEAD.
+        #
+        # HEAD was the first rule and it was wrong twice over: run before committing, it named the
+        # previous commit; and guarding that with "only when the working tree is clean" meant any
+        # unrelated modified file stopped hashes being filled at all. The commit that added the line
+        # is the right answer whenever this runs, and until that commit exists there is none, so the
+        # row is left alone. Matched as a whole table cell, because the same words appear in prose.
+        $lines = $updated -split "`n"
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            if (-not $lines[$i].Contains('| (this commit) |')) { continue }
+            if ($lines[$i] -notmatch '^\| \**(?<id>[0-9][0-9a-z.\-]*)\** \|') { continue }
+
+            $pattern = [regex]::Escape($Matches['id']) + ' .*this commit'
+            $introduced = git log -G $pattern -1 --format=%h -- "plan/$($doc.Name)"
+            if ($introduced) {
+                $lines[$i] = $lines[$i].Replace('| (this commit) |', "| ``$($introduced.Trim())`` |")
+            }
+            else {
+                Write-Host "  $($Matches['id']): its (this commit) row is not committed yet - commit, then run this again" -ForegroundColor DarkYellow
+            }
         }
-        elseif ($updated.Contains($placeholder)) {
-            Write-Host "  a (this commit) cell is left alone in $($doc.Name) - commit first, then run this again" -ForegroundColor DarkYellow
+
+        # A phase's own row is derived from its items: done when every item is done, partial when
+        # some are, open when none are. It used to be kept by hand, and 6d read [~] "half done" for
+        # weeks after its last item landed - so nobody could tell from the table that it was finished.
+        $statusCell = '`\[(?<s>[x~ ])\]`'
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -notmatch '^\| \*\*(?<id>[0-9]+[a-z])\*\* \|') { continue }
+            $parent = $Matches['id']
+
+            $children = @($lines | Where-Object { $_ -match ('^\| ' + [regex]::Escape($parent) + '\.[0-9]+[a-z]? \|') } |
+                ForEach-Object { if ($_ -match $statusCell) { $Matches['s'] } })
+            if ($children.Count -eq 0) { continue }
+
+            $derived = if (@($children | Where-Object { $_ -ne 'x' }).Count -eq 0) { 'x' }
+                elseif (@($children | Where-Object { $_ -ne ' ' }).Count -eq 0) { ' ' }
+                else { '~' }
+
+            $lines[$i] = [regex]::new($statusCell).Replace($lines[$i], "``[$derived]``", 1)
         }
+
+        $updated = $lines -join "`n"
 
         if ($updated -ne $text) {
             $changes += $doc.Name

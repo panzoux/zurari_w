@@ -20,9 +20,11 @@ public sealed class NaturalComparer : IComparer<string>
 {
     /// <summary>The shared instance; this type holds no state.</summary>
     public static NaturalComparer Instance { get; } = new();
+
     private NaturalComparer()
     {
     }
+
     /// <inheritdoc />
     public int Compare(string? x, string? y)
     {
@@ -30,14 +32,17 @@ public sealed class NaturalComparer : IComparer<string>
         {
             return 0;
         }
+
         if (x is null)
         {
             return -1;
         }
+
         if (y is null)
         {
             return 1;
         }
+
         int i = 0, j = 0;
         while (i < x.Length && j < y.Length)
         {
@@ -48,26 +53,32 @@ public sealed class NaturalComparer : IComparer<string>
                 {
                     return compared;
                 }
+
                 continue;
             }
+
             var byChar = CompareChars(x[i], y[j]);
             if (byChar != 0)
             {
                 return byChar;
             }
+
             i++;
             j++;
         }
+
         // One ran out: the shorter name is the prefix of the longer, so it comes first.
         var byLength = (x.Length - i).CompareTo(y.Length - j);
         if (byLength != 0)
         {
             return byLength;
         }
+
         // Equal to a reader, so the tie has to be broken by something total, or a sort with two
         // names differing only in case would be unstable.
         return string.CompareOrdinal(x, y);
     }
+
     /// <summary>
     /// Compares the runs of digits starting at <paramref name="i"/>/<paramref name="j"/> as numbers,
     /// advancing both past them.
@@ -82,34 +93,41 @@ public sealed class NaturalComparer : IComparer<string>
         {
             i++;
         }
+
         while (j < y.Length - 1 && y[j] == '0' && char.IsDigit(y[j + 1]))
         {
             j++;
         }
+
         var startX = i;
         var startY = j;
         while (i < x.Length && char.IsDigit(x[i]))
         {
             i++;
         }
+
         while (j < y.Length && char.IsDigit(y[j]))
         {
             j++;
         }
+
         var lengthX = i - startX;
         var lengthY = j - startY;
         if (lengthX != lengthY)
         {
             return lengthX.CompareTo(lengthY);
         }
+
         return string.CompareOrdinal(x, startX, y, startY, lengthX);
     }
+
     /// <summary>
     /// Case-insensitively, the way Windows treats file names - so <c>Alpha</c> and <c>alpha</c> land
     /// next to each other rather than in separate blocks of the alphabet.
     /// </summary>
     private static int CompareChars(char a, char b) =>
         char.ToUpperInvariant(a).CompareTo(char.ToUpperInvariant(b));
+
     /// <summary>The extension including its dot, upper-cased, or empty when there is none.</summary>
     /// <remarks>
     /// A leading dot is a name, not an extension: <c>.gitignore</c> is a file called that, and
@@ -122,6 +140,7 @@ public sealed class NaturalComparer : IComparer<string>
         var dot = name.LastIndexOf('.');
         return dot <= 0 ? string.Empty : name[dot..].ToUpperInvariant();
     }
+
     /// <summary>Ordinal comparison of two extensions, for <see cref="SortMode.Extension"/>.</summary>
     public static int CompareExtensions(string x, string y) =>
         string.Compare(ExtensionOf(x), ExtensionOf(y), StringComparison.Ordinal);

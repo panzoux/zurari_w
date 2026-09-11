@@ -2,9 +2,10 @@
 
 **作成**: 2026-07-20
 **現状**: Phase 0〜5 完了。**Phase 6 の 6a〜6d・6f・6g を main にマージ済み**(2026-09-05、
-`phase6a-location-foundation` を fast-forward)。残りは 6e(ソート・隠しファイル・カーソル記憶・
-リネーム・新規フォルダ・既定アプリ・ステータスバー/ヘルプ)と 6c.5(シェルサムネイル)—
-723 テスト green。
+`phase6a-location-foundation` を fast-forward)。その後 6e.1〜6e.6 と 6c.5 も main に入った。
+**Phase 6 で残るのは 6e.7(ステータスバー/ヘルプ — 判断により後回し)と、6d-4 の実機での手動確認**。
+ソートと隠しファイル切替はキー割り当て待ち —
+746 テスト green。
 進捗の詳細は Phase 6 計画の Status 表と Records を見ること。
 **この行のテスト数は `scripts/status.ps1` が書く。手で直さない** — check.ps1 が古いままの通過を拒否する
 **コンセプト**: zurari(TUI版, 別名 zrr)の multi-column UX を Windows GUI へ。

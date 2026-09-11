@@ -20,7 +20,7 @@ Phase 6 was sixteen loose checkboxes. Grilling turned it into decisions, and fou
 
 **6a-6d, 6f and 6g are on `main`** - fast-forwarded from `phase6a-location-foundation` on
 2026-09-05, once 6d was complete (see R-1). 6e and 6c.5 remain.
-723 tests, `scripts/check.ps1` green.
+746 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`, and `check.ps1` refuses to pass while it is
 stale. Do not edit it by hand. A commit count used to live here too; it was removed because it is
@@ -30,13 +30,13 @@ wrong the moment the next commit lands - `git log --oneline main..` is the hones
 |---|---|---|---|
 | **6a** | **Location foundation** (absorbed Phase 8) | `[x]` | `2b74c1a` |
 | **6b** | **Column data model**: raw list, derived view | `[x]` | `2cfbfee` |
-| **6c** | **Cancellable preview pipeline** | `[~]` | |
+| **6c** | **Cancellable preview pipeline** | `[x]` | |
 | 6c.1 | Dedicated preview slot, off the worker pool | `[x]` | `53bc98c` |
 | 6c.2 | Cancellation: generation-aware, ordering-safe | `[x]` | `ae3219a` `593194e` `cf41efa` |
 | 6c.3 | Settle delay before touching the disk | `[x]` | `593194e` |
 | 6c.4 | Thumbnail cache, failures included | `[x]` | `2f4459c` |
-| 6c.5 | Shell thumbnails (`IShellItemImageFactory`) tried before ffmpeg | `[ ]` | |
-| **6d** | **The root pane** | `[~]` | |
+| 6c.5 | Shell thumbnails before ffmpeg (`IThumbnailCache`; never writes `Thumbs.db`) | `[x]` | (this commit) |
+| **6d** | **The root pane** | `[x]` | |
 | 6d.1 | Sections, headers, cursor on header, `Space` collapses | `[x]` | `9082b8c` |
 | 6d.2 | Drive labels ("Windows (C:)"), marks refused in the pane | `[x]` | `9082b8c` |
 | 6d.3 | Favorites section (`SHGetKnownFolderPath`; labels qualified on collision) | `[x]` | `2ae7810` |
@@ -47,7 +47,7 @@ wrong the moment the next commit lands - `git log --oneline main..` is the hones
 | 6d.7 | Drive / share capacity preview | `[x]` | `a39b004` |
 | 6d.8 | ISO mount on activate (eject: see roadmap 見送った案) | `[x]` | `5e7b402` |
 | 6d.9 | Live refresh (`SHChangeNotifyRegister`) | `[x]` | `ef5d7a3` |
-| **6e** | **Sorting, hidden files, cursor memory, rename** | `[ ]` | |
+| **6e** | **Sorting, hidden files, cursor memory, rename** | `[~]` | |
 | 6e.1 | Sort in `Transition` (modes + direction + dirs-first) | `[x]` | `6e646c0` |
 | 6e.2 | Hidden-file toggle | `[x]` | `06ce820` |
 | 6e.3 | Cursor memory (entry name, LRU-capped) | `[x]` | `cbc9505` |
@@ -75,6 +75,70 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
 `[ ]` = still open.
 
 ## Open
+
+- **6c-7** `[x]` **Shell thumbnails, 6c.5 - and a measured `Thumbs.db` risk, closed three ways.**
+  Explorer's own thumbnail is now tried before ffmpeg for video: no external tool, and whatever
+  codecs Windows already has. Asked to be sure this never produces `Thumbs.db` anywhere, I measured
+  before building rather than assuming.
+
+  **The risk is real on this machine.** No policy disables `Thumbs.db` on network folders here, so
+  Windows' default applies. Extracting a thumbnail for a picture reached through `\\localhost\C$` -
+  a genuine SMB round trip - with no flags wrote `Thumbs.db` beside it (`files=[picture.png,Thumbs.db]`,
+  `outFlags=WTS_CACHED`). With `WTS_EXTRACTDONOTCACHE` it did not (`files=[picture.png]`). Locally,
+  neither did. The experiment cleaned up after itself, including the control's `Thumbs.db`.
+
+  **That rules out the API the plan named.** `IShellItemImageFactory` has no do-not-cache option, so
+  on a share it writes exactly that file. `IThumbnailCache::GetThumbnail` has one. Every GUID, flag
+  and vtable slot was checked against `thumbcache.h` in the installed SDK: three bare Win32 constants
+  this phase were valid-but-wrong, so memory was not good enough.
+
+  Three independent guards, any one of which would do on its own:
+  1. `WTS_EXTRACTDONOTCACHE` - the shell writes the result nowhere. This app keeps it in its own
+     cache under %LOCALAPPDATA% instead.
+  2. `ShellThumbnailer.IsPlainlyLocal` refuses a UNC path or a network drive letter from the string
+     and `GetDriveType` alone, so refusing costs no network round trip (tested: under 2 s against a
+     host that does not exist).
+  3. The Runtime asks `GetFinalPathNameByHandle` about the handle already open for the head read,
+     which sees through a link, junction, `subst` or mapped drive into a share. Anything it cannot
+     classify counts as network.
+
+  **Each guard fails a test when removed.** Deleting the flag fails
+  `Even_a_network_path_gets_no_thumbs_db`, which runs the extraction through the loopback share on
+  every check - past guard 2 on purpose, so that it tests the flag rather than the guard. Making guard
+  3 always answer "local" fails both share tests in the Runtime. A thumbnail of a known green picture
+  is decoded and its centre pixel checked, which is what proves the interface declarations: a method
+  in the wrong vtable slot does not fail politely.
+
+  **Scope, stated.** Video only - "before ffmpeg" is where ffmpeg is used. PDF and Office documents
+  would get Explorer thumbnails from the same call instead of a hex dump; that changes what a preview
+  *is* for those files, so it is a question for you rather than something done in passing. And an
+  ffmpeg failure verdict cached before this change still wins over the shell for that one file until
+  the 30-day sweep; those are files ffmpeg rejected, where the shell most likely fails too.
+
+- **6f-6** `[x]` **Tests were writing into the user's real thumbnail cache.** Found while checking
+  6c.5: `LoadPreview_of_a_video_extension_with_no_magic_match_is_routed_as_video` built a
+  `WorkerRuntime` without injecting a cache, so every check run wrote a `.miss` entry into
+  `%LOCALAPPDATA%\zurari\thumbs` - the newest entries there were 5-byte test files timestamped at
+  check runs. Worse, all 68 test runtimes built without a cache each started a sweep of that real
+  directory. The default cache is now created on first use, so a runtime that never previews a video
+  never touches it, and that test has its own. Verified: a full Runtime suite run left the real cache
+  at exactly the 145 entries it started with. The stray entries already there are left to the sweep.
+
+- **status-2** `[x]` **Phase rows are now derived, and hashes come from the commit that added the row.**
+  6d's own row read `[~]` and its section "half done" long after its ninth item landed - which is
+  why "what's not finished in 6d?" had to be asked at all. `status.ps1` now derives each phase row
+  from its items (done, partial or open), and `check.ps1` fails while one is wrong. Applying it
+  corrected exactly 6d (`[~]` to `[x]`) and 6e (`[ ]` to `[~]`) and nothing else. Section prose is
+  still written by hand, and was fixed by hand.
+
+  The same pass found a latent bug in the hash fill: it only ran when the whole working tree was
+  clean, so an unrelated modified file (`build.txt`) meant it would never fill a hash again. Each
+  `(this commit)` is now filled with the commit that introduced that exact row, found with
+  `git log -G`, which is right regardless of what else is dirty or how late it runs.
+
+- **6e-1b** `[x]` **A `sed` of mine had stripped every blank line from `NaturalComparer.cs`** during
+  6e.1. It compiled and passed the format check, so nothing flagged it. Restored; the diff is blank
+  lines only, verified with `git diff --ignore-blank-lines -w` showing nothing else.
 
 - **6e-4** `[x]` **Rename, 6e.4.** `F2` opens a text box over the row, Explorer-style. An **adorner**
   rather than an editable item template, as the plan called for: the list virtualizes with
@@ -287,10 +351,19 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
 
   **Standing rule for these records: every manual check must name which binary it ran.** An
   observation against `publish/` describes the app as it was on 22 August.
-- **6d-4** `[ ]` **The rest of 6d is Shell interop that cannot be verified headlessly.** Mount,
-  eject, Trash enumeration and change notifications are COM calls assertable only structurally.
-  Build order puts the testable parts (favorites, pins, persistence) first and isolates the interop
-  at the end, where it needs a manual pass.
+- **6d-4** `[ ]` **What in 6d still needs a person at the machine.** Rewritten 2026-09-11. The
+  original said Trash enumeration and change notifications could only be checked structurally; both
+  have since been tested against the real shell (enumeration agrees with `SHQueryRecycleBin`, and a
+  real `SHChangeNotify` broadcast reaches the watcher). Eject is no longer ours - it is the context
+  menu's. What genuinely cannot be exercised by a test on this machine:
+  1. **Mounting a real `.iso`** by pressing Enter on it, and the cursor landing on the new drive.
+     Tests cover the verb being registered and the refusal path, never an actual mount - that needs
+     an image file and changes system state.
+  2. **Live refresh with physical media** - plugging in a USB stick, inserting a disc. The test
+     broadcasts the event; it does not produce it.
+  3. **Unmounting through the context menu's 取り出し** on a mounted image.
+  4. **Drive types this machine does not have** - a mapped network drive, a RAM disk - for their
+     labels, icons and capacity panel.
 - **6f-2** `[ ]` **`JobEngineTests.CancelJob_mid_copy_deletes_the_incomplete_destination_file` is
   racy.** It copies 50MB, waits for one `JobProgress`, then cancels; if the copy finishes first,
   `JobCancelled` never arrives and it times out. Fixing it means a larger fixture (slower every run)
@@ -704,7 +777,7 @@ So sort state is **per-`Location`-kind**, not global — and the root pane simpl
 
 ---
 
-# 6c — Cancellable preview pipeline — **part 1 done** (`53bc98c`)
+# 6c — Cancellable preview pipeline — **done**
 
 **Done:** dedicated single-slot preview executor off the worker pool; `Effect.CancelPreview` emitted
 by `ReconcilePreview` when a load is abandoned; `CancellationToken` through the head read and
@@ -730,7 +803,7 @@ runtime ignored, cancelling whatever was current. Since `ReconcilePreview` emits
 into a channel drained by several workers, the cancel could execute *after* the load and kill it —
 leaving the pane on 読み込み中… forever. Caught only as an intermittent test timeout.
 
-**Remaining in 6c:** shell thumbnails (`IShellItemImageFactory`) tried before ffmpeg.
+**6c.5 landed** - shell thumbnails before ffmpeg. See record 6c-7 for why it is `IThumbnailCache` rather than the `IShellItemImageFactory` named below.
 
 ## What is actually broken
 
@@ -758,21 +831,11 @@ cannot be dequeued, so a cancel signal has nothing to act on.
 
 
 ---
-# 6d — The root pane — **half done** (`9082b8c`)
+# 6d — The root pane — **done**
 
-**Shipped:** sections with headers, the cursor landing on them, `Space` collapsing/expanding,
-`Entry.DisplayName`/`Group`, drive labels ("Windows (C:)"), marks refused in the pane entirely.
-514 tests green, including a realized-window test that the header template is really wired up in
-`Generic.xaml` — a mistake there produces no build error and would just render headers as rows.
-
-**Blocked on 6f's settings fix:** pinned UNC shares and remembering which sections are collapsed both
-need persistence, and `UserSettingsStore` still has no injectable path. That fix is now a hard
-prerequisite for finishing 6d rather than a nice-to-have.
-
-**Still to do:** favorites (needs `SHGetKnownFolderPath` for Downloads), pinned shares, Trash as its
-own group (shell namespace), drive capacity preview, ISO mount/eject, live refresh via
-`SHChangeNotifyRegister`.
-
+All nine items are in and tested (see the Status table for commits). What remains is the manual
+pass on real hardware in record 6d-4; everything below this line is the design as it was decided,
+kept for the reasoning.
 
 ## Row kinds
 

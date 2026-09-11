@@ -70,7 +70,18 @@ public sealed class WorkerRuntime : IDisposable
     private readonly CancellationTokenSource _cts;
     private readonly Task[] _workers;
     private readonly long _previewImageSizeLimitBytes;
-    private readonly ThumbnailCache _thumbnailCache;
+    /// <summary>
+    /// Video thumbnails already made, and verdicts already reached. Created on first use rather than
+    /// with the runtime.
+    /// </summary>
+    /// <remarks>
+    /// Lazy because constructing one starts a sweep of its directory, and the default directory is
+    /// the user's real %LOCALAPPDATA% cache. Built eagerly, every runtime a test created - sixty-eight
+    /// of them, almost none of which ever previews a video - swept the real cache, and the one test
+    /// that did preview a video wrote entries into it on every check run. A runtime that never
+    /// previews a video now never touches that directory at all.
+    /// </remarks>
+    private readonly Lazy<ThumbnailCache> _thumbnailCache;
 
     /// <summary>
     /// Supplies the places shown above the drives - favorites now, pinned shares next. Queried on
@@ -95,6 +106,18 @@ public sealed class WorkerRuntime : IDisposable
     /// "USB ドライブ (D:)"), localized and correct per machine in a way a hand-kept table would not be.
     /// </remarks>
     private readonly Func<string, string?>? _displayName;
+
+    /// <summary>
+    /// Explorer's thumbnail for a file as PNG bytes, or <c>null</c>. Injected because it comes from
+    /// the shell and Runtime may not reference Shell.
+    /// </summary>
+    /// <remarks>
+    /// Tried before ffmpeg for video: no external tool, and whatever codecs Windows already has.
+    /// Only ever called for a file whose open handle resolves to a local volume - see
+    /// <see cref="IsOnNetwork"/> - which is one of three separate reasons it cannot leave a
+    /// <c>Thumbs.db</c> in a share.
+    /// </remarks>
+    private readonly Func<string, int, byte[]?>? _shellThumbnail;
 
     /// <summary>
     /// 1 once the stored collapsed sections have been handed to the state - see
@@ -163,7 +186,8 @@ public sealed class WorkerRuntime : IDisposable
         Func<IReadOnlyList<RootPlace>>? places = null,
         Func<TrashPlace?>? trash = null,
         UserSettingsStore? settings = null,
-        Func<string, string?>? displayName = null)
+        Func<string, string?>? displayName = null,
+        Func<string, int, byte[]?>? shellThumbnail = null)
     {
         ArgumentNullException.ThrowIfNull(post);
         if (workerCount < 1)
@@ -177,11 +201,14 @@ public sealed class WorkerRuntime : IDisposable
             ? CancellationTokenSource.CreateLinkedTokenSource(external.Value)
             : new CancellationTokenSource();
         _previewImageSizeLimitBytes = previewImageSizeLimitBytes ?? DefaultPreviewImageSizeLimitBytes;
-        _thumbnailCache = thumbnailCache ?? new ThumbnailCache();
+        _thumbnailCache = thumbnailCache is not null
+            ? new Lazy<ThumbnailCache>(thumbnailCache)
+            : new Lazy<ThumbnailCache>(() => new ThumbnailCache(), LazyThreadSafetyMode.ExecutionAndPublication);
         _places = places;
         _trash = trash;
         _settings = settings ?? new UserSettingsStore();
         _displayName = displayName;
+        _shellThumbnail = shellThumbnail;
 
         _workers = new Task[workerCount];
         for (var i = 0; i < workerCount; i++)
@@ -1035,7 +1062,8 @@ public sealed class WorkerRuntime : IDisposable
 
             if (detected.Category == FileCategory.Video || IsVideoExtension(effect.Path))
             {
-                ExecuteVideoPreview(effect, detected, effect.Path, head, baseMetadata, token);
+                var local = !IsOnNetwork(stream.SafeFileHandle);
+                ExecuteVideoPreview(effect, detected, effect.Path, head, baseMetadata, local, token);
                 return;
             }
 
@@ -1105,9 +1133,10 @@ public sealed class WorkerRuntime : IDisposable
         string path,
         byte[] head,
         PreviewMetadata baseMetadata,
+        bool onLocalVolume,
         CancellationToken token)
     {
-        if (_thumbnailCache.TryGet(path, out var cachedBytes, out var cachedFailure))
+        if (_thumbnailCache.Value.TryGet(path, out var cachedBytes, out var cachedFailure))
         {
             if (cachedBytes is not null)
             {
@@ -1121,10 +1150,20 @@ public sealed class WorkerRuntime : IDisposable
             return;
         }
 
+        // Explorer's own thumbnail first. Kept in this app's cache like an ffmpeg one, because the
+        // shell is told not to keep it anywhere itself - that is what keeps Thumbs.db out of a share.
+        if (onLocalVolume && _shellThumbnail?.Invoke(path, VideoThumbnailSize) is { Length: > 0 } shellPng)
+        {
+            token.ThrowIfCancellationRequested();
+            _thumbnailCache.Value.StoreSuccess(path, shellPng);
+            PostVideoThumbnail(effect, shellPng, baseMetadata);
+            return;
+        }
+
         var outcome = VideoThumbnailer.TryCreateThumbnail(path, VideoThumbnailTimeout, token);
         if (outcome.Bytes is not null)
         {
-            _thumbnailCache.StoreSuccess(path, outcome.Bytes);
+            _thumbnailCache.Value.StoreSuccess(path, outcome.Bytes);
             PostVideoThumbnail(effect, outcome.Bytes, baseMetadata);
             return;
         }
@@ -1133,11 +1172,51 @@ public sealed class WorkerRuntime : IDisposable
         // nothing about it, and caching either would keep failing after the cause went away.
         if (outcome.Failure == ThumbnailFailure.FileRejected && outcome.FailureDetail is { } detail)
         {
-            _thumbnailCache.StoreFailure(path, detail);
+            _thumbnailCache.Value.StoreFailure(path, detail);
         }
 
         PostVideoFallback(effect, detected, path, head, baseMetadata, outcome.FailureDetail);
     }
+
+    /// <summary>
+    /// The size asked of the shell, matching what ffmpeg is asked for (<c>scale=512:-1</c>) so a
+    /// thumbnail looks the same whichever of the two produced it.
+    /// </summary>
+    private const int VideoThumbnailSize = 512;
+
+    /// <summary>
+    /// Whether the file behind <paramref name="handle"/> really lives on a network share, after every
+    /// link, junction, <c>subst</c> and mapped drive has been followed.
+    /// </summary>
+    /// <remarks>
+    /// The third of three guards keeping <c>Thumbs.db</c> out of shares, and the only one that can
+    /// see through <c>C:\link</c> into <c>\\server\share</c>. Anything it cannot determine
+    /// counts as network: the cost of being wrong that way is one missing thumbnail, and of the other
+    /// a hidden file in somebody's share.
+    /// </remarks>
+    internal static bool IsOnNetwork(Microsoft.Win32.SafeHandles.SafeFileHandle handle)
+    {
+        try
+        {
+            var buffer = new char[32768];
+            var length = NativeMethods.GetFinalPathNameByHandleW(handle, buffer, (uint)buffer.Length, 0);
+            return length == 0 || length >= buffer.Length || IsNetworkFinalPath(new string(buffer, 0, (int)length));
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or ArgumentException)
+        {
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Classifies a path as <c>GetFinalPathNameByHandle</c> returns it: <c>\\?\C:\...</c> is a
+    /// local volume, and anything else - <c>\\?\UNC\...</c> above all - is not trusted as local.
+    /// </summary>
+    internal static bool IsNetworkFinalPath(string finalPath) =>
+        !(finalPath.Length >= 6
+            && finalPath.StartsWith(@"\\?\", StringComparison.Ordinal)
+            && char.IsLetter(finalPath[4])
+            && finalPath[5] == ':');
 
     private void PostVideoThumbnail(Effect.LoadPreview effect, byte[] png, PreviewMetadata baseMetadata)
     {

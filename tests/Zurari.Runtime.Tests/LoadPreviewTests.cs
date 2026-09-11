@@ -346,8 +346,11 @@ public class LoadPreviewTests
             var path = Path.Combine(dir, "clip.wmv");
             File.WriteAllBytes(path, [0x00, 0x01, 0x02, 0x00, 0x03]); // not a real WMV - no tool can decode it
 
+            // Its own cache: this is the one test here that reaches the video path, and without one it
+            // wrote a verdict into the user's real %LOCALAPPDATA% thumbnail cache on every run.
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue);
+            using var runtime = new WorkerRuntime(
+                queue.Enqueue, thumbnailCache: new ThumbnailCache(Path.Combine(dir, "cache")));
             runtime.Submit(new Effect.LoadPreview(13, path));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(20)));
