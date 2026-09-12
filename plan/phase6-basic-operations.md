@@ -37,7 +37,7 @@ wrong the moment the next commit lands - `git log --oneline main..` is the hones
 | 6c.4 | Thumbnail cache, failures included | `[x]` | `2f4459c` |
 | 6c.5 | Shell thumbnails before ffmpeg (`IThumbnailCache`; never writes `Thumbs.db`) | `[x]` | `1a5c096` |
 | 6c.6 | PDF and Office documents preview as Explorer's thumbnail, where a handler is installed | `[x]` | `a932bab` |
-| 6c.7 | Shell thumbnails on one dedicated STA thread: latest-wins, time budget, failures cached | `[x]` | (this commit) |
+| 6c.7 | Shell thumbnails on one dedicated STA thread: latest-wins, time budget, failures cached | `[x]` | `10e6819` |
 | **6d** | **The root pane** | `[x]` | |
 | 6d.1 | Sections, headers, cursor on header, `Space` collapses | `[x]` | `9082b8c` |
 | 6d.2 | Drive labels ("Windows (C:)"), marks refused in the pane | `[x]` | `9082b8c` |
