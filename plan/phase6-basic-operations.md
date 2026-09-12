@@ -953,6 +953,38 @@ the stopwatch is seeing real work) · an `.mp4` (the existing `VideoFile` bytes)
 Two numbers decide it: what a `0x8004B200` refusal costs, and whether any case has a long tail. They
 set N, and they say whether ffmpeg's video fallback needs the same budget.
 
+### That measurement, run 2026-09-12 — and what it settles
+
+Exactly that protocol: five cases, five iterations each, a fresh process per case, against the real
+`ShellThumbnailer`; the `[StaFact]` was deleted afterwards. Milliseconds:
+
+| Case | First call in the process | The other four | Result |
+|---|---|---|---|
+| `paper.pdf` | 103.5 | 7.6 - 9.3 | refused |
+| `letter.docx` (ZIP header) | 99.0 | 7.8 - 9.0 | refused |
+| `picture.png`, 400×300 (control) | 116.1 | 17.3 - 20.0 | 1192-byte PNG |
+| `clip.mp4`, 12 bytes | 166.6 | 10.7 - 11.7 | refused |
+| `data.zurari-unknown` | 74.1 | 8.0 - 10.4 | refused |
+
+**A refusal costs about 8-10 ms, and there is no long tail** - the spread across four warm calls is
+under 2 ms in every case. The 74-166 ms first call is COM and surrogate start-up, paid once per
+process, not per file. The control did real work (it returned a PNG, and cost about twice a refusal),
+so the stopwatch is not measuring nothing.
+
+**N ≈ 200 ms**, then: above everything measured here, so on a machine with no handler the budget
+never fires, and it bites only where a handler is genuinely slow - which is the case it exists for.
+
+**Still unmeasured, and not measurable here:** a real handler doing real work (Acrobat on a long
+PDF), and a real video through Windows' own decoder - the `.mp4` above was 12 bytes and was refused
+like the rest. Both want the manual pass already recorded in 6c-8.
+
+**Asked whether to remove the feature or put it behind a setting; answered with these numbers: no.**
+A refusal is ~10 ms against a 100 ms settle delay that already precedes it, and the pathological case
+cannot arise on a machine with no handler at all. Removing it would cost video thumbnails wherever
+ffmpeg is absent, and a setting would be a permanent second code path, and a question no user can
+answer, bought against a measured-small risk. 6c.7 stays worth doing - it is the bound for machines
+that *do* have handlers - but it is not urgent.
+
 ### Standing context for 6c.6
 
 No PDF or Office thumbnail handler is registered on this machine - probes of a PDF, a `.docx`, a
