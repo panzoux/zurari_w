@@ -1164,42 +1164,46 @@ public sealed class WorkerRuntime : IDisposable
     {
         var label = VideoLabel(detected, path);
 
-        if (_thumbnailCache.Value.TryGet(path, out var cachedBytes, out var cachedFailure))
+        if (_thumbnailCache.Value.TryGet(path, out var cachedBytes, out var cachedFailure)
+            && cachedBytes is not null)
         {
-            if (cachedBytes is not null)
-            {
-                PostThumbnail(effect, cachedBytes, label, baseMetadata);
-            }
-            else
-            {
-                PostVideoFallback(effect, detected, path, head, baseMetadata, cachedFailure);
-            }
-
+            PostThumbnail(effect, cachedBytes, label, baseMetadata);
             return;
         }
 
-        // Explorer's own thumbnail first, then ffmpeg.
+        // ffmpeg first, Explorer's thumbnail as the fallback. Measured on real files, ffmpeg was
+        // faster on all six (205-624 ms against 282-722 ms), which reversed 6c.5's assumption that
+        // the in-process call had to be the cheap one; and it needs no apartment and no installed
+        // handler. A remembered rejection means ffmpeg has already had its turn on this exact file.
+        var failureDetail = cachedFailure;
+        if (cachedFailure is null)
+        {
+            var outcome = VideoThumbnailer.TryCreateThumbnail(path, VideoThumbnailTimeout, token);
+            if (outcome.Bytes is not null)
+            {
+                _thumbnailCache.Value.StoreSuccess(path, outcome.Bytes);
+                PostThumbnail(effect, outcome.Bytes, label, baseMetadata);
+                return;
+            }
+
+            // Only a verdict about this file is worth remembering - a missing ffmpeg or a timeout says
+            // nothing about it, and caching either would keep failing after the cause went away.
+            if (outcome.Failure == ThumbnailFailure.FileRejected && outcome.FailureDetail is { } detail)
+            {
+                _thumbnailCache.Value.StoreFailure(path, detail);
+            }
+
+            failureDetail = outcome.FailureDetail;
+        }
+
+        // A file ffmpeg cannot decode may still have a thumbnail the shell can produce, so a
+        // remembered ffmpeg rejection no longer ends the preview - it just skips ffmpeg.
         if (TryPostShellThumbnail(effect, label, baseMetadata, onLocalVolume, token))
         {
             return;
         }
 
-        var outcome = VideoThumbnailer.TryCreateThumbnail(path, VideoThumbnailTimeout, token);
-        if (outcome.Bytes is not null)
-        {
-            _thumbnailCache.Value.StoreSuccess(path, outcome.Bytes);
-            PostThumbnail(effect, outcome.Bytes, label, baseMetadata);
-            return;
-        }
-
-        // Only a verdict about this file is worth remembering - a missing ffmpeg or a timeout says
-        // nothing about it, and caching either would keep failing after the cause went away.
-        if (outcome.Failure == ThumbnailFailure.FileRejected && outcome.FailureDetail is { } detail)
-        {
-            _thumbnailCache.Value.StoreFailure(path, detail);
-        }
-
-        PostVideoFallback(effect, detected, path, head, baseMetadata, outcome.FailureDetail);
+        PostVideoFallback(effect, detected, path, head, baseMetadata, failureDetail);
     }
 
     /// <summary>

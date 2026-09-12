@@ -20,7 +20,7 @@ Phase 6 was sixteen loose checkboxes. Grilling turned it into decisions, and fou
 
 **6a-6d, 6f and 6g are on `main`** - fast-forwarded from `phase6a-location-foundation` on
 2026-09-05, once 6d was complete (see R-1). 6c and 6e.1-6e.6 followed; 6e.7 is deferred.
-783 tests, `scripts/check.ps1` green.
+784 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`, and `check.ps1` refuses to pass while it is
 stale. Do not edit it by hand. A commit count used to live here too; it was removed because it is
@@ -118,6 +118,27 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   ffmpeg failure verdict cached before this change still wins over the shell for that one file until
   the 30-day sweep; those are files ffmpeg rejected, where the shell most likely fails too.
 
+- **6c-10** `[x]` **ffmpeg first, the shell as the fallback - 6c.5's ordering, reversed on measurement.**
+  6c.5 put the shell first reasoning that an in-process call must beat spawning a process. Measured
+  on real files that is simply not true here: ffmpeg won all six (205-624 ms against 282-722 ms), it
+  needs no apartment and no installed handler, and it is the path that still works on a machine with
+  no thumbnail provider for the type. So video now goes to ffmpeg first and falls back to Explorer.
+
+  **One behaviour changed with it, deliberately: a remembered ffmpeg rejection no longer ends the
+  preview.** It used to post the hex-dump fallback immediately. Now it means only "ffmpeg has had its
+  turn on this exact file", and the shell is still asked - which is what "fallback" has to mean if a
+  file ffmpeg cannot decode is ever to get a picture from Windows.
+
+  **Red first:** a real video, built with ffmpeg's own `testsrc` (the test skips where ffmpeg is not
+  on PATH, because a fabricated `.mp4` is rejected by ffmpeg and would let the shell win by default,
+  testing nothing). Before the change the shell's 1x1 PNG won; after it, ffmpeg's frame does and the
+  shell is never asked.
+
+  Two bugs in my own fixtures, found while writing it: the video generator redirected ffmpeg's
+  stdout and stderr without draining them and deadlocked on a full pipe buffer for 30 seconds; and
+  the 6c.7 thread tests used fabricated `.mp4`s, which now sit behind ffmpeg and would have made the
+  latest-wins timing test flaky - they use documents now, which reach the shell directly.
+
 - **6c-9** `[x]` **6c.7 built: one STA thread, latest-wins, a 1.5 s budget, and failures remembered.**
   1. **`ShellThumbnailThread`** - one dedicated STA thread, one extraction in flight, at most one
      waiting; a newer request displaces the waiter and completes it with "nothing". Holding an arrow
@@ -146,8 +167,8 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   latest-wins, a shell failure stored as an ffmpeg verdict, and the late and in-budget empty results
   each left unremembered.
 
-  **Deliberately not changed:** the shell-before-ffmpeg ordering, which the measurement above
-  reopened and which needs a machine this one cannot supply; and ffmpeg's own 20 s timeout.
+  **Not changed here:** ffmpeg's 20 s timeout (see below - it is ours, not ffmpeg's). The
+  shell-before-ffmpeg ordering *was* changed, immediately after: record 6c-10.
 
 - **6c-8** `[x]` **PDF and Office thumbnails, 6c.6 - built and tested, but inert on this machine.**
   A document with a PDF or Office extension is now offered to the same shell call as a video, before

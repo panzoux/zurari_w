@@ -521,4 +521,89 @@ public class ShellThumbnailPreviewTests
             TempDirectory.Delete(dir);
         }
     }
+
+    /// <summary>
+    /// Builds a real, tiny video with ffmpeg. Returns false when ffmpeg is not on PATH, which is the
+    /// signal to skip: a fabricated .mp4 is rejected by ffmpeg and would let the shell win by
+    /// default, testing nothing about the order.
+    /// </summary>
+    private static bool TryMakeRealVideo(string path)
+    {
+        try
+        {
+            var info = new System.Diagnostics.ProcessStartInfo("ffmpeg")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardError = true,
+                RedirectStandardOutput = true,
+            };
+            foreach (var argument in new[]
+                     {
+                         "-f", "lavfi", "-i", "testsrc=duration=1:size=64x48:rate=10",
+                         "-pix_fmt", "yuv420p", "-y", path,
+                     })
+            {
+                info.ArgumentList.Add(argument);
+            }
+
+            using var process = System.Diagnostics.Process.Start(info);
+            if (process is null)
+            {
+                return false;
+            }
+
+            // Drained before waiting: ffmpeg writes enough to stderr to fill the pipe buffer and
+            // block there forever, which cost this fixture 30 seconds before it was read.
+            process.StandardError.ReadToEnd();
+            process.StandardOutput.ReadToEnd();
+            process.WaitForExit(30000);
+            return File.Exists(path) && new FileInfo(path).Length > 0;
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            return false; // no ffmpeg on PATH.
+        }
+    }
+
+    /// <summary>
+    /// ffmpeg goes first for video and the shell is the fallback. Measured on real files, ffmpeg was
+    /// faster on all six (205-624 ms against 282-722 ms), which reversed 6c.5's assumption that the
+    /// in-process call must be the cheap one.
+    /// </summary>
+    [Fact]
+    public void Ffmpeg_is_tried_before_the_shell_for_video()
+    {
+        var dir = TempDirectory.Create("zurari-shellpreview");
+        try
+        {
+            var video = Path.Combine(dir, "real.mp4");
+            if (!TryMakeRealVideo(video))
+            {
+                return;
+            }
+
+            var asked = 0;
+            var queue = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(
+                queue.Enqueue,
+                thumbnailCache: new ThumbnailCache(Path.Combine(dir, "cache")),
+                shellThumbnail: (_, _) =>
+                {
+                    Interlocked.Increment(ref asked);
+                    return OnePixelPng;
+                });
+
+            runtime.Submit(new Effect.LoadPreview(1, video));
+            var loaded = WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(60));
+
+            Assert.Equal(PreviewKind.Image, loaded.Kind);
+            Assert.NotEqual(OnePixelPng, loaded.ImageBytes);
+            Assert.Equal(0, asked);
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
 }

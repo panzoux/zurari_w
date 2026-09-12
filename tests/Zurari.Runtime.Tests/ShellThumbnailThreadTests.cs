@@ -31,10 +31,15 @@ public class ShellThumbnailThreadTests
         throw new TimeoutException($"No {typeof(T).Name} was posted within the timeout.");
     }
 
-    private static string VideoFile(string dir, string name = "clip.mp4")
+    /// <summary>
+    /// A document, because documents go straight to the shell. A video would reach it only after
+    /// ffmpeg has had its turn (6c.7 put ffmpeg first), and that delay is exactly what turns a
+    /// timing test into a flaky one.
+    /// </summary>
+    private static string DocumentFile(string dir, string name = "paper.pdf")
     {
         var path = Path.Combine(dir, name);
-        File.WriteAllBytes(path, [0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x6D, 0x70, 0x34, 0x32]);
+        File.WriteAllText(path, "%PDF-1.4 1 0 obj << /Type /Catalog >> endobj %%EOF");
         return path;
     }
 
@@ -48,7 +53,7 @@ public class ShellThumbnailThreadTests
         var dir = TempDirectory.Create("zurari-shellthread");
         try
         {
-            var video = VideoFile(dir);
+            var document = DocumentFile(dir);
             ApartmentState? apartment = null;
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(
@@ -60,7 +65,7 @@ public class ShellThumbnailThreadTests
                     return OnePixelPng;
                 });
 
-            runtime.Submit(new Effect.LoadPreview(1, video));
+            runtime.Submit(new Effect.LoadPreview(1, document));
             WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
 
             Assert.Equal(ApartmentState.STA, apartment);
@@ -81,8 +86,8 @@ public class ShellThumbnailThreadTests
         var dir = TempDirectory.Create("zurari-shellthread");
         try
         {
-            var first = VideoFile(dir, "a.mp4");
-            var second = VideoFile(dir, "b.mp4");
+            var first = DocumentFile(dir, "a.pdf");
+            var second = DocumentFile(dir, "b.pdf");
             var running = 0;
             var highest = 0;
             var gate = new object();
@@ -125,8 +130,8 @@ public class ShellThumbnailThreadTests
         var dir = TempDirectory.Create("zurari-shellthread");
         try
         {
-            var first = VideoFile(dir, "a.mp4");
-            var second = VideoFile(dir, "b.mp4");
+            var first = DocumentFile(dir, "a.pdf");
+            var second = DocumentFile(dir, "b.pdf");
             var threads = new ConcurrentQueue<int>();
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(
@@ -162,9 +167,9 @@ public class ShellThumbnailThreadTests
         var dir = TempDirectory.Create("zurari-shellthread");
         try
         {
-            var held = VideoFile(dir, "held.mp4");
-            var passed = VideoFile(dir, "passed-over.mp4");
-            var landed = VideoFile(dir, "landed-on.mp4");
+            var held = DocumentFile(dir, "held.pdf");
+            var passed = DocumentFile(dir, "passed-over.pdf");
+            var landed = DocumentFile(dir, "landed-on.pdf");
             var asked = new ConcurrentQueue<string>();
             using var release = new ManualResetEventSlim(false);
             var queue = new ConcurrentQueue<Msg>();
@@ -174,7 +179,7 @@ public class ShellThumbnailThreadTests
                 shellThumbnail: (path, _) =>
                 {
                     asked.Enqueue(Path.GetFileName(path));
-                    if (Path.GetFileName(path) == "held.mp4")
+                    if (Path.GetFileName(path) == "held.pdf")
                     {
                         release.Wait(TimeSpan.FromSeconds(10));
                     }
@@ -191,7 +196,7 @@ public class ShellThumbnailThreadTests
             release.Set();
             Thread.Sleep(700);
 
-            Assert.Equal(["held.mp4", "landed-on.mp4"], asked);
+            Assert.Equal(["held.pdf", "landed-on.pdf"], asked);
         }
         finally
         {
