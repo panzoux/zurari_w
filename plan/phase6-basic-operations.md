@@ -1013,8 +1013,44 @@ first pass through a folder, not a standing tax.
 appeared in either (checked by modification time, not only by name). The three guards hold against a
 real user folder and a real removable drive.
 
-**Still unmeasured:** how long ffmpeg takes on these same videos, which decides whether the fallback
-needs the same budget; and a document handler doing real work, which this machine cannot show.
+**ffmpeg, on the same six files**, through the app's own `VideoThumbnailer` so the arguments are the
+real ones rather than my approximation of them (ffmpeg 8.1.1, on `PATH`):
+
+| File | Shell (`IThumbnailCache`) | ffmpeg (`-ss … -frames:v 1 -vf scale=512:-1`) |
+|---|---|---|
+| 1389.9 MB | 721.8 ms | 623.5 ms |
+| 1078.1 MB | 536.6 ms | 296.3 ms |
+| 985.5 MB | 490.7 ms | 253.7 ms |
+| 936.7 MB | 282.4 ms | 205.2 ms |
+| 867.1 MB | 635.9 ms | 370.9 ms |
+| 849.1 MB | 463.6 ms | 316.0 ms |
+
+**ffmpeg was faster on all six**, process spawn included, by roughly 1.5×. **Caveat, stated because
+it matters:** the shell ran first, on cold files, and ffmpeg second, so the OS file cache favours
+ffmpeg in this comparison; a fair rematch alternates the order. What survives the caveat is that the
+two are the same order of magnitude - which is the fact 6c.7 needs, and it is not the fact 6c.5
+assumed ("no external tool" implied the shell was the cheap path).
+
+So **the ordering is a question again, not a settled one**: shell-first is still right where ffmpeg is
+absent, ffmpeg-first looks faster where it is present, and deciding properly needs the case the
+ordering exists to survive - no ffmpeg *and* a slow third-party handler - which this machine cannot
+produce. **It changes nothing about 6c.7**: both paths are 200-700 ms, so the bound and the budget
+are needed whichever goes first, and N must sit above ~700 ms for video, or be per-kind.
+
+Nothing was written for this run either: `D:\iv` still holds exactly its 11 files, no `Thumbs.db`,
+and no temp PNG outlived the run.
+
+**The PDF preview visible in Explorer is a different interface, and it cannot feed ours.** `.pdf` here
+has a *preview handler* - `{3A84F9C2-6164-485C-A7D9-4B27F8AC009E}`, "Microsoft PDF Previewer",
+registered under `IPreviewHandler` (`{8895b1c6-…}`) - which is what fills Explorer's preview pane, and
+is why a PDF looks previewable there. It has no `IThumbnailProvider`, the interface `IThumbnailCache`
+asks and the only one that hands back a bitmap. A preview handler renders into an HWND instead, so it
+can never be an image in our pane; using it would mean hosting its window, which is a feature for the
+roadmap rather than a fix here. The file list corroborates the split: those PDFs carry the generic
+red icon while the videos carry frames. (Default PDF app here is Firefox; Acrobat is what would add
+the missing thumbnail provider.)
+
+**Still unmeasured:** a document thumbnail handler doing real work, which this machine cannot show.
 
 **Asked whether to remove the feature or put it behind a setting; still no, but for a better reason.**
 A setting does not make 500 ms shorter - it makes the user responsible for it, having first asked them
