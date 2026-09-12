@@ -30,13 +30,14 @@ wrong the moment the next commit lands - `git log --oneline main..` is the hones
 |---|---|---|---|
 | **6a** | **Location foundation** (absorbed Phase 8) | `[x]` | `2b74c1a` |
 | **6b** | **Column data model**: raw list, derived view | `[x]` | `2cfbfee` |
-| **6c** | **Cancellable preview pipeline** | `[x]` | |
+| **6c** | **Cancellable preview pipeline** | `[~]` | |
 | 6c.1 | Dedicated preview slot, off the worker pool | `[x]` | `53bc98c` |
 | 6c.2 | Cancellation: generation-aware, ordering-safe | `[x]` | `ae3219a` `593194e` `cf41efa` |
 | 6c.3 | Settle delay before touching the disk | `[x]` | `593194e` |
 | 6c.4 | Thumbnail cache, failures included | `[x]` | `2f4459c` |
 | 6c.5 | Shell thumbnails before ffmpeg (`IThumbnailCache`; never writes `Thumbs.db`) | `[x]` | `1a5c096` |
 | 6c.6 | PDF and Office documents preview as Explorer's thumbnail, where a handler is installed | `[x]` | `a932bab` |
+| 6c.7 | Shell thumbnails on one dedicated STA thread: latest-wins, time budget, failures cached | `[ ]` | |
 | **6d** | **The root pane** | `[x]` | |
 | 6d.1 | Sections, headers, cursor on header, `Space` collapses | `[x]` | `9082b8c` |
 | 6d.2 | Drive labels ("Windows (C:)"), marks refused in the pane | `[x]` | `9082b8c` |
@@ -141,6 +142,9 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
      Tested with exactly such a PDF; moving the branch after the sniff fails the test.
   3. **A success is cached, a failure is not.** No handler is a fact about the machine: install
      Office and the next look should find it, not a remembered failure. Tested both ways.
+     **Reversed by 6c.7**: failures will be cached with the same 30-day sweep as ffmpeg's, which
+     answers the objection (an Acrobat install is picked up within a month) while stopping a
+     handler-less PDF being re-probed on every cursor pass.
   4. **A thumbnail is labelled with its file's type** ("PDF Document", "MP4 Video"), not 画像ファイル,
      **and carries no resolution.** This corrected video too: since 6c.5 - and for ffmpeg thumbnails
      long before - a video's preview said 画像ファイル and gave the 512-wide thumbnail's size as the
@@ -832,7 +836,7 @@ So sort state is **per-`Location`-kind**, not global — and the root pane simpl
 
 ---
 
-# 6c — Cancellable preview pipeline — **done**
+# 6c — Cancellable preview pipeline — **6c.1-6c.6 done, 6c.7 open**
 
 **Done:** dedicated single-slot preview executor off the worker pool; `Effect.CancelPreview` emitted
 by `ReconcilePreview` when a load is abandoned; `CancellationToken` through the head read and
@@ -860,6 +864,12 @@ leaving the pane on 読み込み中… forever. Caught only as an intermittent t
 
 **6c.5 landed** - shell thumbnails before ffmpeg. See record 6c-7 for why it is `IThumbnailCache` rather than the `IShellItemImageFactory` named below.
 
+**6c.6 landed** - PDF and Office documents through the same call (record 6c-8), inert on this machine
+until a thumbnail handler is installed.
+
+**6c.7 is open and required**: the COM call is synchronous and uncancellable, so today nothing bounds
+how many extractions run at once. Design below.
+
 ## What is actually broken
 
 Not the spinner — `PreviewKind.Loading` renders 読み込み中… (`MainWindow.xaml.cs:865`). Two gaps:
@@ -884,6 +894,73 @@ cannot be dequeued, so a cancel signal has nothing to act on.
   zurari's `GetVideoCachePath`. **Cache failures too** — a corrupt `.mp4` otherwise re-spins for the
   full timeout on every cursor landing. `%LOCALAPPDATA%` means owning eviction: a size or age budget.
 
+
+## 6c.7 — one dedicated STA thread for shell thumbnails, latest-wins, with a time budget
+
+**Required, not optional**, and it applies to video (6c.5, shipped) exactly as much as to documents
+(6c.6). Your verdict: *"seems unreliably slow, com calls should be separated, and only single."*
+
+### What is actually wrong - corrected from the first telling
+
+The premise this started from was that the COM call shares the two-worker pool with directory
+listings, so listings queue behind extractions. **That has not been true since 6c.1** (`53bc98c`):
+`Effect.LoadPreview` is the one effect that does not execute on the pool. A pool worker calls
+`StartPreview` and returns immediately, so `ReadDirectory` is never stuck behind a thumbnail.
+
+The real defect is worse in a way that matters more. `StartPreview` cancels the previous preview's
+token and starts the next one **without waiting for it**, and a `CancellationToken` cannot reach
+inside a synchronous out-of-process COM call. So the "single slot" is single only in its bookkeeping
+(`_previewCts`, `_previewGeneration`): whenever the work is sitting inside `_shellThumbnail(...)`,
+every new cursor landing past the 100 ms settle delay starts *another* task. Arrowing through a
+folder of documents can leave many extractions in flight at once, on MTA thread-pool threads, all
+but the last discarded by the generation check. Nothing bounds that number today.
+
+Two consequences, both of which this item fixes:
+
+1. **Unbounded concurrent extractions**, each holding a thread-pool thread for as long as the shell
+   takes. That is the "unreliably slow" that prompted this.
+2. **MTA.** Thread-pool threads are MTA, so an STA-only thumbnail provider - which is the common
+   kind - is marshalled to an apartment the shell chooses for us. It works; it is not worth
+   continuing to bet on.
+
+### Design, agreed
+
+- **One dedicated STA thread inside `WorkerRuntime`, own queue, latest-wins.** One extraction in
+  flight, at most one waiting; a newer request replaces the waiter. Holding an arrow down then costs
+  one extra extraction in total, not one per row. Video moves onto the same thread - the 6c.5 tests
+  should cover it unchanged, which is the check that this is a move and not a rewrite.
+- **A time budget of N ms.** The COM call cannot be cancelled, but the preview need not wait for it:
+  past N, post the text/binary preview immediately, and post the thumbnail later *if* it arrives
+  while that generation is still current. `Msg.PreviewLoaded` already carries the generation, so a
+  late arrival is applied or ignored with no new machinery.
+- **Cache failures, ffmpeg-style, swept at 30 days.** Otherwise a handler-less PDF is re-probed on
+  every cursor pass. **This reverses decision 3 in record 6c-8** ("a success is cached, a failure is
+  not"): with a 30-day sweep an Acrobat install is picked up within a month rather than never, which
+  was the whole objection to caching failures.
+
+### N comes from measurement, not from taste
+
+A temporary `[StaFact]` in `Zurari.Shell.Tests` - which already has STA, the references and
+`TempDirectory` - with `ITestOutputHelper`, run via `dotnet test --filter` with
+`-l "console;verbosity=detailed"`, then **deleted**. Five iterations per case, the first call
+reported separately from the rest, and a fresh process per case: a warm shell hides exactly the cost
+being guarded against.
+
+Cases: a minimal valid `.pdf` · a `.docx` with `docProps/thumbnail.jpeg` · a `.png` (control - proves
+the stopwatch is seeing real work) · an `.mp4` (the existing `VideoFile` bytes) · a
+`.zurari-unknown` (the floor cost of a refusal).
+
+Two numbers decide it: what a `0x8004B200` refusal costs, and whether any case has a long tail. They
+set N, and they say whether ffmpeg's video fallback needs the same budget.
+
+### Standing context for 6c.6
+
+No PDF or Office thumbnail handler is registered on this machine - probes of a PDF, a `.docx`, a
+`.txt`, an unknown extension and `notepad.exe` all returned `WTS_E_FAILEDEXTRACTION` (`0x8004B200`),
+with no icon fallback and no files written. 6c.6 is **inert here** until Office, Acrobat or PowerToys
+is installed; records say so plainly rather than implying a visible change. All three no-`Thumbs.db`
+guards stay as they are: `WTS_EXTRACTDONOTCACHE`, `ShellThumbnailer.IsPlainlyLocal`, and the
+Runtime's `IsOnNetwork` on the already-open handle.
 
 ---
 # 6d — The root pane — **done**
