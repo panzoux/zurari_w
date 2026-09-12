@@ -193,4 +193,32 @@ public class ThumbnailCacheTests
             TempDirectory.Delete(dir);
         }
     }
+
+    /// <summary>
+    /// A shell "no thumbnail" must not read as an ffmpeg verdict. ExecuteVideoPreview consults the
+    /// ffmpeg entry before ffmpeg runs, so a shell result stored there would report a rejection for
+    /// a file ffmpeg had never been asked about - and skip ffmpeg entirely.
+    /// </summary>
+    [Fact]
+    public async Task A_remembered_shell_failure_is_not_an_ffmpeg_verdict()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var cache = new ThumbnailCache(Path.Combine(dir, "cache"));
+            await cache.InitialSweep;
+            var video = CreateVideoFile(dir);
+
+            cache.StoreShellFailure(video);
+
+            Assert.True(cache.TryGetShellFailure(video));
+            Assert.False(cache.TryGet(video, out var bytes, out var failure));
+            Assert.Null(bytes);
+            Assert.Null(failure);
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
 }

@@ -301,32 +301,38 @@ public class ShellThumbnailPreviewTests
     }
 
     /// <summary>
-    /// No handler is a fact about the machine, not the file: install Office and the next look should
-    /// get a thumbnail, not a remembered failure.
+    /// A missing handler is remembered, so a pass through a folder of documents probes each file
+    /// once rather than on every landing. This reverses decision 3 in record 6c-8, and the 30-day
+    /// sweep is what answers its objection: install Office and the entry ages out within a month,
+    /// where "never cache" was the only alternative when the cache had no expiry in view.
     /// </summary>
     [Fact]
-    public void A_missing_handler_is_not_remembered_against_the_file()
+    public void A_missing_handler_is_remembered_rather_than_probed_again()
     {
         var dir = TempDirectory.Create("zurari-shellpreview");
         try
         {
             var docx = Path.Combine(dir, "letter.docx");
             File.WriteAllBytes(docx, ZipHead);
-            var handlerInstalled = false;
+            var asked = 0;
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(
                 queue.Enqueue,
                 thumbnailCache: new ThumbnailCache(Path.Combine(dir, "cache")),
-                shellThumbnail: (_, _) => Volatile.Read(ref handlerInstalled) ? OnePixelPng : null);
+                shellThumbnail: (_, _) =>
+                {
+                    Interlocked.Increment(ref asked);
+                    return null;
+                });
 
             runtime.Submit(new Effect.LoadPreview(1, docx));
-            var before = WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
-            Volatile.Write(ref handlerInstalled, true);
+            var first = WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
             runtime.Submit(new Effect.LoadPreview(2, docx));
-            var after = WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
+            var second = WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
 
-            Assert.Equal(PreviewKind.Binary, before.Kind);
-            Assert.Equal(PreviewKind.Image, after.Kind);
+            Assert.Equal(1, asked);
+            Assert.Equal(PreviewKind.Binary, first.Kind);
+            Assert.Equal(PreviewKind.Binary, second.Kind);
         }
         finally
         {

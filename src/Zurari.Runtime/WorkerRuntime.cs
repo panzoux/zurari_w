@@ -59,6 +59,20 @@ public sealed class WorkerRuntime : IDisposable
     private static readonly TimeSpan VideoThumbnailTimeout = TimeSpan.FromSeconds(20);
 
     /// <summary>
+    /// How long a preview waits for Explorer's thumbnail before showing what it would have shown
+    /// anyway. The extraction is not abandoned - it cannot be - so the picture still replaces that
+    /// fallback if it arrives while the same generation is on screen.
+    /// </summary>
+    /// <remarks>
+    /// Measured against real files (see plan 6c.7): shell extractions of 849 MB-1.4 GB videos took
+    /// 282-722 ms, plus about 100 ms of COM start-up on the first call of a process. A budget inside
+    /// that range would fire on ordinary videos and flip every one of them from hex dump to picture,
+    /// so this sits above the measured worst case with room to spare, and bites only a handler that
+    /// is pathologically slow.
+    /// </remarks>
+    private static readonly TimeSpan ShellThumbnailBudget = TimeSpan.FromMilliseconds(1500);
+
+    /// <summary>
     /// Extensions treated as video even when <see cref="FileTypeDetector"/>'s magic-number sniff
     /// is inconclusive (e.g. ASF-based WMV, or any container the signature table does not cover) -
     /// see <see cref="ExecuteLoadPreview"/>.
@@ -108,16 +122,18 @@ public sealed class WorkerRuntime : IDisposable
     private readonly Func<string, string?>? _displayName;
 
     /// <summary>
-    /// Explorer's thumbnail for a file as PNG bytes, or <c>null</c>. Injected because it comes from
-    /// the shell and Runtime may not reference Shell.
+    /// Explorer's thumbnails, extracted one at a time on the single STA thread that
+    /// <see cref="ShellThumbnailThread"/> owns. Created on first use, so a runtime that never
+    /// previews one never starts a thread; <c>null</c> when no extractor was injected, which is
+    /// also how <see cref="TryPostShellThumbnail"/> knows there is nothing to ask.
     /// </summary>
     /// <remarks>
-    /// Tried before ffmpeg for video: no external tool, and whatever codecs Windows already has.
-    /// Only ever called for a file whose open handle resolves to a local volume - see
+    /// The extractor is injected because it comes from the shell and Runtime may not reference
+    /// Shell. It is only ever called for a file whose open handle resolves to a local volume - see
     /// <see cref="IsOnNetwork"/> - which is one of three separate reasons it cannot leave a
     /// <c>Thumbs.db</c> in a share.
     /// </remarks>
-    private readonly Func<string, int, byte[]?>? _shellThumbnail;
+    private readonly Lazy<ShellThumbnailThread>? _shellThumbnails;
 
     /// <summary>
     /// 1 once the stored collapsed sections have been handed to the state - see
@@ -208,7 +224,10 @@ public sealed class WorkerRuntime : IDisposable
         _trash = trash;
         _settings = settings ?? new UserSettingsStore();
         _displayName = displayName;
-        _shellThumbnail = shellThumbnail;
+        _shellThumbnails = shellThumbnail is null
+            ? null
+            : new Lazy<ShellThumbnailThread>(
+                () => new ShellThumbnailThread(shellThumbnail), LazyThreadSafetyMode.ExecutionAndPublication);
 
         _workers = new Task[workerCount];
         for (var i = 0; i < workerCount; i++)
@@ -1244,7 +1263,7 @@ public sealed class WorkerRuntime : IDisposable
     private bool TryPostShellThumbnail(
         Effect.LoadPreview effect, string label, PreviewMetadata baseMetadata, bool onLocalVolume, CancellationToken token)
     {
-        if (_shellThumbnail is null)
+        if (_shellThumbnails is null)
         {
             return false;
         }
@@ -1255,16 +1274,70 @@ public sealed class WorkerRuntime : IDisposable
             return true;
         }
 
-        if (!onLocalVolume || _shellThumbnail(effect.Path, VideoThumbnailSize) is not { Length: > 0 } png)
+        if (_thumbnailCache.Value.TryGetShellFailure(effect.Path))
         {
             return false;
         }
 
-        token.ThrowIfCancellationRequested();
+        if (!onLocalVolume)
+        {
+            return false;
+        }
+
+        var request = _shellThumbnails!.Value.Request(effect.Path, VideoThumbnailSize);
+
+        try
+        {
+            if (!request.Wait((int)ShellThumbnailBudget.TotalMilliseconds, token))
+            {
+                // Budget spent. The caller shows something now; the extraction carries on, because
+                // there is no way to stop it, and its result is still worth having.
+                PostWhenItArrives(effect, label, baseMetadata, request);
+                return false;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded mid-wait. Same reasoning: the work is already running, so let its result
+            // reach the cache rather than throwing it away and paying for it again next time.
+            PostWhenItArrives(effect, label, baseMetadata, request);
+            throw;
+        }
+
+        if (request.Result is not { Length: > 0 } png)
+        {
+            _thumbnailCache.Value.StoreShellFailure(effect.Path);
+            return false;
+        }
+
         _thumbnailCache.Value.StoreSuccess(effect.Path, png);
         PostThumbnail(effect, png, label, baseMetadata);
         return true;
     }
+
+    /// <summary>
+    /// Keeps and shows an extraction that outran <see cref="ShellThumbnailBudget"/>, once it
+    /// finishes. Posting is unconditional: <see cref="Msg.PreviewLoaded"/> carries the generation,
+    /// so Core applies it if that file is still under the cursor and discards it otherwise.
+    /// </summary>
+    private void PostWhenItArrives(
+        Effect.LoadPreview effect, string label, PreviewMetadata baseMetadata, Task<byte[]?> request) =>
+        request.ContinueWith(
+            finished =>
+            {
+                if (finished.Result is { Length: > 0 } png)
+                {
+                    _thumbnailCache.Value.StoreSuccess(effect.Path, png);
+                    PostThumbnail(effect, png, label, baseMetadata);
+                }
+                else
+                {
+                    _thumbnailCache.Value.StoreShellFailure(effect.Path);
+                }
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.None,
+            TaskScheduler.Default);
 
     /// <summary>
     /// Posts a picture that stands in for a file which is not itself a picture - a video's frame, a
@@ -1453,6 +1526,11 @@ public sealed class WorkerRuntime : IDisposable
         catch (AggregateException)
         {
             // A worker faulted while unwinding from cancellation; nothing more to do on Dispose.
+        }
+
+        if (_shellThumbnails is { IsValueCreated: true } thumbnails)
+        {
+            thumbnails.Value.Dispose();
         }
 
         // _previewCts is deliberately not disposed here; see the CA2213 note in .editorconfig.

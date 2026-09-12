@@ -32,6 +32,14 @@ public sealed class ThumbnailCache
     private const string HitExtension = ".png";
     private const string MissExtension = ".miss";
 
+    /// <summary>
+    /// Marks "the shell had no thumbnail for this file". Deliberately a different extension from
+    /// <see cref="MissExtension"/>: that one means "ffmpeg rejected this file", and the video
+    /// preview consults it before ffmpeg runs. Storing a shell result there would report a
+    /// rejection for a file ffmpeg had never been asked about, and skip it entirely.
+    /// </summary>
+    private const string ShellMissExtension = ".noshell";
+
     private readonly string? _directory;
 
     /// <summary>
@@ -128,6 +136,44 @@ public sealed class ThumbnailCache
     /// </summary>
     public void StoreFailure(string videoPath, string detail) =>
         Write(videoPath, MissExtension, file => File.WriteAllText(file, detail, Encoding.UTF8));
+
+    /// <summary>
+    /// Remembers that the shell produced no thumbnail for <paramref name="path"/>, so a pass through
+    /// a folder of documents probes each file once instead of on every landing. Best effort.
+    /// </summary>
+    /// <remarks>
+    /// A missing handler is a fact about the machine rather than the file, which is why this was
+    /// once deliberately not cached (record 6c-8). It is cached now because the entry expires: the
+    /// 30-day <see cref="Sweep"/> applies to these markers like any other entry, so installing a PDF
+    /// reader starts producing thumbnails within a month rather than never.
+    /// </remarks>
+    public void StoreShellFailure(string path) =>
+        Write(path, ShellMissExtension, file => File.WriteAllText(file, string.Empty, Encoding.UTF8));
+
+    /// <summary>Whether the shell has already been asked about <paramref name="path"/> and had nothing.</summary>
+    public bool TryGetShellFailure(string path)
+    {
+        if (KeyFor(path) is not { } key)
+        {
+            return false;
+        }
+
+        try
+        {
+            var marker = Path.Combine(_directory!, key + ShellMissExtension);
+            if (File.Exists(marker))
+            {
+                Touch(marker);
+                return true;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // A cache is an optimization; a read failure just means asking the shell again.
+        }
+
+        return false;
+    }
 
     private void Write(string videoPath, string extension, Action<string> write)
     {

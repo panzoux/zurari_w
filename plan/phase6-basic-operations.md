@@ -20,7 +20,7 @@ Phase 6 was sixteen loose checkboxes. Grilling turned it into decisions, and fou
 
 **6a-6d, 6f and 6g are on `main`** - fast-forwarded from `phase6a-location-foundation` on
 2026-09-05, once 6d was complete (see R-1). 6c and 6e.1-6e.6 followed; 6e.7 is deferred.
-776 tests, `scripts/check.ps1` green.
+783 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`, and `check.ps1` refuses to pass while it is
 stale. Do not edit it by hand. A commit count used to live here too; it was removed because it is
@@ -30,14 +30,14 @@ wrong the moment the next commit lands - `git log --oneline main..` is the hones
 |---|---|---|---|
 | **6a** | **Location foundation** (absorbed Phase 8) | `[x]` | `2b74c1a` |
 | **6b** | **Column data model**: raw list, derived view | `[x]` | `2cfbfee` |
-| **6c** | **Cancellable preview pipeline** | `[~]` | |
+| **6c** | **Cancellable preview pipeline** | `[x]` | |
 | 6c.1 | Dedicated preview slot, off the worker pool | `[x]` | `53bc98c` |
 | 6c.2 | Cancellation: generation-aware, ordering-safe | `[x]` | `ae3219a` `593194e` `cf41efa` |
 | 6c.3 | Settle delay before touching the disk | `[x]` | `593194e` |
 | 6c.4 | Thumbnail cache, failures included | `[x]` | `2f4459c` |
 | 6c.5 | Shell thumbnails before ffmpeg (`IThumbnailCache`; never writes `Thumbs.db`) | `[x]` | `1a5c096` |
 | 6c.6 | PDF and Office documents preview as Explorer's thumbnail, where a handler is installed | `[x]` | `a932bab` |
-| 6c.7 | Shell thumbnails on one dedicated STA thread: latest-wins, time budget, failures cached | `[ ]` | |
+| 6c.7 | Shell thumbnails on one dedicated STA thread: latest-wins, time budget, failures cached | `[x]` | (this commit) |
 | **6d** | **The root pane** | `[x]` | |
 | 6d.1 | Sections, headers, cursor on header, `Space` collapses | `[x]` | `9082b8c` |
 | 6d.2 | Drive labels ("Windows (C:)"), marks refused in the pane | `[x]` | `9082b8c` |
@@ -117,6 +117,37 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   (answered: do them - see 6c-8). And an
   ffmpeg failure verdict cached before this change still wins over the shell for that one file until
   the 30-day sweep; those are files ffmpeg rejected, where the shell most likely fails too.
+
+- **6c-9** `[x]` **6c.7 built: one STA thread, latest-wins, a 1.5 s budget, and failures remembered.**
+  1. **`ShellThumbnailThread`** - one dedicated STA thread, one extraction in flight, at most one
+     waiting; a newer request displaces the waiter and completes it with "nothing". Holding an arrow
+     down now costs one extraction in flight plus one waiting, whatever the folder's size, where
+     before nothing bounded it at all. The STA call is guarded by `OperatingSystem.IsWindows()`
+     because Runtime targets plain net8.0 and apartments are a Windows notion.
+  2. **Budget 1500 ms**, derived from the measurements above rather than taste: real extractions ran
+     282-722 ms plus ~100 ms of COM start-up, so this sits above the measured worst case. An ordinary
+     video therefore still shows its thumbnail directly instead of flipping from hex dump to picture,
+     and only a pathologically slow handler falls back. Past the budget the preview posts what it
+     would have shown anyway and the picture replaces it if it arrives - `Msg.PreviewLoaded` already
+     carries the generation, so Core applies or discards it with no new machinery.
+  3. **Failures remembered - reversing 6c-8 decision 3 - under their own marker.** A shell "nothing"
+     writes `.noshell`, deliberately *not* the `.miss` that means "ffmpeg rejected this file":
+     `ExecuteVideoPreview` consults that entry before ffmpeg runs, so storing a shell result there
+     would report an ffmpeg rejection for a file ffmpeg had never been asked about and skip it
+     entirely. A test holds that line. The 30-day sweep covers the new marker like any other entry,
+     which is exactly what answers the original objection to caching failures.
+  4. **An extraction superseded mid-wait still reaches the cache.** It is already running and cannot
+     be stopped, so discarding its result would only mean paying for it again on the next pass.
+
+  **Evidence: 783 tests green**, 7 new and 1 rewritten. Three were strict red-first - the STA test
+  failed with `MTA`, the budget test posted `Image` first instead of falling back, and the
+  missing-handler test asked twice. The four that passed on arrival were mutation-verified instead,
+  5 mutations each failing at least one test: a fresh thread per request, a FIFO backlog in place of
+  latest-wins, a shell failure stored as an ffmpeg verdict, and the late and in-budget empty results
+  each left unremembered.
+
+  **Deliberately not changed:** the shell-before-ffmpeg ordering, which the measurement above
+  reopened and which needs a machine this one cannot supply; and ffmpeg's own 20 s timeout.
 
 - **6c-8** `[x]` **PDF and Office thumbnails, 6c.6 - built and tested, but inert on this machine.**
   A document with a PDF or Office extension is now offered to the same shell call as a video, before
@@ -836,7 +867,7 @@ So sort state is **per-`Location`-kind**, not global — and the root pane simpl
 
 ---
 
-# 6c — Cancellable preview pipeline — **6c.1-6c.6 done, 6c.7 open**
+# 6c — Cancellable preview pipeline — **done**
 
 **Done:** dedicated single-slot preview executor off the worker pool; `Effect.CancelPreview` emitted
 by `ReconcilePreview` when a load is abandoned; `CancellationToken` through the head read and
@@ -867,8 +898,9 @@ leaving the pane on 読み込み中… forever. Caught only as an intermittent t
 **6c.6 landed** - PDF and Office documents through the same call (record 6c-8), inert on this machine
 until a thumbnail handler is installed.
 
-**6c.7 is open and required**: the COM call is synchronous and uncancellable, so today nothing bounds
-how many extractions run at once. Design below.
+**6c.7 landed** - the COM call is synchronous and uncancellable, so it now has one STA thread, a
+bound on how many extractions can be in flight, and a time budget. Design below, outcome in record
+6c-9.
 
 ## What is actually broken
 
@@ -896,6 +928,9 @@ cannot be dequeued, so a cancel signal has nothing to act on.
 
 
 ## 6c.7 — one dedicated STA thread for shell thumbnails, latest-wins, with a time budget
+
+**Built; see record 6c-9 for what shipped and the evidence.** The design below is as it was agreed,
+kept for the reasoning.
 
 **Required, not optional**, and it applies to video (6c.5, shipped) exactly as much as to documents
 (6c.6). Your verdict: *"seems unreliably slow, com calls should be separated, and only single."*
