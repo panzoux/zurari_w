@@ -971,19 +971,57 @@ under 2 ms in every case. The 74-166 ms first call is COM and surrogate start-up
 process, not per file. The control did real work (it returned a PNG, and cost about twice a refusal),
 so the stopwatch is not measuring nothing.
 
-**N ≈ 200 ms**, then: above everything measured here, so on a machine with no handler the budget
-never fires, and it bites only where a handler is genuinely slow - which is the case it exists for.
+A first reading of this set N at about 200 ms and called 6c.7 "not urgent". **Both were wrong, and
+the next section says why** - these files were synthetic, and synthetic files measure refusals.
 
-**Still unmeasured, and not measurable here:** a real handler doing real work (Acrobat on a long
-PDF), and a real video through Windows' own decoder - the `.mp4` above was 12 bytes and was refused
-like the rest. Both want the manual pass already recorded in 6c-8.
+### Real files, the same day - and the correction they force
 
-**Asked whether to remove the feature or put it behind a setting; answered with these numbers: no.**
-A refusal is ~10 ms against a 100 ms settle delay that already precedes it, and the pathological case
-cannot arise on a machine with no handler at all. Removing it would cost video thumbnails wherever
-ffmpeg is absent, and a setting would be a permanent second code path, and a question no user can
-answer, bought against a measured-small risk. 6c.7 stays worth doing - it is the bound for machines
-that *do* have handlers - but it is not urgent.
+A 60-byte "PDF" and a 12-byte "MP4" are malformed, and a handler refuses them on sight whether or not
+it is installed. So the probe above was timing almost nothing. Repeated against real files - 8 PDFs
+of 7-59 MB, and 6 MP4s of 849 MB to 1.4 GB on a **removable USB drive**:
+
+| Case | Size | Cost | Result |
+|---|---|---|---|
+| PDF × 8 | 7.4 - 59.1 MB | 85.1 ms first call, then **5.4 - 6.2 ms** | all refused |
+| MP4 × 6 | 849 - 1390 MB | **282 - 722 ms each** | **all succeeded**, 140-300 KB PNG |
+
+Two facts, pointing opposite ways:
+
+1. **A refusal is flat in file size.** A 59 MB PDF is refused as fast as a 7 MB one, because the shell
+   answers from the registration without reading the file. And the registration is genuinely absent:
+   `.pdf` has no ProgID at all here, and no `IThumbnailProvider` under any of the four places one can
+   be registered. 6c-8's "inert on this machine" is now confirmed on real documents, not just a stub.
+2. **The success path is the expensive one - and it is the path this machine actually takes.** `.mp4`
+   resolves to Windows' own *Property Thumbnail Handler*
+   (`{9DBD2C50-62AD-11D0-B806-00C04FD706EC}`), and every real video produced a thumbnail in
+   **282-722 ms**: 30 to 70 times the 100 ms settle delay, and fifty times what the synthetic file
+   implied.
+
+**So 6c.7 is urgent, not optional-but-nice.** Arrowing through a folder of videos starts a ~500 ms
+uncancellable extraction per landing with nothing bounding how many run at once - which is exactly
+the "unreliably slow" this item started from. The bound is the point of it.
+
+**N is not 200 ms.** A 200 ms budget would fire on every real video here, so every video preview would
+show a fallback first and flip to the thumbnail half a second later. Either N sits above the honest
+success range (~1 s, firing only on a pathological handler) or it is per-kind. A decision for when
+6c.7 is built, but now with data under it.
+
+**The cost is once per file** - our own `ThumbnailCache` answers the second landing - so this is the
+first pass through a folder, not a standing tax.
+
+**Nothing was written.** Neither directory had a `Thumbs.db` before or after, and no file of any kind
+appeared in either (checked by modification time, not only by name). The three guards hold against a
+real user folder and a real removable drive.
+
+**Still unmeasured:** how long ffmpeg takes on these same videos, which decides whether the fallback
+needs the same budget; and a document handler doing real work, which this machine cannot show.
+
+**Asked whether to remove the feature or put it behind a setting; still no, but for a better reason.**
+A setting does not make 500 ms shorter - it makes the user responsible for it, having first asked them
+to know what a thumbnail handler is. Removal would not even cost much *here* (ffmpeg is on `PATH`, so
+video would fall back to it) but it would lose thumbnails wherever ffmpeg is absent, and trade an
+in-process call for a process spawn of unmeasured cost. The 500 ms is an argument for bounding the
+call, which is 6c.7, not for a switch in front of it.
 
 ### Standing context for 6c.6
 
