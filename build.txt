@@ -31,6 +31,8 @@ zurari_w ビルド / 配布手順
      単一ファイルにしたい場合は上記のとおり指定する。
      初回起動時にネイティブ DLL を一時フォルダへ展開するため、起動が僅かに遅い。
 
+dotnet publish src/Zurari.App -c Release -r win-x64 --no-self-contained -p:PublishSingleFile=true -o publish
+
 
 ■ 試したが使えない / 効果がない指定
 --------------------------------------------------
