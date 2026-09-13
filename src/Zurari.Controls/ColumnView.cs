@@ -198,6 +198,41 @@ public sealed class ColumnView : Control
     {
         DefaultStyleKeyProperty.OverrideMetadata(
             typeof(ColumnView), new FrameworkPropertyMetadata(typeof(ColumnView)));
+
+        // Keep a column's own scrolling inside it - see OnRequestBringIntoView.
+        EventManager.RegisterClassHandler(
+            typeof(ColumnView),
+            RequestBringIntoViewEvent,
+            new RequestBringIntoViewEventHandler(OnRequestBringIntoView));
+    }
+
+    /// <summary>
+    /// Stops a bring-into-view request raised inside a column from reaching
+    /// <see cref="ColumnBrowser"/>'s horizontal <see cref="ScrollViewer"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="SyncFromColumn"/> scrolls the cursor row into view with
+    /// <see cref="ListBox.ScrollIntoView"/>, which is <c>BringIntoView</c> on the row's container.
+    /// That request bubbles: the list's own <see cref="ScrollViewer"/> scrolls vertically and then
+    /// passes it on, so it reaches the browser's horizontal scroll viewer, which obligingly scrolls
+    /// sideways until that row is visible. Any column could therefore drag the whole pane across
+    /// whenever its cursor moved - a column reloading in the background, or the child column beside
+    /// the cursor arriving with a remembered cursor of its own - and where the columns ended up
+    /// depended on which of those requests reached the scroll viewer last.
+    /// </para>
+    /// <para>
+    /// Where the columns sit horizontally is <see cref="ColumnBrowser"/>'s decision alone
+    /// (<c>ApplyHorizontalScroll</c>), computed from the column widths rather than from requests
+    /// arriving in some order, so every one of these is stopped here. The vertical scrolling the
+    /// request was actually for has already happened by now: the list's scroll viewer is a
+    /// descendant of this view and handled it on the way up.
+    /// </para>
+    /// </remarks>
+    private static void OnRequestBringIntoView(object sender, RequestBringIntoViewEventArgs e)
+    {
+        ArgumentNullException.ThrowIfNull(e);
+        e.Handled = true;
     }
 
     internal ColumnView()

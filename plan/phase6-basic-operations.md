@@ -20,7 +20,7 @@ Phase 6 was sixteen loose checkboxes. Grilling turned it into decisions, and fou
 
 **6a-6d, 6f and 6g are on `main`** - fast-forwarded from `phase6a-location-foundation` on
 2026-09-05, once 6d was complete (see R-1). 6c and 6e.1-6e.6 followed; 6e.7 is deferred.
-784 tests, `scripts/check.ps1` green.
+789 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`, and `check.ps1` refuses to pass while it is
 stale. Do not edit it by hand. A commit count used to live here too; it was removed because it is
@@ -577,6 +577,33 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   preview** (same gate, same 150 ms): a held-down arrow would otherwise put one directory listing on
   the worker pool per keystroke, which on a network share is precisely the stall the preview slot was
   separated out to avoid in 6c.
+
+- **6g-2** `[x]` **The columns slid sideways whenever that child column came and went.** Reported
+  from screenshots: moving the cursor off a folder onto a file scrolled the whole pane. Two causes,
+  both of the same shape - the horizontal offset was a side effect rather than a decision.
+
+  One: `ListBox.ScrollIntoView` on a cursor row is a bubbling `BringIntoView`. The list's own scroll
+  viewer scrolls vertically and then passes it on, so it reaches the browser's horizontal scroll
+  viewer, which scrolls sideways until that row is visible. *Any* column could therefore drag the
+  pane - the child column arriving with a cursor remembered from an earlier visit, or a column
+  reloading in the background - and where the columns ended up depended on which request arrived
+  last: the same six-column state was measured settling at 431, 456 and 671.
+
+  Two: losing a column shrinks the extent, and a `ScrollViewer` clamps its offset to whatever its
+  content still justifies, pulling every remaining column across the screen.
+
+  So the offset became one number `ColumnBrowser` owns, computed from the column widths rather than
+  from requests arriving in some order (`ApplyHorizontalScroll`). Reveal the child column beside the
+  cursor when it sits past the right edge; never scroll left except to bring the focused column back
+  when a snapshot would strand it; and **reserve `offset + viewport` on the panel before the layout
+  pass that drops a column**, so the offset stays legal - the space goes blank and the next child
+  column to open takes it back. Rows no longer reach the browser's scroll viewer at all (a
+  `RequestBringIntoView` class handler on `ColumnView`).
+
+  **The first attempt was wrong and was reverted.** Suppressing the row requests alone did stop the
+  movement - and stopped the child column ever being revealed, which is the whole point of 6g-1. The
+  rule you chose instead: scroll right until it is visible, and never scroll back. Blank space on the
+  right is acceptable; columns moving under the cursor is not.
 
 - **6d-14** `[x]` **A not-ready drive said only that something had gone wrong.** It was reported as a
   failed preview, so an empty optical drive read as an error. It is not an error - it is an empty

@@ -20,9 +20,12 @@ namespace Zurari.Controls;
 /// </para>
 /// </summary>
 [TemplatePart(Name = PanelPartName, Type = typeof(StackPanel))]
+[TemplatePart(Name = ScrollPartName, Type = typeof(ScrollViewer))]
 public sealed class ColumnBrowser : Control
 {
     internal const string PanelPartName = "PART_ColumnsPanel";
+
+    internal const string ScrollPartName = "PART_HorizontalScroll";
 
     private const double DefaultColumnWidth = 240;
     private const double MinColumnWidth = 120;
@@ -49,6 +52,8 @@ public sealed class ColumnBrowser : Control
     private readonly List<double> columnWidths = [];
 
     private StackPanel? columnsPanel;
+
+    private ScrollViewer? horizontalScroll;
 
     static ColumnBrowser()
     {
@@ -119,6 +124,7 @@ public sealed class ColumnBrowser : Control
     {
         base.OnApplyTemplate();
         columnsPanel = GetTemplateChild(PanelPartName) as StackPanel;
+        horizontalScroll = GetTemplateChild(ScrollPartName) as ScrollViewer;
         RebuildColumns();
     }
 
@@ -165,29 +171,107 @@ public sealed class ColumnBrowser : Control
             columnWidths.Add(DefaultColumnWidth);
         }
 
-        ColumnView? focusedView = null;
         for (var i = 0; i < columns.Count; i++)
         {
             var view = (ColumnView)children[i];
             view.Column = columns[i];
             view.Width = columnWidths[i];
-            if (columns[i].IsFocused)
-            {
-                focusedView = view;
-            }
         }
 
-        // Bring the focused column into the horizontal viewport. BringIntoView walks
-        // up through PART_HorizontalScroll (or any ancestor ScrollViewer) on its own,
-        // so no direct reference to the scroll viewer template part is needed here.
-        // Deferred to the Loaded priority so layout has assigned the view its
-        // final size before the scroll computation runs (a freshly (re)sized
-        // column has no arranged bounds yet at the point Columns is assigned).
-        if (focusedView is not null)
+        // Before the layout pass this assignment triggers - see ReserveScrolledWidth.
+        ReserveScrolledWidth();
+
+        // Deferred to the Loaded priority so layout has assigned the views their final sizes
+        // before the scroll computation runs (a freshly (re)sized column has no arranged bounds
+        // yet at the point Columns is assigned, and neither has the viewport).
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(ApplyHorizontalScroll));
+    }
+
+    /// <summary>
+    /// Holds the width the current scroll position needs, so that a column going away does not
+    /// drag every other column sideways.
+    /// </summary>
+    /// <remarks>
+    /// A cursor on a folder opens that folder in a column to the right of the focused one, and
+    /// moving the cursor down onto a file takes it away again. Nothing about the other columns
+    /// changed, so none of them should move - but a <see cref="ScrollViewer"/> clamps its offset to
+    /// whatever its content is still wide enough to justify, so losing that column pulled the
+    /// remaining ones across the screen. Reserving the width keeps the offset legal: the space the
+    /// vanished column held simply goes blank, and the next child column to open takes it back.
+    /// <para>
+    /// Must run before the layout pass that drops the column, which is why it is called here rather
+    /// than from <see cref="ApplyHorizontalScroll"/> - by then the offset has already been clamped
+    /// and the value worth keeping is gone.
+    /// </para>
+    /// </remarks>
+    private void ReserveScrolledWidth()
+    {
+        if (columnsPanel is null || horizontalScroll is null)
         {
-            var target = focusedView;
-            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() => target.BringIntoView()));
+            return;
         }
+
+        columnsPanel.MinWidth = horizontalScroll.HorizontalOffset + horizontalScroll.ViewportWidth;
+    }
+
+    /// <summary>
+    /// Puts the horizontal viewport where this snapshot needs it: the child column beside the
+    /// cursor in view, the focused column in view, and otherwise exactly where the user left it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Showing the folder under the cursor is the entire reason that child column exists, so a
+    /// snapshot that opens one past the right edge scrolls to it. Everything else is deliberately
+    /// one-way: this never scrolls left to close up blank space, only far enough to bring the
+    /// focused column back when a snapshot would otherwise leave it off screen.
+    /// </para>
+    /// <para>
+    /// Computed from <see cref="columnWidths"/> rather than by calling <c>BringIntoView</c> on a
+    /// column view, so the offset is one number this method owns - instead of the outcome of
+    /// however many bring-into-view requests happened to reach the scroll viewer, in whatever order
+    /// (see <see cref="ColumnView"/>'s RequestBringIntoView handler, which is what keeps the rows
+    /// inside a column from scrolling the browser sideways at all).
+    /// </para>
+    /// </remarks>
+    private void ApplyHorizontalScroll()
+    {
+        if (columnsPanel is null || horizontalScroll is null)
+        {
+            return;
+        }
+
+        var columns = Columns;
+        var focusedIndex = FindFocusedColumnIndex(columns);
+        var viewport = horizontalScroll.ViewportWidth;
+        if (focusedIndex < 0 || viewport <= 0)
+        {
+            return;
+        }
+
+        var offset = horizontalScroll.HorizontalOffset;
+
+        // Right, far enough to reveal the child column beside the cursor - or the focused column
+        // itself, when the cursor is on something that opens no column.
+        var revealIndex = Math.Min(focusedIndex + 1, columns!.Count - 1);
+        offset = Math.Max(offset, RightEdge(revealIndex) - viewport);
+
+        // Left, but never further than the focused column's own left edge.
+        offset = Math.Max(0, Math.Min(offset, RightEdge(focusedIndex) - columnWidths[focusedIndex]));
+
+        columnsPanel.MinWidth = offset + viewport;
+        horizontalScroll.ScrollToHorizontalOffset(offset);
+    }
+
+    /// <summary>Right edge of one column inside the panel, from the widths this control assigned.</summary>
+    private double RightEdge(int columnIndex)
+    {
+        var edge = 0d;
+        for (var i = 0; i <= columnIndex && i < columnWidths.Count; i++)
+        {
+            edge += columnWidths[i];
+        }
+
+        return edge;
     }
 
     private void OnColumnResizeDelta(object? sender, double horizontalChange)
