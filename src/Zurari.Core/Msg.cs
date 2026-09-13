@@ -370,6 +370,23 @@ public abstract record Msg
     public sealed record ToggleHiddenFiles : Msg;
 
     /// <summary>
+    /// Opens <see cref="InputMode.Sort"/>, so the inputs that follow choose sort fields. Ignored
+    /// while a rename is being typed: a letter meant for the new name must not re-sort the listing
+    /// out from under it.
+    /// </summary>
+    public sealed record EnterSortMode : Msg;
+
+    /// <summary>Closes <see cref="InputMode.Sort"/>. Nothing else changes.</summary>
+    public sealed record ExitSortMode : Msg;
+
+    /// <summary>
+    /// Orders every sortable listing by <paramref name="Mode"/>, descending. Unlike
+    /// <see cref="SetSortMode"/>, asking again does not flip it back - it is a destination, not a
+    /// toggle.
+    /// </summary>
+    public sealed record SetSortDescending(SortMode Mode) : Msg;
+
+    /// <summary>
     /// The view options the user had when the app last ran, applied at startup.
     /// </summary>
     public sealed record ViewRestored(ViewOptions View) : Msg;

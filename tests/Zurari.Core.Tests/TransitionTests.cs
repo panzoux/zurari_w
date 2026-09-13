@@ -2845,6 +2845,10 @@ public class TransitionProperties
             .Select(m => (Msg)new Msg.SetSortMode(m)),
         Gen.Const<Msg>(new Msg.ToggleDirectoriesFirst()),
         Gen.Const<Msg>(new Msg.ToggleHiddenFiles()),
+        Gen.Const<Msg>(new Msg.EnterSortMode()),
+        Gen.Const<Msg>(new Msg.ExitSortMode()),
+        Gen.OneOfConst(SortMode.Name, SortMode.Extension, SortMode.Size, SortMode.Modified)
+            .Select(m => (Msg)new Msg.SetSortDescending(m)),
         GenColumnIndex.Select(i => (Msg)new Msg.CreateFolderRequested(i)),
         GenColumnIndex.Select(i => (Msg)new Msg.RenameRequested(i)),
         Gen.Const<Msg>(new Msg.RenameCancelled()),

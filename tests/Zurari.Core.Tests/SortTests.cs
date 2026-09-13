@@ -374,4 +374,84 @@ public class SortTests
         Assert.Equal(0, concealed.Columns[0].Cursor);
         Assert.Empty(concealed.CheckInvariants());
     }
+
+    private static Column Listing() =>
+        new(new Location.RealDirectory(@"C:\x"), [File("b.txt", 1), File("a.txt", 9)], Cursor: 0, Load: LoadState.Loaded);
+
+    /// <summary>Sort mode is a mode: it opens, and it closes again.</summary>
+    [Fact]
+    public void Sort_mode_can_be_entered_and_left()
+    {
+        var state = new AppState { Columns = [Listing()], FocusedColumn = 0 };
+
+        var (entered, _) = Transition.Apply(state, new Msg.EnterSortMode());
+        Assert.Equal(InputMode.Sort, entered.InputMode);
+
+        var (left, _) = Transition.Apply(entered, new Msg.ExitSortMode());
+        Assert.Equal(InputMode.Normal, left.InputMode);
+    }
+
+    /// <summary>
+    /// "S N N N": the mode stays open while fields are chosen, so choosing the same field again keeps
+    /// flipping its direction without reopening the mode each time. Uses size rather than name so the
+    /// test does not depend on which field the default order already uses.
+    /// </summary>
+    [Fact]
+    public void Sort_mode_stays_open_while_fields_are_chosen()
+    {
+        var state = new AppState { Columns = [Listing()], FocusedColumn = 0 };
+
+        var (next, _) = Transition.Apply(state, new Msg.EnterSortMode());
+        (next, _) = Transition.Apply(next, new Msg.SetSortMode(SortMode.Size));
+        Assert.False(next.View.Sort.Descending);
+        (next, _) = Transition.Apply(next, new Msg.SetSortMode(SortMode.Size));
+
+        Assert.Equal(InputMode.Sort, next.InputMode);
+        Assert.Equal(new SortOrder(SortMode.Size, Descending: true), next.View.Sort);
+    }
+
+    /// <summary>
+    /// The order starts as name, ascending, so the very first "S N" flips it to descending rather
+    /// than selecting it. Pinned on purpose: it is the column-header convention (choosing the field
+    /// already in use reverses it) and the status bar shows the arrow - but it is a choice, and this
+    /// test is where to change it.
+    /// </summary>
+    [Fact]
+    public void From_the_default_order_choosing_name_flips_it()
+    {
+        var state = new AppState { Columns = [Listing()], FocusedColumn = 0 };
+
+        var (next, _) = Transition.Apply(state, new Msg.SetSortMode(SortMode.Name));
+
+        Assert.Equal(new SortOrder(SortMode.Name, Descending: true), next.View.Sort);
+    }
+
+    /// <summary>Shift reaches descending in one press, and asking again does not flip it back.</summary>
+    [Fact]
+    public void Descending_can_be_chosen_directly()
+    {
+        var state = new AppState { Columns = [Listing()], FocusedColumn = 0 };
+
+        var (once, _) = Transition.Apply(state, new Msg.SetSortDescending(SortMode.Size));
+        var (twice, _) = Transition.Apply(once, new Msg.SetSortDescending(SortMode.Size));
+
+        Assert.Equal(new SortOrder(SortMode.Size, Descending: true), once.View.Sort);
+        Assert.Equal(once.View.Sort, twice.View.Sort);
+    }
+
+    /// <summary>
+    /// A letter typed into the rename box must never open sort mode: the keys after it would re-sort
+    /// the listing out from under the name being typed.
+    /// </summary>
+    [Fact]
+    public void Sort_mode_does_not_open_while_renaming()
+    {
+        var state = new AppState { Columns = [Listing()], FocusedColumn = 0 };
+        var (renaming, _) = Transition.Apply(state, new Msg.RenameRequested(0));
+        Assert.NotNull(renaming.Rename);
+
+        var (next, _) = Transition.Apply(renaming, new Msg.EnterSortMode());
+
+        Assert.Equal(InputMode.Normal, next.InputMode);
+    }
 }

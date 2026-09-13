@@ -200,6 +200,24 @@ public sealed record Column(
     public Column WithView(ViewOptions view) => WithView(AllEntries, CollapsedGroups, view);
 
     /// <summary>
+    /// The full filesystem path <paramref name="entry"/> stands for, or <c>null</c> when it has none
+    /// (the recycle bin, a section header's virtual target).
+    /// </summary>
+    /// <remarks>
+    /// A row carries where it opens to (<see cref="Entry.Target"/>), which need not be under this
+    /// column's own location - a favorite or a pinned share points elsewhere entirely. Only a row
+    /// without one is the column's child, and even then the location decides how a child is named
+    /// (<see cref="Location.ChildPath"/>): a drive row's name is already a full path. Public so the
+    /// path bar and Transition answer "what is this path" the same way, rather than two copies of
+    /// the rule drifting apart.
+    /// </remarks>
+    public string? PathOf(Entry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        return entry.Target is { } target ? target.FilesystemPath : Location.ChildPath(entry.Name);
+    }
+
+    /// <summary>
     /// The single place that writes <see cref="AllEntries"/>, <see cref="Entries"/> and
     /// <see cref="Cursor"/>, so they cannot drift apart.
     /// </summary>
@@ -658,6 +676,9 @@ public sealed record AppState
 
     /// <summary>The rename being typed, or <c>null</c> when nothing is being renamed.</summary>
     public RenameState? Rename { get; init; }
+
+    /// <summary>What the next input means - see <see cref="Core.InputMode"/>.</summary>
+    public InputMode InputMode { get; init; } = InputMode.Normal;
 
     /// <summary>
     /// An entry name to put the cursor on as soon as a listing containing it arrives, or

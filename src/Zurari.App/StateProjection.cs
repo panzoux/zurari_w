@@ -80,7 +80,7 @@ public static class StateProjection
     {
         var baseTitle = column.Location switch
         {
-            Location.Drives => "ドライブ",
+            Location.Drives => DrivesLabel,
             Location.RealDirectory directory => LastPathSegment(directory.Path),
             var other => other.FilesystemPath is { } path ? LastPathSegment(path) : string.Empty,
         };
@@ -507,5 +507,137 @@ public static class StateProjection
         }
 
         return label + "\n\n" + HexDump.Format(preview.ImageBytes.AsSpan());
+    }
+
+    /// <summary>
+    /// The path bar and status bar: the full path of what the cursor is on, key hints for the mode
+    /// the app is in, and the counts that used to share one line with the path.
+    /// </summary>
+    /// <param name="Path">Shown in the path bar, above the status bar.</param>
+    /// <param name="Hints">Keys worth knowing right now. Empty when there are none worth showing.</param>
+    /// <param name="Summary">Entry count, marks and any notice.</param>
+    public sealed record StatusBarVm(string Path, string Hints, string Summary);
+
+    /// <summary>Projects the path bar and status bar. Pure - see <see cref="StatusBarVm"/>.</summary>
+    public static StatusBarVm ProjectStatusBar(AppState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+
+        if (state.FocusedColumn < 0 || state.FocusedColumn >= state.Columns.Length)
+        {
+            return new StatusBarVm(string.Empty, string.Empty, string.Empty);
+        }
+
+        var column = state.Columns[state.FocusedColumn];
+        return new StatusBarVm(PathBarText(column), HintsFor(state), Summarize(state, column));
+    }
+
+    private const string DrivesLabel = "ドライブ";
+
+    private const string RecycleBinLabel = "ゴミ箱";
+
+    /// <summary>
+    /// The full path of what the cursor is on - the way a Finder path bar shows the selected item,
+    /// not only the folder around it. Falls back to the column's own location on a section header
+    /// or in an empty column.
+    /// </summary>
+    /// <remarks>
+    /// A deleted file shows where it came from: inside the bin it has a meaningless name, and its
+    /// original path is the only one a person recognises.
+    /// </remarks>
+    private static string PathBarText(Column column)
+    {
+        if (column.Cursor >= 0 && column.Cursor < column.Entries.Length)
+        {
+            var entry = column.Entries[column.Cursor];
+            if (entry.Kind != EntryKind.Header)
+            {
+                if (entry.OriginalPath is { } original)
+                {
+                    return original;
+                }
+
+                if (entry.Target is Location.RecycleBin)
+                {
+                    return RecycleBinLabel;
+                }
+
+                if (column.PathOf(entry) is { } entryPath)
+                {
+                    return entryPath;
+                }
+            }
+        }
+
+        return column.Location switch
+        {
+            Location.RealDirectory directory => directory.Path,
+            Location.Drives => DrivesLabel,
+            Location.RecycleBin => RecycleBinLabel,
+            var other => other.FilesystemPath ?? string.Empty,
+        };
+    }
+
+    /// <summary>
+    /// Keys worth knowing right now - not a reference card. Explorer's own keys (F2, Ctrl+C, Delete)
+    /// are left out because they need no explaining: only what this app adds is shown, plus what an
+    /// open mode changes.
+    /// </summary>
+    private static string HintsFor(AppState state)
+    {
+        // Enter and Esc in a rename box are obvious, and nothing else applies while typing.
+        if (state.Rename is not null)
+        {
+            return string.Empty;
+        }
+
+        if (state.InputMode == Core.InputMode.Sort)
+        {
+            var sort = state.View.Sort;
+            var arrow = sort.Descending ? "↓" : "↑";
+            var folders = sort.DirectoriesFirst ? "・フォルダ優先" : string.Empty;
+            return $"並べ替え: {FieldLabel(sort.Mode)} {arrow}{folders}    "
+                + "N 名前  E 拡張子  S サイズ  M 更新日時  D フォルダ優先  Shift+キー 降順  Esc 閉じる";
+        }
+
+        var hidden = state.View.ShowHidden ? "隠しファイル: 表示中" : "隠しファイル";
+        return $"S 並べ替え    Ctrl+Shift+. {hidden}    Ctrl+D ピン留め";
+    }
+
+    private static string FieldLabel(SortMode mode) => mode switch
+    {
+        SortMode.Name => "名前",
+        SortMode.Extension => "拡張子",
+        SortMode.Size => "サイズ",
+        SortMode.Modified => "更新日時",
+        _ => string.Empty,
+    };
+
+    /// <summary>What used to follow the path on the one status line: count, marks, and any notice.</summary>
+    private static string Summarize(AppState state, Column column)
+    {
+        var marked = 0;
+        foreach (var entry in column.Entries)
+        {
+            if (entry.IsMarked)
+            {
+                marked++;
+            }
+        }
+
+        var summary = $"{column.Entries.Length} 件";
+        if (marked > 0)
+        {
+            summary += $" | マーク: {marked}";
+        }
+
+        // The reply to something the user just asked for, when it has no other visible outcome - an
+        // eject the drive refused. Transition clears it as soon as the cursor moves on.
+        if (state.Notice is { } notice)
+        {
+            summary += " | " + notice;
+        }
+
+        return summary;
     }
 }

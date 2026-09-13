@@ -20,7 +20,7 @@ Phase 6 was sixteen loose checkboxes. Grilling turned it into decisions, and fou
 
 **6a-6d, 6f and 6g are on `main`** - fast-forwarded from `phase6a-location-foundation` on
 2026-09-05, once 6d was complete (see R-1). 6c and 6e.1-6e.6 followed; 6e.7 is deferred.
-789 tests, `scripts/check.ps1` green.
+829 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`, and `check.ps1` refuses to pass while it is
 stale. Do not edit it by hand. A commit count used to live here too; it was removed because it is
@@ -56,7 +56,9 @@ wrong the moment the next commit lands - `git log --oneline main..` is the hones
 | 6e.4 | Rename (overlay TextBox, `F2`) | `[x]` | `20cc44f` |
 | 6e.5 | New folder (`Ctrl+Shift+N`) | `[x]` | `b43a6a1` |
 | 6e.6 | Open with default app (`Enter`) | `[x]` | `b43a6a1` |
-| 6e.7 | Status bar, key hints / help screen | `[ ]` | **deferred by decision** - see 6e-7 |
+| 6e.7 | Path bar (full path of the cursor item) above a status bar of contextual key hints | `[x]` | (this commit) |
+| 6e.8 | Sort mode: `S` then `N`/`E`/`S`/`M` (Shift = descending, repeat flips), `D` folders first; hidden files `Ctrl+Shift+.` | `[x]` | (this commit) |
+| 6e.9 | Help screen | `[ ]` | **deferred by decision** - see 6e-7 |
 | **6e-bis** | **Smooth cursor movement** | `[x]` | `f61c46b` `593194e` |
 | **6g** | **Finder-style auto-extend**: the column beside the cursor | `[x]` | `75f84f9` |
 | **6f** | **Findings parked from 6a–6e** | `[~]` | |
@@ -270,17 +272,78 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   tested against a realized window - a mistake in the adorner plumbing produces no build error and
   fails nothing else, it simply never shows. Verified by breaking it: all three tests fail.
 
-- **6e-7** `[ ]` **6e.7 (status bar, key hints, help) is deferred by your decision, not left undone.**
+- **6e-7** `[ ]` **The help screen (6e.9) is still deferred by your decision; the status bar is not.**
   "help is a feature we will add in the future so we dont want F1 now", "we dont want to show obvious
-  hints", "we'll do status bar in another phase". The mock-up and the four zones are in this plan
-  ready for when it is wanted.
+  hints". The status bar and the path bar came back in on your direction as 6e.7 - see 6e-8.
 
-  **Two things it leaves undiscoverable.** Sorting (6e.1) and the hidden-file toggle (6e.2) have no
-  gesture at all: neither has an Explorer convention to borrow - Explorer sorts by clicking a column
-  header, which a miller-columns view does not have, and hides files behind a ribbon checkbox. Every
-  other command added in 6e uses Explorer's own binding (`F2`, `Ctrl+Shift+N`, `Enter`), which is why
-  those did not need asking. The two that had nothing to borrow are waiting on the same decision as
-  the key map.
+  **Corrected: there was never a mock-up in this plan.** This record used to say "the mock-up and the
+  four zones are in this plan ready for when it is wanted". Searched when 6e.7 came back: no plan or
+  doc contains one. It existed only in a conversation, and the record claimed otherwise. The layout
+  that shipped is the one you gave directly - path bar above the status bar, key hints on the status
+  bar.
+
+- **6e-8** `[x]` **Path bar, key hints, and the keys sorting and hidden files were waiting for (6e.7, 6e.8).**
+  Your direction: a path bar above the status bar showing the full path; key hints on the status
+  bar; sorting as `S` then a field key, with Shift for descending; `S D` for folders first; hidden
+  files on `Ctrl+Shift+.`; and incremental search opening on `/` as in zrr, so no letter is taken from
+  it.
+
+  **Sort is a mode, not a chord.** `S` opens it and it stays open while fields are chosen, so
+  `S N N N` keeps flipping name order - the existing `SortOrder.Select` rule (choosing the field
+  already in use reverses it) does the flipping. Esc closes it; any other key closes it *and* goes where
+  it would have gone, so an arrow key leaves sort mode and moves the cursor in one press. The status
+  bar shows the mode while it is open (`並べ替え: サイズ ↓ ...`), which is what makes a mode acceptable
+  at all.
+  - **Core owns the mode:** `AppState.InputMode`, `Msg.EnterSortMode` / `ExitSortMode`, and
+    `Msg.SetSortDescending` for Shift - a destination, not a toggle. `EnterSortMode` is refused while
+    a rename is being typed.
+  - **App owns the keys**, in a pure `KeyMap` tested as a table. `MainWindow` asks it from a
+    preview-key handler only while sort mode is open, so the column list cannot move the cursor first.
+    `KeyMap` covers only these keys; the single command table the plan wants behind both key dispatch
+    and the help screen is still 6e.9's.
+
+  **One behaviour worth knowing, pinned by a test.** The default order is already name ascending, so
+  the very first `S N` flips to name *descending* rather than selecting name. Kept, because it is the
+  column-header rule and the arrow is shown - but `From_the_default_order_choosing_name_flips_it` is
+  where to change it.
+
+  **Hazards found while building it, each handled:**
+  - Shift arrives as a key of its own before its letter. Closing the mode on it would have made
+    `Shift+N` impossible to type; a lone modifier is ignored, and a test holds that.
+  - The rename box handles only Enter and Escape, so every other key bubbled up to the window handler,
+    which had no guard: `S` would have opened sort mode in the middle of typing a name. The window keys
+    now stand down while an *editable* text box has focus - the read-only preview box keeps them - and
+    Core refuses the mode during a rename as a second line.
+  - With a Japanese IME on, a letter arrives as `Key.ImeProcessed` with the real key carried
+    separately, so `S` would have done nothing. Keys are normalised before the map sees them.
+  - **Suspected, not verified:** the old handler marked `Space` handled even with the rename box
+    focused, which in WPF can cancel the character it types. If spaces were being lost from names
+    while renaming, the guard fixes that; WPF text input could not be reproduced headlessly to confirm
+    the bug existed.
+
+  **The path bar** shows the full path of what the cursor is on - the selected item, as a Finder path
+  bar does, not only the folder around it. A deleted file shows where it came from; a section header
+  names its pane. "What is this row's path" moved to `Column.PathOf`, and `Transition` now asks it
+  too, so the path bar and the rest of the app cannot drift apart. The count, marks and notice that
+  used to follow the path moved with it into `StateProjection`, out of `MainWindow`, where that text
+  had been computed untested.
+
+  **Hints show only what this app adds** - `S 並べ替え`, `Ctrl+Shift+. 隠しファイル`, `Ctrl+D ピン留め` -
+  leaving Explorer's own keys out as obvious, per 6e-7, and show nothing while renaming. The wording is
+  yours to review.
+
+  **Corrected along the way:** I suspected the column list would jump its selection on a typed letter
+  and fight a bare `S`. Measured rather than assumed: `IsTextSearchEnabled` defaults to `False` for a
+  WPF `ListBox`, and `ColumnView` reverts any selection to Core's cursor regardless.
+
+  **Evidence.** Core: three sort-mode tests red first (entering and staying open read `Normal`; Shift
+  gave `Name ↑`). The rename guard passed on arrival and fails with the guard removed. My first
+  stays-open test asserted the wrong direction - the default is already name ascending - and became
+  the pin above. App: 35 key-map and path/status-bar tests, 27 red first; the 8 that passed against
+  the stubs were covered by 4 mutations, each failing (S ignoring modifiers, every letter opening the
+  mode, an unrecognised key ignored instead of closing it, hints shown while renaming). **Not covered
+  by any test:** the WPF wiring itself - which event asks the map, IME normalisation, the text-box
+  guard - and a mouse click does not close sort mode. Those want a manual pass.
 
 - **6e-56** `[x]` **Open with the default app (6e.6) and new folder (6e.5).** `Enter` on a file now
   opens it the way double-clicking would; before, it selected the file and did nothing else. An

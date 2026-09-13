@@ -207,6 +207,20 @@ public static class Transition
                 remember: true),
             Msg.ToggleHiddenFiles => Rederive(
                 state, state.View with { ShowHidden = !state.View.ShowHidden }, remember: true),
+
+            // A rename being typed owns the keyboard: a letter meant for the new name must not open a
+            // mode whose next keys would re-sort the listing out from under it. Returning the same
+            // instance when nothing changes keeps an ignored message from looking like a change.
+            Msg.EnterSortMode => (
+                state.Rename is not null || state.InputMode == InputMode.Sort
+                    ? state
+                    : state with { InputMode = InputMode.Sort },
+                NoEffects),
+            Msg.ExitSortMode => (
+                state.InputMode == InputMode.Normal ? state : state with { InputMode = InputMode.Normal },
+                NoEffects),
+            Msg.SetSortDescending m => Rederive(
+                state, state.View with { Sort = state.View.Sort with { Mode = m.Mode, Descending = true } }, remember: true),
             Msg.ViewRestored m => Rederive(state, m.View, remember: false),
             Msg.ToggleSection m => ToggleSection(state, m.ColumnIndex, m.EntryIndex),
             Msg.CollapsedGroupsRestored m => (RestoreCollapsedGroups(state, m.ColumnIndex, m.Groups), NoEffects),
@@ -232,8 +246,7 @@ public static class Transition
     /// The filesystem path of <paramref name="entry"/> as shown in <paramref name="column"/>, or
     /// <c>null</c> when it has none (a row inside a location that is not backed by the filesystem).
     /// </summary>
-    private static string? EntryPath(Column column, Entry entry) =>
-        entry.Target is { } target ? target.FilesystemPath : column.Location.ChildPath(entry.Name);
+    private static string? EntryPath(Column column, Entry entry) => column.PathOf(entry);
 
     private static AppState MoveCursor(AppState state, int columnIndex, int delta)
     {

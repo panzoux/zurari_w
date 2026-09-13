@@ -186,6 +186,7 @@ public sealed partial class MainWindow : Window, IDisposable
         // The header's two lines are shortened to fit, so a resize has to re-shorten them - the
         // splitter drag is the whole reason the preview pane's width is not a constant.
         PreviewPane.SizeChanged += (_, _) => FitPreviewHeader();
+        PreviewKeyDown += OnWindowPreviewKeyDown;
         KeyDown += OnWindowKeyDown;
 
         if (ColumnBrowser.InputTraceEnabled)
@@ -517,7 +518,7 @@ public sealed partial class MainWindow : Window, IDisposable
     /// whole marked set when it is part of one. Does nothing for a row the shell cannot name.
     /// </summary>
     /// <remarks>
-    /// Reached both by right-click and by the menu key (see <c>OnBrowserPreviewKeyDown</c>), so the
+    /// Reached both by right-click and by the menu key (see <c>OnWindowKeyDown</c>), so the
     /// two cannot drift apart. Names come from <see cref="ResolveShellName"/> rather than
     /// <see cref="ResolveFullPath"/>: the recycle-bin row has no filesystem path at all, and it is
     /// the row whose menu - "ゴミ箱を空にする" - there is no other way to reach.
@@ -762,8 +763,66 @@ public sealed partial class MainWindow : Window, IDisposable
         ShowContextMenu(columnIndex, cursor, new Point(rowRect.Left, rowRect.Bottom));
     }
 
+    /// <summary>
+    /// While sort mode is open, sees every key before the column list does - otherwise an arrow key
+    /// would move the cursor with the mode still open. A key that is not a sort key closes the mode
+    /// and carries on to wherever it was going: MessageLoop applies the close synchronously, so by
+    /// the time the same key bubbles back up it is read in normal mode.
+    /// </summary>
+    private void OnWindowPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (loop.State.InputMode != Zurari.Core.InputMode.Sort || IsEditingText())
+        {
+            return;
+        }
+
+        switch (KeyMap.ResolveSortMode(EffectiveKey(e), Keyboard.Modifiers))
+        {
+            case KeyMap.SortKeyOutcome.Act act:
+                Dispatch(act.Msg);
+                e.Handled = true;
+                break;
+            case KeyMap.SortKeyOutcome.Close:
+                Dispatch(new Msg.ExitSortMode());
+                break;
+        }
+    }
+
+    /// <summary>
+    /// The key an event is really about. With an IME on - the normal state on a Japanese system - a
+    /// letter arrives as <see cref="Key.ImeProcessed"/>, and with Alt held as <see cref="Key.System"/>;
+    /// the key actually pressed travels separately.
+    /// </summary>
+    private static Key EffectiveKey(KeyEventArgs e) => e.Key switch
+    {
+        Key.ImeProcessed => e.ImeProcessedKey,
+        Key.System => e.SystemKey,
+        _ => e.Key,
+    };
+
+    /// <summary>
+    /// Whether an editable text box - the rename editor - has keyboard focus. While it does, every key
+    /// belongs to it: acting here would toggle a mark on Space, or open sort mode on S, in the middle
+    /// of typing a name. The read-only preview text box is left out on purpose, so the window keys
+    /// keep working after clicking into a preview.
+    /// </summary>
+    private static bool IsEditingText() =>
+        Keyboard.FocusedElement is System.Windows.Controls.Primitives.TextBoxBase { IsReadOnly: false };
+
     private void OnWindowKeyDown(object sender, KeyEventArgs e)
     {
+        if (IsEditingText())
+        {
+            return;
+        }
+
+        if (KeyMap.ResolveNormal(EffectiveKey(e), Keyboard.Modifiers) is { } modeMessage)
+        {
+            Dispatch(modeMessage);
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == Key.F5 || (e.Key == Key.R && Keyboard.Modifiers == ModifierKeys.Control))
         {
             // F5 is the primary refresh key (already wired); Ctrl+R is a discoverability alias -
@@ -1065,32 +1124,10 @@ public sealed partial class MainWindow : Window, IDisposable
         RenderPreview(state);
         RenderRename(state);
 
-        var focused = state.Columns[state.FocusedColumn];
-        var focusedPath = focused.Location.FilesystemPath ?? "ドライブ";
-
-        var markedCount = 0;
-        foreach (var entry in focused.Entries)
-        {
-            if (entry.IsMarked)
-            {
-                markedCount++;
-            }
-        }
-
-        var statusText = focusedPath + $" ({focused.Entries.Length} 件)";
-        if (markedCount > 0)
-        {
-            statusText += $" | マーク: {markedCount}";
-        }
-
-        // The reply to something the user just asked for, when it has no other visible outcome -
-        // an eject that the drive refused. Cleared by Transition as soon as the cursor moves on.
-        if (state.Notice is { } notice)
-        {
-            statusText += " | " + notice;
-        }
-
-        StatusText.Text = statusText;
+        var statusBar = StateProjection.ProjectStatusBar(state);
+        PathBarText.Text = statusBar.Path;
+        StatusHints.Text = statusBar.Hints;
+        StatusSummary.Text = statusBar.Summary;
     }
 
     /// <summary>

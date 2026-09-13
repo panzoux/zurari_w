@@ -13,9 +13,17 @@
     <DockPanel>
         <StatusBar DockPanel.Dock="Bottom">
             <StatusBarItem>
-                <TextBlock x:Name="StatusText" Text="(no state yet)" />
+                <TextBlock x:Name="StatusHints" />
+            </StatusBarItem>
+            <StatusBarItem HorizontalAlignment="Right">
+                <TextBlock x:Name="StatusSummary" Text="(no state yet)" />
             </StatusBarItem>
         </StatusBar>
+        <!-- Path bar: the full path of what the cursor is on. Planned to become a Finder-style
+             breadcrumb bar, and to host the incremental search box while slash search is open. -->
+        <Border DockPanel.Dock="Bottom" BorderBrush="#FFB0B0B0" BorderThickness="0,1,0,0" Padding="6,2">
+            <TextBlock x:Name="PathBarText" TextTrimming="CharacterEllipsis" />
+        </Border>
         <ItemsControl x:Name="JobStrip" DockPanel.Dock="Bottom" Margin="8,0,8,4">
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
