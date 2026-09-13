@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Windows;
 using Zurari.Controls;
 using Zurari.Runtime;
@@ -41,6 +42,13 @@ public partial class ZurariApp : Application
             var logPath = Path.Combine(Path.GetTempPath(), "zurari-input.log");
             DebugLog.Enable(logPath);
             Trace.Listeners.Add(new DebugLogTraceListener());
+
+            // Which binary wrote this log. A stale publish/ build has been mistaken for the current
+            // code before (plan record 6c-6), and a log read against the wrong binary is worse than
+            // none. The informational version carries the commit hash the SDK embeds.
+            var version = typeof(ZurariApp).Assembly
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
+            Trace.WriteLine($"[app] start version={version} exe={Environment.ProcessPath}");
         }
 
         base.OnStartup(e);

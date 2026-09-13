@@ -454,12 +454,26 @@ public sealed partial class MainWindow : Window, IDisposable
     /// </summary>
     private void Dispatch(Msg msg)
     {
-        if (ColumnBrowser.InputTraceEnabled)
+        if (!ColumnBrowser.InputTraceEnabled)
         {
-            Trace.WriteLine($"[app] dispatch {msg.GetType().Name}");
+            loop.Dispatch(msg);
+            return;
         }
 
+        Trace.WriteLine($"[app] dispatch {msg.GetType().Name}");
+        var before = loop.State;
         loop.Dispatch(msg);
+
+        // The state after anything that could change the mode or the view: where a key either took
+        // effect in Core or did not.
+        var after = loop.State;
+        if (after.InputMode != before.InputMode
+            || after.View != before.View
+            || msg is Msg.EnterSortMode or Msg.ExitSortMode or Msg.SetSortMode or Msg.SetSortDescending
+                or Msg.ToggleDirectoriesFirst or Msg.ToggleHiddenFiles or Msg.ViewRestored)
+        {
+            Trace.WriteLine(InputTrace.State(after));
+        }
     }
 
     private static Msg ToCursorMsg(CursorMoveRequestedEventArgs e)
@@ -771,12 +785,23 @@ public sealed partial class MainWindow : Window, IDisposable
     /// </summary>
     private void OnWindowPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (ColumnBrowser.InputTraceEnabled)
+        {
+            TraceKey("previewKey", e);
+        }
+
         if (loop.State.InputMode != Zurari.Core.InputMode.Sort || IsEditingText())
         {
             return;
         }
 
-        switch (KeyMap.ResolveSortMode(EffectiveKey(e), Keyboard.Modifiers))
+        var outcome = KeyMap.ResolveSortMode(EffectiveKey(e), Keyboard.Modifiers);
+        if (ColumnBrowser.InputTraceEnabled)
+        {
+            Trace.WriteLine(InputTrace.Resolution("previewKey", outcome.ToString()));
+        }
+
+        switch (outcome)
         {
             case KeyMap.SortKeyOutcome.Act act:
                 Dispatch(act.Msg);
@@ -801,6 +826,21 @@ public sealed partial class MainWindow : Window, IDisposable
     };
 
     /// <summary>
+    /// Diagnostic-only: one line per key event a window handler receives, written before any
+    /// decision is made, so a key that arrives and is then refused still shows up.
+    /// </summary>
+    private void TraceKey(string phase, KeyEventArgs e) =>
+        Trace.WriteLine(InputTrace.KeyEvent(
+            phase,
+            e.Key,
+            EffectiveKey(e),
+            Keyboard.Modifiers,
+            loop.State.InputMode,
+            Keyboard.FocusedElement?.GetType().Name,
+            IsEditingText(),
+            e.Handled));
+
+    /// <summary>
     /// Whether an editable text box - the rename editor - has keyboard focus. While it does, every key
     /// belongs to it: acting here would toggle a mark on Space, or open sort mode on S, in the middle
     /// of typing a name. The read-only preview text box is left out on purpose, so the window keys
@@ -811,12 +851,23 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void OnWindowKeyDown(object sender, KeyEventArgs e)
     {
+        if (ColumnBrowser.InputTraceEnabled)
+        {
+            TraceKey("key", e);
+        }
+
         if (IsEditingText())
         {
             return;
         }
 
-        if (KeyMap.ResolveNormal(EffectiveKey(e), Keyboard.Modifiers) is { } modeMessage)
+        var normal = KeyMap.ResolveNormal(EffectiveKey(e), Keyboard.Modifiers);
+        if (ColumnBrowser.InputTraceEnabled)
+        {
+            Trace.WriteLine(InputTrace.Resolution("key", normal?.ToString() ?? "(not a mode key)"));
+        }
+
+        if (normal is { } modeMessage)
         {
             Dispatch(modeMessage);
             e.Handled = true;
@@ -1100,7 +1151,17 @@ public sealed partial class MainWindow : Window, IDisposable
         // renders that have nothing to do with the browsed columns (Phase 5 bug B3).
         if (state.Columns != lastRenderedColumns || state.FocusedColumn != lastRenderedFocusedColumn)
         {
-            Browser.Columns = StateProjection.Project(state, ResolveIcon, projectionCache);
+            var projected = StateProjection.Project(state, ResolveIcon, projectionCache);
+            Browser.Columns = projected;
+
+            // What the screen was handed, as opposed to what Core holds. The two can only disagree
+            // through the projection cache, and this is the line that would show it.
+            if (ColumnBrowser.InputTraceEnabled && state.FocusedColumn >= 0 && state.FocusedColumn < projected.Count)
+            {
+                Trace.WriteLine(
+                    $"[app] render focused={state.FocusedColumn} "
+                    + $"shown=[{InputTrace.FirstNames(projected[state.FocusedColumn].Entries.Select(vm => vm.Name))}]");
+            }
             lastRenderedColumns = state.Columns;
             lastRenderedFocusedColumn = state.FocusedColumn;
 
