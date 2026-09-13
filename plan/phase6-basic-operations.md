@@ -56,8 +56,8 @@ wrong the moment the next commit lands - `git log --oneline main..` is the hones
 | 6e.4 | Rename (overlay TextBox, `F2`) | `[x]` | `20cc44f` |
 | 6e.5 | New folder (`Ctrl+Shift+N`) | `[x]` | `b43a6a1` |
 | 6e.6 | Open with default app (`Enter`) | `[x]` | `b43a6a1` |
-| 6e.7 | Path bar (full path of the cursor item) above a status bar of contextual key hints | `[x]` | (this commit) |
-| 6e.8 | Sort mode: `S` then `N`/`E`/`S`/`M` (Shift = descending, repeat flips), `D` folders first; hidden files `Ctrl+Shift+.` | `[x]` | (this commit) |
+| 6e.7 | Path bar (full path of the cursor item) above a status bar of contextual key hints | `[x]` | `5180e8f` |
+| 6e.8 | Sort mode: `S` then `N`/`E`/`S`/`M` (Shift = descending, repeat flips), `D` folders first; hidden files `Ctrl+Shift+.` | `[x]` | `5180e8f` |
 | 6e.9 | Help screen | `[ ]` | **deferred by decision** - see 6e-7 |
 | **6e-bis** | **Smooth cursor movement** | `[x]` | `f61c46b` `593194e` |
 | **6g** | **Finder-style auto-extend**: the column beside the cursor | `[x]` | `75f84f9` |
