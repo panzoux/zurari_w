@@ -19,7 +19,8 @@ Phase 6 was sixteen loose checkboxes. Grilling turned it into decisions, and fou
 # Status
 
 **6a-6d, 6f and 6g are on `main`** - fast-forwarded from `phase6a-location-foundation` on
-2026-09-05, once 6d was complete (see R-1). 6c and 6e.1-6e.6 followed; 6e.7 is deferred.
+2026-09-05, once 6d was complete (see R-1). 6c and 6e followed. Left open: 6e.9 (help screen) and
+6f.2 (JobEngine cancel race), both deferred by your decision; 6c-12 is TBD in the roadmap.
 853 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`, and `check.ps1` refuses to pass while it is
@@ -147,10 +148,14 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   reported as a timeout, the link offered without a timeout). A test seam,
   `WorkerRuntime.CreateVideoThumbnail`, makes ffmpeg time out or reject on demand.
 
-- **6c-12** `[ ]` **Manual check carried over from 6c-8: PDF and Office thumbnails with a handler.**
+- **6c-12** `[x]` **Manual check carried over from 6c-8: PDF and Office thumbnails with a handler.**
   6c-8 is closed, so this was easy to miss inside it. On a machine with Office, Acrobat or PowerToys
   installed: preview a `.pdf` and a `.docx`, confirm the page appears, and confirm the folder gains no
   `Thumbs.db`. Not possible on the development machine - no handler is registered for either.
+
+  **2026-09-19: closed as TBD, by your call** - it cannot be done here. The check itself is not
+  dropped: it lives on as TBD in the roadmap's 既知の問題 table (6c-12), for whenever a machine with
+  a PDF or Office thumbnail handler is at hand.
 
 - **6e-8b** `[x]` **Sort keys reported as not working - the first traced run did not include an `S`.**
   Traced with `--debug-input` at `864a058` (2026-09-18): `Ctrl+Shift+.` arrived, resolved and
@@ -560,11 +565,12 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   legitimately changes mid-run moves both numbers together - verified non-vacuous by making the
   enumeration drop every tenth item, which fails it. 6 runs, 6 green.
 
-- **6c-5** `[ ]` **The preview stall relief has no automated test.** Reproducing it needs a preview
+- **6c-5** `[x]` **The preview stall relief has no automated test.** Reproducing it needs a preview
   that genuinely blocks, which needs ffmpeg guaranteed present or a seam for injecting one. The
   guard test that exists says so in its own remarks. **Wants a manual run:** hold ↓ through a folder
   of large videos and confirm navigation stays responsive. **Do it on a fresh build — see 6c-6.**
-- **6c-6** `[ ]` **`publish/` holds a two-week-old build, and instances of it were still running.**
+  **2026-09-19: done by you at the machine.**
+- **6c-6** `[x]` **`publish/` holds a two-week-old build, and instances of it were still running.**
   Diagnosed 2026-08-30: three `Zurari.App` processes were live at once — two from
   `publish\Zurari.App.exe` (built 2026-08-22 12:23, predating every Phase 6 commit) and one from
   `publish-sc\` (current). That one fact explained two separate symptoms: the drive pane showing no
@@ -582,7 +588,7 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
 
   **Standing rule for these records: every manual check must name which binary it ran.** An
   observation against `publish/` describes the app as it was on 22 August.
-- **6d-4** `[ ]` **What in 6d still needs a person at the machine.** Rewritten 2026-09-11. The
+- **6d-4** `[x]` **What in 6d still needs a person at the machine.** Rewritten 2026-09-11. The
   original said Trash enumeration and change notifications could only be checked structurally; both
   have since been tested against the real shell (enumeration agrees with `SHQueryRecycleBin`, and a
   real `SHChangeNotify` broadcast reaches the watcher). Eject is no longer ours - it is the context
@@ -598,6 +604,10 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
 
   **2026-09-18:** under way in another session, starting with the AppData folders; mostly good so
   far, by your report.
+
+  **2026-09-19: done, by your report.** What it turned up in AppData is committed alongside:
+  settings and the thumbnail cache move from `zurari` (shared with the TUI filer) to `zurari_w`,
+  with the old `settings.json` read until the first save and never moved or deleted.
 
 - **6f-2** `[ ]` **`JobEngineTests.CancelJob_mid_copy_deletes_the_incomplete_destination_file` is
   racy.** It copies 50MB, waits for one `JobProgress`, then cancels; if the copy finishes first,

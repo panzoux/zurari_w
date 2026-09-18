@@ -44,7 +44,7 @@ public sealed class ThumbnailCache
 
     /// <summary>
     /// Creates a cache under <paramref name="directory"/>, defaulting to
-    /// <c>%LOCALAPPDATA%\zurari\thumbs</c>.
+    /// <c>%LOCALAPPDATA%\zurari_w\thumbs</c> - not <c>zurari</c>, which is the TUI filer's name.
     /// </summary>
     /// <remarks>
     /// The directory is injectable so tests do not write to the real per-user cache - the same
@@ -75,7 +75,7 @@ public sealed class ThumbnailCache
         try
         {
             var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            return local.Length == 0 ? null : Path.Combine(local, "zurari", "thumbs");
+            return local.Length == 0 ? null : Path.Combine(local, "zurari_w", "thumbs");
         }
         catch (ArgumentException)
         {

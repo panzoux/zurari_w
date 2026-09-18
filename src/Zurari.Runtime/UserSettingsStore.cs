@@ -23,7 +23,7 @@ public sealed record UserSettings(
     bool? ShowHidden = null);
 
 /// <summary>
-/// Loads and saves <see cref="UserSettings"/> as JSON, by default under <c>%APPDATA%\zurari</c>.
+/// Loads and saves <see cref="UserSettings"/> as JSON, by default under <c>%APPDATA%\zurari_w</c>.
 /// Lives in Runtime because it is file I/O (Zurari.App is banned from touching the filesystem
 /// directly). Best-effort on both ends: a missing or corrupt file loads as defaults, and a failed
 /// save is silently dropped — preferences are never worth crashing or blocking the app for.
@@ -47,24 +47,43 @@ public sealed class UserSettingsStore
 {
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
+    private const string SettingsFileName = "settings.json";
+
     private readonly string? directory;
+    private readonly string? legacyDirectory;
 
     /// <summary>
-    /// Creates a store over <paramref name="directory"/>, defaulting to <c>%APPDATA%\zurari</c>.
+    /// Creates a store over <paramref name="directory"/>, defaulting to <c>%APPDATA%\zurari_w</c>.
     /// </summary>
-    public UserSettingsStore(string? directory = null)
+    /// <param name="directory">Where settings are read and written.</param>
+    /// <param name="legacyDirectory">
+    /// Where settings were kept before, read only while <paramref name="directory"/> has none of its
+    /// own. Defaults to <c>%APPDATA%\zurari</c> when <paramref name="directory"/> is defaulted too.
+    /// </param>
+    /// <remarks>
+    /// zurari_w used to share <c>%APPDATA%\zurari</c> with zurari, the TUI filer it succeeds, which
+    /// keeps its own <c>bookmarks.txt</c> and <c>operations.log</c> there. The legacy file is only ever
+    /// read: the first save lands in the new directory with the old values carried across by
+    /// <see cref="Update"/>, and from then on the new file wins. Nothing is moved or deleted, because
+    /// that directory is not only ours.
+    /// </remarks>
+    public UserSettingsStore(string? directory = null, string? legacyDirectory = null)
     {
-        this.directory = directory ?? DefaultDirectory();
+        this.directory = directory ?? AppDataDirectory("zurari_w");
+        this.legacyDirectory = legacyDirectory ?? (directory is null ? AppDataDirectory("zurari") : null);
     }
 
-    private string? SettingsPath => directory is null ? null : Path.Combine(directory, "settings.json");
+    private string? SettingsPath => directory is null ? null : Path.Combine(directory, SettingsFileName);
 
-    private static string? DefaultDirectory()
+    private string? LegacySettingsPath =>
+        legacyDirectory is null ? null : Path.Combine(legacyDirectory, SettingsFileName);
+
+    private static string? AppDataDirectory(string name)
     {
         try
         {
             var roaming = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            return roaming.Length == 0 ? null : Path.Combine(roaming, "zurari");
+            return roaming.Length == 0 ? null : Path.Combine(roaming, name);
         }
         catch (ArgumentException)
         {
@@ -74,17 +93,21 @@ public sealed class UserSettingsStore
 
     /// <summary>
     /// Reads the saved preferences, or defaults when there are none, the file is unreadable, or its
-    /// contents are not valid settings.
+    /// contents are not valid settings. Falls back to the legacy directory while the current one has
+    /// no settings file.
     /// </summary>
     public UserSettings Load()
     {
-        if (SettingsPath is not { } path)
+        if (SettingsPath is not { } current)
         {
             return new UserSettings();
         }
 
         try
         {
+            var path = !File.Exists(current) && LegacySettingsPath is { } legacy && File.Exists(legacy)
+                ? legacy
+                : current;
             if (!File.Exists(path))
             {
                 return new UserSettings();

@@ -170,4 +170,68 @@ public class UserSettingsStoreTests
             TempDirectory.Delete(dir);
         }
     }
+
+    [Fact]
+    public void Settings_left_in_the_legacy_directory_are_loaded_until_the_new_one_has_its_own()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var legacyDir = Path.Combine(dir, "zurari");
+            new UserSettingsStore(legacyDir).Save(new UserSettings(PreviewWidth: 77, PinnedPaths: [@"C:\pinned"]));
+
+            var store = new UserSettingsStore(Path.Combine(dir, "zurari_w"), legacyDir);
+
+            var loaded = store.Load();
+            Assert.Equal(77, loaded.PreviewWidth);
+            Assert.Equal([@"C:\pinned"], loaded.PinnedPaths!);
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
+
+    [Fact]
+    public void Saving_writes_to_the_new_directory_and_leaves_the_legacy_file_alone()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var legacyDir = Path.Combine(dir, "zurari");
+            var legacy = new UserSettingsStore(legacyDir);
+            legacy.Save(new UserSettings(PreviewWidth: 77, PinnedPaths: [@"C:\pinned"]));
+            var store = new UserSettingsStore(Path.Combine(dir, "zurari_w"), legacyDir);
+
+            // The first save carries the legacy values across, because Update reads before it writes.
+            store.Update(s => s with { PreviewWidth = 300 });
+
+            Assert.Equal(300, store.Load().PreviewWidth);
+            Assert.Equal([@"C:\pinned"], store.Load().PinnedPaths!);
+            Assert.Equal(77, legacy.Load().PreviewWidth);
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
+
+    [Fact]
+    public void Once_the_new_directory_has_settings_the_legacy_ones_are_ignored()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var legacyDir = Path.Combine(dir, "zurari");
+            var newDir = Path.Combine(dir, "zurari_w");
+            new UserSettingsStore(legacyDir).Save(new UserSettings(PreviewWidth: 77));
+            new UserSettingsStore(newDir).Save(new UserSettings(PreviewWidth: 300));
+
+            Assert.Equal(300, new UserSettingsStore(newDir, legacyDir).Load().PreviewWidth);
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
 }
