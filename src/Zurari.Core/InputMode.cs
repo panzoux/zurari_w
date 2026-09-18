@@ -11,8 +11,8 @@ public enum InputMode
     Normal,
 
     /// <summary>
-    /// Choosing how listings are ordered. Stays open while fields are chosen, so choosing the same
-    /// field again flips its direction without reopening the mode.
+    /// Choosing how listings are ordered. One decision long: choosing a field, choosing one
+    /// descending or toggling folders first closes it again, as does any key it does not own.
     /// </summary>
     Sort,
 }

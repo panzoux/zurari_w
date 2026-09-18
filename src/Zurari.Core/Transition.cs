@@ -199,10 +199,11 @@ public static class Transition
                 NoEffects),
             Msg.CreateFolderRequested m => CreateFolder(state, m.ColumnIndex),
             Msg.FolderCreated m => RereadColumn(state, m.ColumnIndex, m.Location, reveal: m.Name),
+            // Each choice sort mode offers also ends it: the mode is one decision long.
             Msg.SetSortMode m => Rederive(
-                state, state.View with { Sort = state.View.Sort.Select(m.Mode) }, remember: true),
+                LeaveSortMode(state), state.View with { Sort = state.View.Sort.Select(m.Mode) }, remember: true),
             Msg.ToggleDirectoriesFirst => Rederive(
-                state,
+                LeaveSortMode(state),
                 state.View with { Sort = state.View.Sort with { DirectoriesFirst = !state.View.Sort.DirectoriesFirst } },
                 remember: true),
             Msg.ToggleHiddenFiles => Rederive(
@@ -216,11 +217,9 @@ public static class Transition
                     ? state
                     : state with { InputMode = InputMode.Sort },
                 NoEffects),
-            Msg.ExitSortMode => (
-                state.InputMode == InputMode.Normal ? state : state with { InputMode = InputMode.Normal },
-                NoEffects),
+            Msg.ExitSortMode => (LeaveSortMode(state), NoEffects),
             Msg.SetSortDescending m => Rederive(
-                state, state.View with { Sort = state.View.Sort with { Mode = m.Mode, Descending = true } }, remember: true),
+                LeaveSortMode(state), state.View with { Sort = state.View.Sort with { Mode = m.Mode, Descending = true } }, remember: true),
             Msg.ViewRestored m => Rederive(state, m.View, remember: false),
             Msg.ToggleSection m => ToggleSection(state, m.ColumnIndex, m.EntryIndex),
             Msg.RetryPreview => RetryPreview(state),
@@ -228,6 +227,9 @@ public static class Transition
             _ => (state, NoEffects),
         };
     }
+
+    private static AppState LeaveSortMode(AppState state) =>
+        state.InputMode == InputMode.Normal ? state : state with { InputMode = InputMode.Normal };
 
     private static bool InRange(AppState state, int columnIndex) =>
         columnIndex >= 0 && columnIndex < state.Columns.Length;

@@ -20,7 +20,7 @@ Phase 6 was sixteen loose checkboxes. Grilling turned it into decisions, and fou
 
 **6a-6d, 6f and 6g are on `main`** - fast-forwarded from `phase6a-location-foundation` on
 2026-09-05, once 6d was complete (see R-1). 6c and 6e.1-6e.6 followed; 6e.7 is deferred.
-847 tests, `scripts/check.ps1` green.
+853 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`, and `check.ps1` refuses to pass while it is
 stale. Do not edit it by hand. A commit count used to live here too; it was removed because it is
@@ -59,6 +59,7 @@ wrong the moment the next commit lands - `git log --oneline main..` is the hones
 | 6e.6 | Open with default app (`Enter`) | `[x]` | `b43a6a1` |
 | 6e.7 | Path bar (full path of the cursor item) above a status bar of contextual key hints | `[x]` | `5180e8f` |
 | 6e.8 | Sort mode: `S` then `N`/`E`/`S`/`M` (Shift = descending, repeat flips), `D` folders first; hidden files `Ctrl+Shift+.` | `[x]` | `5180e8f` |
+| 6e.8a | Sort mode ends on its own keys too - one decision long (see 6e-8b) | `[x]` | `(this commit)` |
 | 6e.9 | Help screen | `[ ]` | **deferred by decision** - see 6e-7 |
 | **6e-bis** | **Smooth cursor movement** | `[x]` | `f61c46b` `593194e` |
 | **6g** | **Finder-style auto-extend**: the column beside the cursor | `[x]` | `75f84f9` |
@@ -151,13 +152,19 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   installed: preview a `.pdf` and a `.docx`, confirm the page appears, and confirm the folder gains no
   `Thumbs.db`. Not possible on the development machine - no handler is registered for either.
 
-- **6e-8b** `[ ]` **Sort keys reported as not working - the first traced run did not include an `S`.**
+- **6e-8b** `[x]` **Sort keys reported as not working - the first traced run did not include an `S`.**
   Traced with `--debug-input` at `864a058` (2026-09-18): `Ctrl+Shift+.` arrived, resolved and
   toggled hidden files (58 to 76 entries in `C:\Users\user`), so the key path works end to end. The
   run holds no `S` keypress at all - only Alt, the arrows and `Ctrl+Shift+.`. If `S` was pressed and
   is absent, WPF never raised the key event, which points at the IME rather than the sort code; if it
   was not pressed, the next traced run settles it. Also still possible: the drive pane, where focus
   starts, is never sorted by design (`sortable=False` in the log) while its hint offers `S 並べ替え`.
+
+  **2026-09-19: tested by you, the sort keys work.** Closed. The same pass asked for one change:
+  the mode should end on the keys it offers, not only on Esc and keys it does not own. Done as 6e.8a -
+  `SetSortMode`, `SetSortDescending` and `ToggleDirectoriesFirst` leave `InputMode.Sort` in
+  `Transition`, so the rule lives with the mode rather than in the key map. Red first:
+  `SortTests.Choosing_in_sort_mode_closes_it` failed for all three before the change.
 
 - **6c-10** `[x]` **ffmpeg first, the shell as the fallback - 6c.5's ordering, reversed on measurement.**
   6c.5 put the shell first reasoning that an in-process call must beat spawning a process. Measured
@@ -337,9 +344,10 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   files on `Ctrl+Shift+.`; and incremental search opening on `/` as in zrr, so no letter is taken from
   it.
 
-  **Sort is a mode, not a chord.** `S` opens it and it stays open while fields are chosen, so
-  `S N N N` keeps flipping name order - the existing `SortOrder.Select` rule (choosing the field
-  already in use reverses it) does the flipping. Esc closes it; any other key closes it *and* goes where
+  **Sort is a mode, not a chord.** `S` opens it and the next key decides. *As first built* it stayed
+  open while fields were chosen, so `S N N N` kept flipping name order; **since 6e.8a (2026-09-19,
+  your call) every key it offers closes it too**, so the flip is `S N` pressed twice - the existing
+  `SortOrder.Select` rule (choosing the field already in use reverses it) does the flipping either way. Esc closes it; any other key closes it *and* goes where
   it would have gone, so an arrow key leaves sort mode and moves the cursor in one press. The status
   bar shows the mode while it is open (`並べ替え: サイズ ↓ ...`), which is what makes a mode acceptable
   at all.

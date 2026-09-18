@@ -9,10 +9,11 @@ namespace Zurari.App;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Sort is a mode rather than a set of chords: <c>S</c> opens it, and the keys after it choose
-/// fields until it closes - so <c>S N N N</c> keeps flipping name order without pressing S again.
-/// Shift with a field key goes straight to descending, and <c>D</c> toggles folders first. Esc
-/// closes it, and so does any other key, which then goes where it would have gone.
+/// Sort is a mode rather than a set of chords: <c>S</c> opens it, and the next key decides - a
+/// field (choosing the one in use again flips it, so <c>S N</c> twice reverses name order), Shift
+/// with a field for descending, or <c>D</c> for folders first. Any of those closes the mode
+/// (Transition does that, not this map). Esc closes it too, and so does any other key, which then
+/// goes where it would have gone.
 /// </para>
 /// <para>
 /// No plain letter other than <c>S</c> is claimed in normal mode. Incremental search opens on
@@ -69,7 +70,7 @@ internal static class KeyMap
     /// <summary>What a key does to an open sort mode.</summary>
     internal abstract record SortKeyOutcome
     {
-        /// <summary>A sort key: dispatch <paramref name="Msg"/>, and the mode stays open.</summary>
+        /// <summary>A sort key: dispatch <paramref name="Msg"/>, which also closes the mode.</summary>
         public sealed record Act(Msg Msg) : SortKeyOutcome;
 
         /// <summary>A modifier on its own, still waiting for the key it modifies.</summary>

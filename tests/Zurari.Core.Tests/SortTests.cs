@@ -392,21 +392,44 @@ public class SortTests
     }
 
     /// <summary>
-    /// "S N N N": the mode stays open while fields are chosen, so choosing the same field again keeps
-    /// flipping its direction without reopening the mode each time. Uses size rather than name so the
+    /// Every key the sort mode offers ends it: choosing a field, choosing one descending, or toggling
+    /// folders first. The mode is one decision long, like Esc and every key it does not own.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(SortModeChoices))]
+    public void Choosing_in_sort_mode_closes_it(Msg choice)
+    {
+        var state = new AppState { Columns = [Listing()], FocusedColumn = 0 };
+
+        var (open, _) = Transition.Apply(state, new Msg.EnterSortMode());
+        var (next, _) = Transition.Apply(open, choice);
+
+        Assert.Equal(InputMode.Normal, next.InputMode);
+    }
+
+    public static TheoryData<Msg> SortModeChoices() => new()
+    {
+        new Msg.SetSortMode(SortMode.Size),
+        new Msg.SetSortDescending(SortMode.Size),
+        new Msg.ToggleDirectoriesFirst(),
+    };
+
+    /// <summary>
+    /// "S S, S S": with the mode closing on each choice, flipping a field's direction takes reopening
+    /// it - and choosing the field already in use still reverses it. Uses size rather than name so the
     /// test does not depend on which field the default order already uses.
     /// </summary>
     [Fact]
-    public void Sort_mode_stays_open_while_fields_are_chosen()
+    public void Choosing_the_same_field_again_after_reopening_flips_it()
     {
         var state = new AppState { Columns = [Listing()], FocusedColumn = 0 };
 
         var (next, _) = Transition.Apply(state, new Msg.EnterSortMode());
         (next, _) = Transition.Apply(next, new Msg.SetSortMode(SortMode.Size));
         Assert.False(next.View.Sort.Descending);
+        (next, _) = Transition.Apply(next, new Msg.EnterSortMode());
         (next, _) = Transition.Apply(next, new Msg.SetSortMode(SortMode.Size));
 
-        Assert.Equal(InputMode.Sort, next.InputMode);
         Assert.Equal(new SortOrder(SortMode.Size, Descending: true), next.View.Sort);
     }
 
