@@ -20,7 +20,7 @@ Phase 6 was sixteen loose checkboxes. Grilling turned it into decisions, and fou
 
 **6a-6d, 6f and 6g are on `main`** - fast-forwarded from `phase6a-location-foundation` on
 2026-09-05, once 6d was complete (see R-1). 6c and 6e.1-6e.6 followed; 6e.7 is deferred.
-833 tests, `scripts/check.ps1` green.
+850 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`, and `check.ps1` refuses to pass while it is
 stale. Do not edit it by hand. A commit count used to live here too; it was removed because it is
@@ -38,6 +38,7 @@ wrong the moment the next commit lands - `git log --oneline main..` is the hones
 | 6c.5 | Shell thumbnails before ffmpeg (`IThumbnailCache`; never writes `Thumbs.db`) | `[x]` | `1a5c096` |
 | 6c.6 | PDF and Office documents preview as Explorer's thumbnail, where a handler is installed | `[x]` | `a932bab` |
 | 6c.7 | Shell thumbnails on one dedicated STA thread: latest-wins, time budget, failures cached | `[x]` | `10e6819` |
+| 6c.8 | Retry a timed-out video preview from a link: 10, 20, then 30 s | `[x]` | (this commit) |
 | **6d** | **The root pane** | `[x]` | |
 | 6d.1 | Sections, headers, cursor on header, `Space` collapses | `[x]` | `9082b8c` |
 | 6d.2 | Drive labels ("Windows (C:)"), marks refused in the pane | `[x]` | `9082b8c` |
@@ -63,7 +64,7 @@ wrong the moment the next commit lands - `git log --oneline main..` is the hones
 | **6g** | **Finder-style auto-extend**: the column beside the cursor | `[x]` | `75f84f9` |
 | **6f** | **Findings parked from 6a–6e** | `[~]` | |
 | 6f.1 | Settings store: injectable path, atomic save | `[x]` | `134fce0` |
-| 6f.2 | `JobEngineTests` cancel race | `[ ]` | |
+| 6f.2 | `JobEngineTests` cancel race | `[ ]` | **when needed** (your call, 2026-09-18) - see 6f-2 |
 | 6f.3 | Unguarded `Directory.Delete` in test cleanup (89, not 57) | `[x]` | `eb5ad3e` |
 | **docs** | Stale plan facts, CLAUDE.md pointer | `[x]` | `9d55e8f` `06dde17` |
 
@@ -119,6 +120,43 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   (answered: do them - see 6c-8). And an
   ffmpeg failure verdict cached before this change still wins over the shell for that one file until
   the 30-day sweep; those are files ffmpeg rejected, where the shell most likely fails too.
+
+- **6c-11** `[x]` **6c.8: a timed-out video preview can be retried, waiting longer each time.**
+  Your direction: a link after the timeout message; three tries at 10, 20 and 30 s, then give up.
+  - **Core** owns the attempts: `PreviewState.Attempt` and `TimedOut`, `CanRetry` while attempts
+    remain, and `Msg.RetryPreview`, which reloads the same file as the next attempt under a new
+    generation - so a late result from the try that timed out is discarded, not mistaken for this
+    one. Moving to another file starts again at the first attempt. The wait per attempt,
+    `PreviewState.WaitFor`, lives in Core too, so the wait the Runtime uses and the wait the link
+    promises are one number.
+  - **Runtime** reports a timeout as its own verdict, `ThumbnailFailure.TimedOut`, never cached -
+    unlike a file ffmpeg rejects, which will not decode on a longer wait and gets no link.
+  - **App** shows `再試行 (20 秒)`, then `再試行 (30 秒)`, then `30 秒待っても作れませんでした`. The link
+    does not take keyboard focus, so clicking it leaves the arrow keys with the column browser.
+
+  **Fixed along the way: the old 20 s timeout was really 40 s.** ffmpeg is tried at 3 s in, then at the
+  first frame, and each run got the full timeout. The budget now covers the whole call, so 10 s
+  means 10 s. That half is untested: forcing a real ffmpeg to stall on cue needs a fixture this
+  suite does not have.
+
+  **Evidence.** Core, Runtime and App each red first; the passes that came free with a stub were
+  mutated to failure (6 mutations: a retry offered whatever the attempt, one offered without a
+  timeout, the attempt count kept across files, every attempt given the first wait, every failure
+  reported as a timeout, the link offered without a timeout). A test seam,
+  `WorkerRuntime.CreateVideoThumbnail`, makes ffmpeg time out or reject on demand.
+
+- **6c-12** `[ ]` **Manual check carried over from 6c-8: PDF and Office thumbnails with a handler.**
+  6c-8 is closed, so this was easy to miss inside it. On a machine with Office, Acrobat or PowerToys
+  installed: preview a `.pdf` and a `.docx`, confirm the page appears, and confirm the folder gains no
+  `Thumbs.db`. Not possible on the development machine - no handler is registered for either.
+
+- **6e-8b** `[ ]` **Sort keys reported as not working - the first traced run did not include an `S`.**
+  Traced with `--debug-input` at `864a058` (2026-09-18): `Ctrl+Shift+.` arrived, resolved and
+  toggled hidden files (58 to 76 entries in `C:\Users\user`), so the key path works end to end. The
+  run holds no `S` keypress at all - only Alt, the arrows and `Ctrl+Shift+.`. If `S` was pressed and
+  is absent, WPF never raised the key event, which points at the IME rather than the sort code; if it
+  was not pressed, the next traced run settles it. Also still possible: the drive pane, where focus
+  starts, is never sorted by design (`sortable=False` in the log) while its hint offers `S 並べ替え`.
 
 - **6c-10** `[x]` **ffmpeg first, the shell as the fallback - 6c.5's ordering, reversed on measurement.**
   6c.5 put the shell first reasoning that an in-process call must beat spawning a process. Measured
@@ -538,10 +576,20 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   3. **Unmounting through the context menu's 取り出し** on a mounted image.
   4. **Drive types this machine does not have** - a mapped network drive, a RAM disk - for their
      labels, icons and capacity panel.
+
+  **2026-09-18:** under way in another session, starting with the AppData folders; mostly good so
+  far, by your report.
+
 - **6f-2** `[ ]` **`JobEngineTests.CancelJob_mid_copy_deletes_the_incomplete_destination_file` is
   racy.** It copies 50MB, waits for one `JobProgress`, then cancels; if the copy finishes first,
   `JobCancelled` never arrives and it times out. Fixing it means a larger fixture (slower every run)
   or a throttle seam in `JobEngine` - a design decision, not a tidy-up.
+
+  **2026-09-18: deferred until needed, by your decision.** A second JobEngine flake seen the same
+  day: `RunFileJob_posts_JobConflictsFound_then_skips_when_resolved_Skip` timed out once at 10 s in a
+  full Runtime run, then passed in the two runs that followed. Different test, same family - a wait
+  on a message that a busy machine delivers late.
+
 - **6f-3** `[x]` **Unguarded `Directory.Delete` in test cleanup - 89 of them, not the 57 I counted.**
   A test that has finished asserting has already passed or failed on its own merits; cleanup throwing
   afterwards turns it red for a reason that has nothing to do with what it was checking, and lands

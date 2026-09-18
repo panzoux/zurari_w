@@ -551,6 +551,31 @@ public sealed record PreviewState(
     string? Error,
     PreviewMetadata? Metadata = null)
 {
+    /// <summary>How many attempts there are at a preview that times out: the first, then two retries.</summary>
+    public const int MaxAttempts = 3;
+
+    /// <summary>
+    /// Which attempt this is at the current file, from 1. Each retry waits longer - see
+    /// <c>WorkerRuntime.ThumbnailTimeoutFor</c>.
+    /// </summary>
+    public int Attempt { get; init; } = 1;
+
+    /// <summary>
+    /// Whether the last attempt ran out of time rather than failing. A timeout says nothing about the
+    /// file - a slow disk, a busy machine - so it is the one failure worth offering to try again.
+    /// </summary>
+    public bool TimedOut { get; init; }
+
+    /// <summary>Whether a retry is on offer: the last attempt timed out and attempts remain.</summary>
+    public bool CanRetry => TimedOut && Attempt < MaxAttempts;
+
+    /// <summary>
+    /// How long a thumbnail is given on <paramref name="attempt"/>: 10, 20 and 30 seconds. Here
+    /// rather than in the Runtime so the wait it uses and the wait the retry link promises are one
+    /// number.
+    /// </summary>
+    public static TimeSpan WaitFor(int attempt) => TimeSpan.FromSeconds(10 * Math.Clamp(attempt, 1, MaxAttempts));
+
     /// <summary>
     /// Where the previewed file used to live, before it was deleted - set only for rows in the
     /// recycle bin, <c>null</c> everywhere else.
@@ -762,6 +787,11 @@ public sealed record AppState
     public IReadOnlyList<string> CheckInvariants()
     {
         var violations = new List<string>();
+
+        if (Preview.Attempt < 1 || Preview.Attempt > PreviewState.MaxAttempts)
+        {
+            violations.Add("Preview.Attempt is outside 1.." + PreviewState.MaxAttempts);
+        }
 
         if (Columns.IsDefaultOrEmpty)
         {

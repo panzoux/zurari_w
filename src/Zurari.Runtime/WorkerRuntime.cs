@@ -52,11 +52,24 @@ public sealed class WorkerRuntime : IDisposable
     /// </remarks>
     private static readonly TimeSpan PreviewSettleDelay = TimeSpan.FromMilliseconds(100);
 
-    /// <summary>How long <see cref="ExecuteLoadPreview"/> waits for each external thumbnailer
-    /// attempt (see <see cref="VideoThumbnailer"/>) before giving up on that attempt - re-checked
-    /// every few seconds rather than as one hard wait, so a slow decode of a large/slow-disk file
-    /// is not killed the instant a single check expires.</summary>
-    private static readonly TimeSpan VideoThumbnailTimeout = TimeSpan.FromSeconds(20);
+    /// <summary>
+    /// How long ffmpeg is given on <paramref name="attempt"/> at one video preview: 10, 20 and 30
+    /// seconds. The whole call shares it, both seek positions included.
+    /// </summary>
+    /// <remarks>
+    /// Short first, because the real files measured decode in 205-624 ms and a stall that long is
+    /// almost always a slow disk or a busy machine rather than a file that needs 20 s. When it does
+    /// run out, the preview offers to try again with the next, longer wait instead of making every
+    /// video pay the worst case up front.
+    /// </remarks>
+    internal static TimeSpan ThumbnailTimeoutFor(int attempt) => PreviewState.WaitFor(attempt);
+
+    /// <summary>
+    /// Makes a video thumbnail with ffmpeg. A seam so tests can make it time out or reject a file
+    /// on demand; production always uses <see cref="VideoThumbnailer.TryCreateThumbnail"/>.
+    /// </summary>
+    internal Func<string, TimeSpan, CancellationToken, ThumbnailOutcome> CreateVideoThumbnail { get; init; } =
+        VideoThumbnailer.TryCreateThumbnail;
 
     /// <summary>
     /// How long a preview waits for Explorer's thumbnail before showing what it would have shown
@@ -316,7 +329,7 @@ public sealed class WorkerRuntime : IDisposable
     /// <para>
     /// Preview deliberately does not execute on the worker pool. A preview can block for a long time
     /// - opening a handle on a cloud placeholder hydrates the file, and a video thumbnail shells out
-    /// to ffmpeg for up to <see cref="VideoThumbnailTimeout"/> - and the pool is small (two workers
+    /// to ffmpeg for up to <see cref="ThumbnailTimeoutFor"/> - and the pool is small (two workers
     /// by default). Running previews there meant two slow videos under the cursor could occupy every
     /// worker at once, leaving <see cref="Effect.ReadDirectory"/> queued behind them: navigation
     /// stopped until a thumbnail timed out.
@@ -1176,9 +1189,10 @@ public sealed class WorkerRuntime : IDisposable
         // the in-process call had to be the cheap one; and it needs no apartment and no installed
         // handler. A remembered rejection means ffmpeg has already had its turn on this exact file.
         var failureDetail = cachedFailure;
+        var timedOut = false;
         if (cachedFailure is null)
         {
-            var outcome = VideoThumbnailer.TryCreateThumbnail(path, VideoThumbnailTimeout, token);
+            var outcome = CreateVideoThumbnail(path, ThumbnailTimeoutFor(effect.Attempt), token);
             if (outcome.Bytes is not null)
             {
                 _thumbnailCache.Value.StoreSuccess(path, outcome.Bytes);
@@ -1194,6 +1208,7 @@ public sealed class WorkerRuntime : IDisposable
             }
 
             failureDetail = outcome.FailureDetail;
+            timedOut = outcome.Failure == ThumbnailFailure.TimedOut;
         }
 
         // A file ffmpeg cannot decode may still have a thumbnail the shell can produce, so a
@@ -1203,7 +1218,7 @@ public sealed class WorkerRuntime : IDisposable
             return;
         }
 
-        PostVideoFallback(effect, detected, path, head, baseMetadata, failureDetail);
+        PostVideoFallback(effect, detected, path, head, baseMetadata, failureDetail, timedOut);
     }
 
     /// <summary>
@@ -1387,10 +1402,12 @@ public sealed class WorkerRuntime : IDisposable
         string path,
         byte[] head,
         PreviewMetadata baseMetadata,
-        string? failureDetail)
+        string? failureDetail,
+        bool timedOut)
     {
         var label = $"{VideoLabel(detected, path)} ({failureDetail})";
-        _post(new Msg.PreviewLoaded(effect.Generation, PreviewKind.Binary, null, HexHead(head), label, baseMetadata));
+        _post(new Msg.PreviewLoaded(
+            effect.Generation, PreviewKind.Binary, null, HexHead(head), label, baseMetadata, TimedOut: timedOut));
     }
 
     /// <summary>

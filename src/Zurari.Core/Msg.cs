@@ -242,13 +242,20 @@ public abstract record Msg
         string? Text,
         ImmutableArray<byte> ImageBytes,
         string? BinaryLabel,
-        PreviewMetadata? Metadata = null) : Msg;
+        PreviewMetadata? Metadata = null,
+        bool TimedOut = false) : Msg;
 
     /// <summary>
     /// An <see cref="Effect.LoadPreview"/> failed. Subject to the same staleness check as
     /// <see cref="PreviewLoaded"/>.
     /// </summary>
     public sealed record PreviewFailed(int Generation, string Error) : Msg;
+
+    /// <summary>
+    /// Tries the current preview again, waiting longer, when its last attempt timed out and
+    /// attempts remain (<see cref="PreviewState.CanRetry"/>). Ignored otherwise.
+    /// </summary>
+    public sealed record RetryPreview : Msg;
 
     /// <summary>
     /// An <see cref="Effect.LoadPreview"/> for a volume or the recycle bin succeeded. Subject to the

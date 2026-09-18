@@ -2830,6 +2830,8 @@ public class TransitionProperties
         Gen.Select(Gen.Select(GenJobId, GenPreviewKind), Gen.Select(GenImageBytes, GenPreviewMetadata))
             .Select(t => (Msg)new Msg.PreviewLoaded(t.Item1.Item1, t.Item1.Item2, "text", t.Item2.Item1, "label", t.Item2.Item2)),
         GenJobId.Select(i => (Msg)new Msg.PreviewFailed(i, "error")),
+        GenJobId.Select(i => (Msg)new Msg.PreviewLoaded(i, PreviewKind.Binary, null, [], "timed out", null, TimedOut: true)),
+        Gen.Const<Msg>(new Msg.RetryPreview()),
         GenPaths.Select(paths => (Msg)new Msg.SetCutPending(paths)),
         Gen.Select(GenJobId, Gen.Int[0, 5]).Select(t => (Msg)new Msg.JobConflictsFound(t.Item1, t.Item2)),
         Gen.Select(GenJobId, GenConflictDecision).Select(t => (Msg)new Msg.JobConflictResolved(t.Item1, t.Item2)),

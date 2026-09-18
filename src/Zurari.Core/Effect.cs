@@ -89,8 +89,9 @@ public abstract record Effect
     /// carrying <paramref name="Generation"/> unchanged so a superseded request's result can be
     /// told apart from the current one and discarded.
     /// </summary>
+    /// <param name="Attempt">Which attempt at this file, from 1; later attempts may wait longer.</param>
     public sealed record LoadPreview(
-        int Generation, string Path, PreviewTarget Target = PreviewTarget.File) : Effect;
+        int Generation, string Path, PreviewTarget Target = PreviewTarget.File, int Attempt = 1) : Effect;
 
     /// <summary>
     /// Abandons the in-flight <see cref="LoadPreview"/> for <paramref name="Generation"/>: the
@@ -101,7 +102,7 @@ public abstract record Effect
     /// <para>
     /// Discarding the result was never the expensive part. A preview can be arbitrarily slow -
     /// opening a handle on a cloud placeholder hydrates it, and a video thumbnail shells out to
-    /// ffmpeg for up to twenty seconds - and without this the work ran to completion regardless,
+    /// ffmpeg for up to thirty seconds - and without this the work ran to completion regardless,
     /// holding a worker the whole time. Fast cursor movement through a directory of videos could
     /// therefore queue up minutes of work whose results were all thrown away.
     /// </para>

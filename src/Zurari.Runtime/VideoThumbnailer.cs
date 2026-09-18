@@ -33,9 +33,9 @@ internal static class VideoThumbnailer
 
     /// <summary>
     /// Tries to render a PNG thumbnail of <paramref name="videoPath"/> via ffmpeg, if it is on
-    /// PATH. Each attempt gets up to <paramref name="timeout"/>, polled in
-    /// <see cref="PollInterval"/> slices (see <see cref="RunProcess"/>) rather than a single hard
-    /// wait.
+    /// PATH. The whole call - both seek positions it may try - shares one <paramref name="timeout"/>,
+    /// polled in <see cref="PollInterval"/> slices (see <see cref="RunProcess"/>) rather than a
+    /// single hard wait. It used to be per seek position, so the real wait was twice the number.
     /// </summary>
     public static ThumbnailOutcome TryCreateThumbnail(string videoPath, TimeSpan timeout, CancellationToken token = default)
     {
@@ -66,14 +66,22 @@ internal static class VideoThumbnailer
     private static ThumbnailOutcome TryFfmpeg(
         string tool, string videoPath, string tmpPng, TimeSpan timeout, CancellationToken token)
     {
+        var clock = Stopwatch.StartNew();
         var atThreeSeconds = RunProcess(tool, BuildFfmpegArgs(videoPath, tmpPng, seekSeconds: 3), timeout, token);
         if (atThreeSeconds.Success && HasContent(tmpPng))
         {
             return ThumbnailOutcome.Success(File.ReadAllBytes(tmpPng));
         }
 
+        // Out of time already: the budget is for the whole call, not per seek position.
+        var remaining = timeout - clock.Elapsed;
+        if (atThreeSeconds.TimedOut || remaining <= TimeSpan.Zero)
+        {
+            return ThumbnailOutcome.TimedOut(DescribeFailure("ffmpeg", atThreeSeconds with { TimedOut = true }));
+        }
+
         // Very short clips can have nothing at 3s in - retry from the very first frame.
-        var atFirstFrame = RunProcess(tool, BuildFfmpegArgs(videoPath, tmpPng, seekSeconds: 0), timeout, token);
+        var atFirstFrame = RunProcess(tool, BuildFfmpegArgs(videoPath, tmpPng, seekSeconds: 0), remaining, token);
         if (atFirstFrame.Success && HasContent(tmpPng))
         {
             return ThumbnailOutcome.Success(File.ReadAllBytes(tmpPng));
@@ -83,8 +91,14 @@ internal static class VideoThumbnailer
 
         // Only a verdict ffmpeg actually reached is about the file. A timeout may just mean a busy
         // machine, and a start failure means ffmpeg itself is the problem - neither should be
-        // remembered against this file (see ThumbnailFailure).
-        return atFirstFrame.TimedOut || atFirstFrame.ExitCode is null
+        // remembered against this file (see ThumbnailFailure). A timeout is also the one worth
+        // offering to retry with longer.
+        if (atFirstFrame.TimedOut)
+        {
+            return ThumbnailOutcome.TimedOut(detail);
+        }
+
+        return atFirstFrame.ExitCode is null
             ? ThumbnailOutcome.Unavailable(detail)
             : ThumbnailOutcome.FileRejected(detail);
     }
@@ -289,6 +303,9 @@ internal readonly record struct ThumbnailOutcome(
 
     /// <summary>Something about the environment stopped us, not this file.</summary>
     public static ThumbnailOutcome Unavailable(string detail) => new(null, detail, ThumbnailFailure.Unavailable);
+
+    /// <summary>ffmpeg was still working when its time ran out - worth trying again with longer.</summary>
+    public static ThumbnailOutcome TimedOut(string detail) => new(null, detail, ThumbnailFailure.TimedOut);
 }
 
 /// <summary>Why a thumbnail could not be produced - see <see cref="ThumbnailOutcome"/>.</summary>
@@ -307,6 +324,13 @@ internal enum ThumbnailFailure
     /// <summary>ffmpeg ran to completion and could not decode a frame from this file.</summary>
     FileRejected,
 
-    /// <summary>ffmpeg was missing, failed to start, or timed out - not the file's fault.</summary>
+    /// <summary>ffmpeg was missing or failed to start - not the file's fault.</summary>
     Unavailable,
+
+    /// <summary>
+    /// ffmpeg was still working when its time ran out. Not the file's fault either, and never
+    /// cached - but unlike <see cref="Unavailable"/> a longer wait might succeed, so the preview
+    /// offers to try again.
+    /// </summary>
+    TimedOut,
 }

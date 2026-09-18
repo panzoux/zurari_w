@@ -85,6 +85,7 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <!-- Where a deleted file came from; collapsed for everything else. No TextTrimming
                      on either of these: RenderPreview shortens them from the middle instead, which
@@ -129,6 +130,17 @@
                     <TextBlock x:Name="PreviewMetadataBlock" FontSize="11" TextWrapping="Wrap"
                                Foreground="#FF404040" Visibility="Collapsed" />
                 </Border>
+                <!-- Under a video preview whose thumbnail ran out of time: try again, waiting longer.
+                     Focusable=False so clicking it leaves keyboard focus in the column browser. -->
+                <StackPanel Grid.Row="4" Margin="0,4,0,0">
+                    <TextBlock x:Name="PreviewRetry" Visibility="Collapsed">
+                        <Hyperlink Click="OnPreviewRetryClick" Focusable="False">
+                            <Run x:Name="PreviewRetryText" />
+                        </Hyperlink>
+                    </TextBlock>
+                    <TextBlock x:Name="PreviewGaveUp" Foreground="#FF909090" TextWrapping="Wrap"
+                               Visibility="Collapsed" />
+                </StackPanel>
             </Grid>
         </Grid>
     </DockPanel>

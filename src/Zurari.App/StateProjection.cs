@@ -337,7 +337,17 @@ public static class StateProjection
         string? Text,
         ImmutableArray<byte> ImageBytes,
         string? Error,
-        string MetadataText);
+        string MetadataText)
+    {
+        /// <summary>
+        /// Text of the link that tries a timed-out preview again, naming how long the next try will
+        /// wait. <c>null</c> when there is nothing to retry.
+        /// </summary>
+        public string? RetryLink { get; init; }
+
+        /// <summary>Said instead of the link once the last try has timed out too. <c>null</c> otherwise.</summary>
+        public string? GaveUp { get; init; }
+    }
 
     /// <summary>
     /// Projects <see cref="AppState.Preview"/> into a <see cref="PreviewVm"/>. Pure - no I/O, no
@@ -371,7 +381,17 @@ public static class StateProjection
             text,
             preview.ImageBytes,
             preview.Error,
-            metadataText);
+            metadataText)
+        {
+            // A timeout is the one failure worth another try, waiting longer; once the last try has
+            // timed out too, the pane says so rather than offering a link that would do nothing.
+            RetryLink = preview.CanRetry
+                ? $"再試行 ({(int)PreviewState.WaitFor(preview.Attempt + 1).TotalSeconds} 秒)"
+                : null,
+            GaveUp = preview.TimedOut && !preview.CanRetry
+                ? $"{(int)PreviewState.WaitFor(preview.Attempt).TotalSeconds} 秒待っても作れませんでした"
+                : null,
+        };
     }
 
     /// <summary>Formats a <see cref="PreviewCapacity"/> for display, or <c>null</c> when there is none.</summary>

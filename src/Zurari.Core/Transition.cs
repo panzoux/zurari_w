@@ -178,7 +178,7 @@ public static class Transition
             Msg.JobCancelRequested m => JobCancelRequested(state, m.JobId),
             Msg.JobDismissed m => (JobDismissed(state, m.JobId), NoEffects),
             Msg.PreviewLoaded m =>
-                (PreviewLoaded(state, m.Generation, m.Kind, m.Text, m.ImageBytes, m.BinaryLabel, m.Metadata), NoEffects),
+                (PreviewLoaded(state, m.Generation, m.Kind, m.Text, m.ImageBytes, m.BinaryLabel, m.Metadata, m.TimedOut), NoEffects),
             Msg.PreviewFailed m => (PreviewFailed(state, m.Generation, m.Error), NoEffects),
             Msg.PreviewCapacityLoaded m => (PreviewCapacityLoaded(state, m.Generation, m.Capacity), NoEffects),
             Msg.SetCutPending m => (state with { CutPending = m.Paths }, NoEffects),
@@ -223,6 +223,7 @@ public static class Transition
                 state, state.View with { Sort = state.View.Sort with { Mode = m.Mode, Descending = true } }, remember: true),
             Msg.ViewRestored m => Rederive(state, m.View, remember: false),
             Msg.ToggleSection m => ToggleSection(state, m.ColumnIndex, m.EntryIndex),
+            Msg.RetryPreview => RetryPreview(state),
             Msg.CollapsedGroupsRestored m => (RestoreCollapsedGroups(state, m.ColumnIndex, m.Groups), NoEffects),
             _ => (state, NoEffects),
         };
@@ -1607,6 +1608,43 @@ public static class Transition
     /// </summary>
     private readonly record struct CursorTarget(string? Path, string? OriginalPath, PreviewTarget Kind);
 
+    /// <summary>
+    /// Loads the current preview again as the next attempt, when the last one timed out and
+    /// attempts remain. A new generation, like any other load, so a late result from the attempt
+    /// that timed out is discarded rather than mistaken for this one.
+    /// </summary>
+    /// <remarks>
+    /// Only while the cursor is still on the file that timed out: a retry is an answer to what is
+    /// on screen, and anything else would load a preview for a file nobody is looking at.
+    /// </remarks>
+    private static (AppState, IReadOnlyList<Effect>) RetryPreview(AppState state)
+    {
+        var preview = state.Preview;
+        if (!preview.CanRetry || preview.Path is null)
+        {
+            return (state, NoEffects);
+        }
+
+        var target = ResolveCursorFileTarget(state);
+        if (!string.Equals(target.Path, preview.Path, StringComparison.Ordinal))
+        {
+            return (state, NoEffects);
+        }
+
+        var generation = preview.Generation + 1;
+        var attempt = preview.Attempt + 1;
+        var loading = state with
+        {
+            Preview = new PreviewState(generation, preview.Path, PreviewKind.Loading, Text: null, ImageBytes: [], Error: null)
+            {
+                OriginalPath = preview.OriginalPath,
+                Attempt = attempt,
+            },
+        };
+
+        return (loading, [new Effect.LoadPreview(generation, preview.Path, target.Kind, attempt)]);
+    }
+
     private static AppState PreviewLoaded(
         AppState state,
         int generation,
@@ -1614,7 +1652,8 @@ public static class Transition
         string? text,
         ImmutableArray<byte> imageBytes,
         string? binaryLabel,
-        PreviewMetadata? metadata)
+        PreviewMetadata? metadata,
+        bool timedOut)
     {
         if (generation != state.Preview.Generation)
         {
@@ -1633,6 +1672,7 @@ public static class Transition
                 ImageBytes = imageBytes,
                 Error = null,
                 Metadata = metadata,
+                TimedOut = timedOut,
             },
         };
     }

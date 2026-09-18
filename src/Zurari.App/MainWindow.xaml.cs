@@ -476,6 +476,9 @@ public sealed partial class MainWindow : Window, IDisposable
         }
     }
 
+    /// <summary>The link under a timed-out preview: try again, waiting longer.</summary>
+    private void OnPreviewRetryClick(object sender, RoutedEventArgs e) => Dispatch(new Msg.RetryPreview());
+
     private static Msg ToCursorMsg(CursorMoveRequestedEventArgs e)
     {
         var pageSize = Math.Max(1, e.VisibleRowCount);
@@ -1412,6 +1415,11 @@ public sealed partial class MainWindow : Window, IDisposable
 
                 break;
         }
+
+        PreviewRetryText.Text = vm.RetryLink ?? string.Empty;
+        PreviewRetry.Visibility = vm.RetryLink is null ? Visibility.Collapsed : Visibility.Visible;
+        PreviewGaveUp.Text = vm.GaveUp ?? string.Empty;
+        PreviewGaveUp.Visibility = vm.GaveUp is null ? Visibility.Collapsed : Visibility.Visible;
     }
 
     /// <summary>
