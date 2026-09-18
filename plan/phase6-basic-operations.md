@@ -59,7 +59,7 @@ wrong the moment the next commit lands - `git log --oneline main..` is the hones
 | 6e.6 | Open with default app (`Enter`) | `[x]` | `b43a6a1` |
 | 6e.7 | Path bar (full path of the cursor item) above a status bar of contextual key hints | `[x]` | `5180e8f` |
 | 6e.8 | Sort mode: `S` then `N`/`E`/`S`/`M` (Shift = descending, repeat flips), `D` folders first; hidden files `Ctrl+Shift+.` | `[x]` | `5180e8f` |
-| 6e.8a | Sort mode ends on its own keys too - one decision long (see 6e-8b) | `[x]` | `(this commit)` |
+| 6e.8a | Sort mode ends on its own keys too - one decision long (see 6e-8b) | `[x]` | `6940e39` |
 | 6e.9 | Help screen | `[ ]` | **deferred by decision** - see 6e-7 |
 | **6e-bis** | **Smooth cursor movement** | `[x]` | `f61c46b` `593194e` |
 | **6g** | **Finder-style auto-extend**: the column beside the cursor | `[x]` | `75f84f9` |
@@ -67,7 +67,7 @@ wrong the moment the next commit lands - `git log --oneline main..` is the hones
 | 6f.1 | Settings store: injectable path, atomic save | `[x]` | `134fce0` |
 | 6f.2 | `JobEngineTests` cancel race | `[ ]` | **when needed** (your call, 2026-09-18) - see 6f-2 |
 | 6f.3 | Unguarded `Directory.Delete` in test cleanup (89, not 57) | `[x]` | `eb5ad3e` |
-| 6f.4 | Tests read and wrote the user's real `settings.json` (see 6f-7) | `[x]` | `(this commit)` |
+| 6f.4 | Tests read and wrote the user's real `settings.json` (see 6f-7) | `[x]` | `5d7a24a` |
 | **docs** | Stale plan facts, CLAUDE.md pointer | `[x]` | `9d55e8f` `06dde17` |
 
 Deferred out of Phase 6 with reasons: reparse-point cycle prevention (coupled to Finder-style
@@ -608,6 +608,11 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   day: `RunFileJob_posts_JobConflictsFound_then_skips_when_resolved_Skip` timed out once at 10 s in a
   full Runtime run, then passed in the two runs that followed. Different test, same family - a wait
   on a message that a busy machine delivers late.
+
+  **2026-09-19:** a third one, and this time it blocked a commit: the pre-commit run of a plan-only
+  change failed `Engine_still_processes_a_subsequent_job_after_a_cancellation` with "No JobCancelled
+  was posted" after 15.6 s - the cancel race itself, in a different test. It passed on the rerun.
+  Three tests in this family now; worth weighing when "when needed" arrives.
 
 - **6f-3** `[x]` **Unguarded `Directory.Delete` in test cleanup - 89 of them, not the 57 I counted.**
   A test that has finished asserting has already passed or failed on its own merits; cleanup throwing
