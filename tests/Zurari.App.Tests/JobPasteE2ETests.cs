@@ -38,7 +38,7 @@ public class JobPasteE2ETests
         AppState initial)
     {
         var queue = new ConcurrentQueue<Msg>();
-        var runtime = new WorkerRuntime(queue.Enqueue);
+        var runtime = new WorkerRuntime(queue.Enqueue, settings: new Zurari.Runtime.UserSettingsStore(IsolatedSettings.NewDirectory()));
         var jobEngine = new JobEngine(queue.Enqueue);
 
         void RunEffect(Effect effect)

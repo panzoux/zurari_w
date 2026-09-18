@@ -56,7 +56,7 @@ public class ShellThumbnailPreviewTests
                 {
                     Interlocked.Increment(ref asked);
                     return OnePixelPng;
-                });
+                }, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
             runtime.Submit(new Effect.LoadPreview(1, video));
             var loaded = WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
@@ -96,7 +96,7 @@ public class ShellThumbnailPreviewTests
                 {
                     Interlocked.Increment(ref asked);
                     return OnePixelPng;
-                });
+                }, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
             runtime.Submit(new Effect.LoadPreview(1, video));
             WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
@@ -129,7 +129,7 @@ public class ShellThumbnailPreviewTests
                 {
                     Interlocked.Increment(ref asked);
                     return null;
-                });
+                }, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
             runtime.Submit(new Effect.LoadPreview(1, video));
             var loaded = WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(60));
@@ -170,7 +170,7 @@ public class ShellThumbnailPreviewTests
                 {
                     Interlocked.Increment(ref asked);
                     return OnePixelPng;
-                });
+                }, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
             runtime.Submit(new Effect.LoadPreview(1, Path.Combine(viaShare, "clip.mp4")));
             var loaded = WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(60));
@@ -200,7 +200,7 @@ public class ShellThumbnailPreviewTests
         using var runtime = new WorkerRuntime(
             queue.Enqueue,
             thumbnailCache: new ThumbnailCache(Path.Combine(dir, "cache")),
-            shellThumbnail: shellThumbnail);
+            shellThumbnail: shellThumbnail, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
         runtime.Submit(new Effect.LoadPreview(1, file));
         return WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
@@ -323,7 +323,7 @@ public class ShellThumbnailPreviewTests
                 {
                     Interlocked.Increment(ref asked);
                     return null;
-                });
+                }, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
             runtime.Submit(new Effect.LoadPreview(1, docx));
             var first = WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
@@ -357,7 +357,7 @@ public class ShellThumbnailPreviewTests
                 {
                     Interlocked.Increment(ref asked);
                     return OnePixelPng;
-                });
+                }, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
             runtime.Submit(new Effect.LoadPreview(1, pdf));
             WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
@@ -592,7 +592,7 @@ public class ShellThumbnailPreviewTests
                 {
                     Interlocked.Increment(ref asked);
                     return OnePixelPng;
-                });
+                }, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
             runtime.Submit(new Effect.LoadPreview(1, video));
             var loaded = WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(60));

@@ -52,7 +52,7 @@ public class VideoTimeoutTests
             var video = VideoFile(dir);
             var given = new ConcurrentQueue<TimeSpan>();
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue, thumbnailCache: new ThumbnailCache(Path.Combine(dir, "cache")))
+            using var runtime = new WorkerRuntime(queue.Enqueue, thumbnailCache: new ThumbnailCache(Path.Combine(dir, "cache")), settings: new UserSettingsStore(IsolatedSettings.NewDirectory()))
             {
                 CreateVideoThumbnail = (_, timeout, _) =>
                 {
@@ -80,7 +80,7 @@ public class VideoTimeoutTests
         {
             var video = VideoFile(dir);
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue, thumbnailCache: new ThumbnailCache(Path.Combine(dir, "cache")))
+            using var runtime = new WorkerRuntime(queue.Enqueue, thumbnailCache: new ThumbnailCache(Path.Combine(dir, "cache")), settings: new UserSettingsStore(IsolatedSettings.NewDirectory()))
             {
                 CreateVideoThumbnail = (_, _, _) => ThumbnailOutcome.TimedOut("ffmpeg: タイムアウト"),
             };
@@ -106,7 +106,7 @@ public class VideoTimeoutTests
         {
             var video = VideoFile(dir);
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue, thumbnailCache: new ThumbnailCache(Path.Combine(dir, "cache")))
+            using var runtime = new WorkerRuntime(queue.Enqueue, thumbnailCache: new ThumbnailCache(Path.Combine(dir, "cache")), settings: new UserSettingsStore(IsolatedSettings.NewDirectory()))
             {
                 CreateVideoThumbnail = (_, _, _) => ThumbnailOutcome.FileRejected("ffmpeg: exit 1"),
             };

@@ -27,7 +27,7 @@ public class TrashSectionTests
     private static ImmutableArray<Entry> ReadRoot(Func<TrashPlace?>? trash)
     {
         var queue = new ConcurrentQueue<Msg>();
-        using var runtime = new WorkerRuntime(queue.Enqueue, trash: trash);
+        using var runtime = new WorkerRuntime(queue.Enqueue, trash: trash, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
         runtime.Submit(new Effect.ReadDirectory(0, Location.Drives.Instance));
         return ((Msg.DirectoryLoaded)WaitFor<Msg.DirectoryLoaded>(queue, TimeSpan.FromSeconds(10))).Entries;
     }
@@ -71,7 +71,7 @@ public class TrashSectionTests
         // It has no filesystem path, so the Runtime has nothing to enumerate; the read is routed to
         // Shell instead. Submitting it here should report a failure rather than pretend.
         var queue = new ConcurrentQueue<Msg>();
-        using var runtime = new WorkerRuntime(queue.Enqueue);
+        using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
         runtime.Submit(new Effect.ReadDirectory(0, Location.RecycleBin.Instance));
 
         var failed = Assert.IsType<Msg.DirectoryLoadFailed>(WaitFor<Msg.DirectoryLoadFailed>(queue, TimeSpan.FromSeconds(10)));

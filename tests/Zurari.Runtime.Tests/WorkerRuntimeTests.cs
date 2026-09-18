@@ -36,7 +36,7 @@ public class WorkerRuntimeTests
             File.WriteAllText(Path.Combine(dir, "Aardvark.txt"), "hi!!");
 
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue);
+            using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
             runtime.Submit(new Effect.ReadDirectory(0, new Location.RealDirectory(dir)));
 
             var msg = WaitForMsg(queue, TimeSpan.FromSeconds(10));
@@ -72,7 +72,7 @@ public class WorkerRuntimeTests
     {
         var dir = Path.Combine(Path.GetTempPath(), "zurari-does-not-exist-" + Guid.NewGuid());
         var queue = new ConcurrentQueue<Msg>();
-        using var runtime = new WorkerRuntime(queue.Enqueue);
+        using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
         runtime.Submit(new Effect.ReadDirectory(3, new Location.RealDirectory(dir)));
 
         var msg = WaitForMsg(queue, TimeSpan.FromSeconds(10));
@@ -86,7 +86,7 @@ public class WorkerRuntimeTests
     public void ReadDirectory_of_virtual_root_reports_drives()
     {
         var queue = new ConcurrentQueue<Msg>();
-        using var runtime = new WorkerRuntime(queue.Enqueue);
+        using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
         runtime.Submit(new Effect.ReadDirectory(0, Location.Drives.Instance));
 
         var msg = WaitForMsg(queue, TimeSpan.FromSeconds(10));
@@ -114,7 +114,7 @@ public class WorkerRuntimeTests
     public void Dispose_returns_promptly_even_with_queued_work()
     {
         var queue = new ConcurrentQueue<Msg>();
-        var runtime = new WorkerRuntime(queue.Enqueue, workerCount: 1);
+        var runtime = new WorkerRuntime(queue.Enqueue, workerCount: 1, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
         for (var i = 0; i < 200; i++)
         {
             runtime.Submit(new Effect.ReadDirectory(i, Location.Drives.Instance));
@@ -137,7 +137,7 @@ public class WorkerRuntimeTests
             Directory.CreateDirectory(Path.Combine(dir, "sub"));
 
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue);
+            using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
             var loop = new MessageLoop(
                 initial: new AppState { Columns = [new Column(new Location.RealDirectory(dir), Entries: [])], FocusedColumn = 0 },
                 runEffect: runtime.Submit);
@@ -185,7 +185,7 @@ public class WorkerRuntimeTests
             File.SetAttributes(hidden, File.GetAttributes(hidden) | FileAttributes.Hidden);
 
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue);
+            using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
             runtime.Submit(new Effect.ReadDirectory(0, new Location.RealDirectory(dir)));
             var loaded = Assert.IsType<Msg.DirectoryLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
 
@@ -206,7 +206,7 @@ public class WorkerRuntimeTests
         try
         {
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue);
+            using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
             runtime.Submit(new Effect.CreateFolder(0, new Location.RealDirectory(dir)));
             var created = Assert.IsType<Msg.FolderCreated>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
@@ -233,7 +233,7 @@ public class WorkerRuntimeTests
             Directory.CreateDirectory(Path.Combine(dir, "新しいフォルダー"));
 
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue);
+            using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
             runtime.Submit(new Effect.CreateFolder(0, new Location.RealDirectory(dir)));
             var created = Assert.IsType<Msg.FolderCreated>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
@@ -251,7 +251,7 @@ public class WorkerRuntimeTests
     public void Creating_a_folder_where_there_is_no_directory_says_so()
     {
         var queue = new ConcurrentQueue<Msg>();
-        using var runtime = new WorkerRuntime(queue.Enqueue);
+        using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
         runtime.Submit(new Effect.CreateFolder(0, Location.Drives.Instance));
         var msg = WaitForMsg(queue, TimeSpan.FromSeconds(10));
@@ -267,7 +267,7 @@ public class WorkerRuntimeTests
         {
             File.WriteAllText(Path.Combine(dir, "before.txt"), "x");
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue);
+            using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
             runtime.Submit(new Effect.RenameEntry(0, new Location.RealDirectory(dir), "before.txt", "after.txt"));
             var done = Assert.IsType<Msg.RenameCompleted>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
@@ -290,7 +290,7 @@ public class WorkerRuntimeTests
         {
             Directory.CreateDirectory(Path.Combine(dir, "before"));
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue);
+            using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
             runtime.Submit(new Effect.RenameEntry(0, new Location.RealDirectory(dir), "before", "after"));
             Assert.IsType<Msg.RenameCompleted>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
@@ -316,7 +316,7 @@ public class WorkerRuntimeTests
             File.WriteAllText(Path.Combine(dir, "before.txt"), "mine");
             File.WriteAllText(Path.Combine(dir, "taken.txt"), "theirs");
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue);
+            using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
             runtime.Submit(new Effect.RenameEntry(0, new Location.RealDirectory(dir), "before.txt", "taken.txt"));
             Assert.IsType<Msg.RenameFailed>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
@@ -342,7 +342,7 @@ public class WorkerRuntimeTests
         {
             File.WriteAllText(Path.Combine(dir, "readme.txt"), "x");
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue);
+            using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
             runtime.Submit(new Effect.RenameEntry(0, new Location.RealDirectory(dir), "readme.txt", "README.TXT"));
             var done = Assert.IsType<Msg.RenameCompleted>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
@@ -363,7 +363,7 @@ public class WorkerRuntimeTests
         try
         {
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue);
+            using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
             runtime.Submit(new Effect.RenameEntry(0, new Location.RealDirectory(dir), "ghost.txt", "other.txt"));
 

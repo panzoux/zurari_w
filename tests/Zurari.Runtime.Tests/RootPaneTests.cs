@@ -28,7 +28,7 @@ public class RootPaneTests
     private static ImmutableArray<Entry> ReadRoot(Func<IReadOnlyList<RootPlace>> places)
     {
         var queue = new ConcurrentQueue<Msg>();
-        using var runtime = new WorkerRuntime(queue.Enqueue, places: places);
+        using var runtime = new WorkerRuntime(queue.Enqueue, places: places, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
         runtime.Submit(new Effect.ReadDirectory(0, Location.Drives.Instance));
         var loaded = Assert.IsType<Msg.DirectoryLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
         return loaded.Entries;
@@ -123,7 +123,7 @@ public class RootPaneTests
     public void With_no_places_supplied_the_pane_is_just_the_drives()
     {
         var queue = new ConcurrentQueue<Msg>();
-        using var runtime = new WorkerRuntime(queue.Enqueue);
+        using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
         runtime.Submit(new Effect.ReadDirectory(0, Location.Drives.Instance));
 
         var loaded = Assert.IsType<Msg.DirectoryLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
@@ -141,7 +141,7 @@ public class RootPaneTests
     public void A_drive_row_reads_as_the_shell_names_it()
     {
         var queue = new ConcurrentQueue<Msg>();
-        using var runtime = new WorkerRuntime(queue.Enqueue, displayName: path => "名前 " + path);
+        using var runtime = new WorkerRuntime(queue.Enqueue, displayName: path => "名前 " + path, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
         runtime.Submit(new Effect.ReadDirectory(0, Location.Drives.Instance));
         var loaded = Assert.IsType<Msg.DirectoryLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
 
@@ -158,7 +158,7 @@ public class RootPaneTests
     public void A_drive_the_shell_will_not_name_still_shows_its_letter()
     {
         var queue = new ConcurrentQueue<Msg>();
-        using var runtime = new WorkerRuntime(queue.Enqueue, displayName: _ => null);
+        using var runtime = new WorkerRuntime(queue.Enqueue, displayName: _ => null, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
         runtime.Submit(new Effect.ReadDirectory(0, Location.Drives.Instance));
         var loaded = Assert.IsType<Msg.DirectoryLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
 

@@ -66,6 +66,7 @@ wrong the moment the next commit lands - `git log --oneline main..` is the hones
 | 6f.1 | Settings store: injectable path, atomic save | `[x]` | `134fce0` |
 | 6f.2 | `JobEngineTests` cancel race | `[ ]` | **when needed** (your call, 2026-09-18) - see 6f-2 |
 | 6f.3 | Unguarded `Directory.Delete` in test cleanup (89, not 57) | `[x]` | `eb5ad3e` |
+| 6f.4 | Tests read and wrote the user's real `settings.json` (see 6f-7) | `[x]` | `(this commit)` |
 | **docs** | Stale plan facts, CLAUDE.md pointer | `[x]` | `9d55e8f` `06dde17` |
 
 Deferred out of Phase 6 with reasons: reparse-point cycle prevention (coupled to Finder-style
@@ -248,6 +249,16 @@ Findings, reversals and open flags, kept so they are not lost between sessions.
   label, label shown as a text body), each failing at least one test. The first attempt at the
   branch-order mutation survived - because the mutation itself was wrong, reinserting the branch
   before the sniff; corrected, it fails.
+
+- **6f-7** `[x]` **Tests were reading and writing the user's real `settings.json` - 6f-6 again, for
+  the other store.** Found 2026-09-19 when five drive-pane tests went red with nothing in them
+  changed: you had pinned `C:\Users\user\source\repos` in the app, and every test that builds a
+  `WorkerRuntime` without a store opened `%APPDATA%\zurari_w\settings.json`, so a favorites section
+  showed up where the tests expect drives only. The leak ran both ways: those runtimes also *write*
+  pins, collapsed sections and sort order back through `Update`. Fixed in the tests, not the product:
+  `tests/TestSupport/IsolatedSettings.cs` names a fresh directory under temp (created only if a test
+  saves), and all 64 call sites that passed no store now pass one; the 4 that already passed a store
+  were left alone. `check.ps1` green with your pin still in place.
 
 - **6f-6** `[x]` **Tests were writing into the user's real thumbnail cache.** Found while checking
   6c.5: `LoadPreview_of_a_video_extension_with_no_magic_match_is_routed_as_video` built a

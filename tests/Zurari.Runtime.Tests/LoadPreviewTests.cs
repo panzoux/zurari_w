@@ -38,7 +38,7 @@ public class LoadPreviewTests
             File.WriteAllBytes(path, content);
 
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue);
+            using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
             runtime.Submit(new Effect.LoadPreview(7, path));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
@@ -66,7 +66,7 @@ public class LoadPreviewTests
             var queue = new ConcurrentQueue<Msg>();
             // A tiny override limit lets this test exercise the "too big" branch without writing
             // an actual 50MB fixture.
-            using var runtime = new WorkerRuntime(queue.Enqueue, previewImageSizeLimitBytes: 4);
+            using var runtime = new WorkerRuntime(queue.Enqueue, previewImageSizeLimitBytes: 4, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
             runtime.Submit(new Effect.LoadPreview(1, path));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
@@ -93,7 +93,7 @@ public class LoadPreviewTests
             File.WriteAllText(path, "hello, world - こんにちは", new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
 
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue);
+            using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
             runtime.Submit(new Effect.LoadPreview(2, path));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
@@ -117,7 +117,7 @@ public class LoadPreviewTests
             File.WriteAllBytes(path, sjis.GetBytes("こんにちは、世界"));
 
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue);
+            using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
             runtime.Submit(new Effect.LoadPreview(3, path));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
@@ -141,7 +141,7 @@ public class LoadPreviewTests
             File.WriteAllBytes(path, content);
 
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue);
+            using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
             runtime.Submit(new Effect.LoadPreview(4, path));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
@@ -166,7 +166,7 @@ public class LoadPreviewTests
             File.WriteAllBytes(path, content);
 
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue);
+            using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
             runtime.Submit(new Effect.LoadPreview(5, path));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
@@ -193,7 +193,7 @@ public class LoadPreviewTests
             File.WriteAllBytes(path, content);
 
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue);
+            using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
             runtime.Submit(new Effect.LoadPreview(9, path));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
@@ -213,7 +213,7 @@ public class LoadPreviewTests
         var path = Path.Combine(Path.GetTempPath(), "zurari-does-not-exist-" + Guid.NewGuid() + ".txt");
 
         var queue = new ConcurrentQueue<Msg>();
-        using var runtime = new WorkerRuntime(queue.Enqueue);
+        using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
         runtime.Submit(new Effect.LoadPreview(6, path));
 
         var failed = Assert.IsType<Msg.PreviewFailed>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
@@ -231,7 +231,7 @@ public class LoadPreviewTests
             File.WriteAllBytes(path, []);
 
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue);
+            using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
             runtime.Submit(new Effect.LoadPreview(8, path));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
@@ -254,7 +254,7 @@ public class LoadPreviewTests
             File.WriteAllText(path, "hello");
 
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue);
+            using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
             runtime.Submit(new Effect.LoadPreview(10, path));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
@@ -279,7 +279,7 @@ public class LoadPreviewTests
             File.WriteAllBytes(path, [0x10, 0x00, 0x20]);
 
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue);
+            using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
             runtime.Submit(new Effect.LoadPreview(11, path));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
@@ -313,7 +313,7 @@ public class LoadPreviewTests
             File.WriteAllBytes(path, content);
 
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue);
+            using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
             runtime.Submit(new Effect.LoadPreview(12, path));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
@@ -350,7 +350,7 @@ public class LoadPreviewTests
             // wrote a verdict into the user's real %LOCALAPPDATA% thumbnail cache on every run.
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(
-                queue.Enqueue, thumbnailCache: new ThumbnailCache(Path.Combine(dir, "cache")));
+                queue.Enqueue, thumbnailCache: new ThumbnailCache(Path.Combine(dir, "cache")), settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
             runtime.Submit(new Effect.LoadPreview(13, path));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(20)));
@@ -374,7 +374,7 @@ public class LoadPreviewTests
     public void CancelPreview_with_nothing_in_flight_is_a_no_op()
     {
         var queue = new ConcurrentQueue<Msg>();
-        using var runtime = new WorkerRuntime(queue.Enqueue);
+        using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
         runtime.Submit(new Effect.CancelPreview(42));
 
@@ -394,7 +394,7 @@ public class LoadPreviewTests
             File.WriteAllText(path, "hello");
 
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue);
+            using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
             // The cancel slot must be reusable: a cancelled preview leaves no state behind that
             // would stop the next one from running.
@@ -434,7 +434,7 @@ public class LoadPreviewTests
             }
 
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue);
+            using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
             for (var i = 0; i < paths.Count; i++)
             {
@@ -479,7 +479,7 @@ public class LoadPreviewTests
             File.WriteAllText(older, "older");
 
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue, workerCount: 1);
+            using var runtime = new WorkerRuntime(queue.Enqueue, workerCount: 1, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
             runtime.Submit(new Effect.LoadPreview(9, newer));
             runtime.Submit(new Effect.LoadPreview(4, older));
@@ -517,7 +517,7 @@ public class LoadPreviewTests
             File.WriteAllText(path, "hello");
 
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue);
+            using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
             // Deliberately inverted relative to the order Transition emits them.
             runtime.Submit(new Effect.LoadPreview(2, path));
@@ -554,7 +554,7 @@ public class LoadPreviewTests
             File.WriteAllText(Path.Combine(dir, "a.txt"), "a");
 
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue, workerCount: 1);
+            using var runtime = new WorkerRuntime(queue.Enqueue, workerCount: 1, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
             runtime.Submit(new Effect.LoadPreview(1, Path.Combine(dir, "a.txt")));
             runtime.Submit(new Effect.ReadDirectory(0, new Location.RealDirectory(dir)));
 

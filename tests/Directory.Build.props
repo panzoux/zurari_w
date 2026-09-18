@@ -9,6 +9,7 @@
        fails whichever test happens to be running, for a reason that has nothing to do with it. -->
   <ItemGroup>
     <Compile Include="$(MSBuildThisFileDirectory)TestSupport/TempDirectory.cs" Link="TestSupport/TempDirectory.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)TestSupport/IsolatedSettings.cs" Link="TestSupport/IsolatedSettings.cs" />
     <Using Include="Zurari.TestSupport" />
   </ItemGroup>
 </Project>

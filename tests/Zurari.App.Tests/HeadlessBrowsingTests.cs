@@ -48,7 +48,7 @@ public class HeadlessBrowsingTests
         try
         {
             var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue);
+            using var runtime = new WorkerRuntime(queue.Enqueue, settings: new Zurari.Runtime.UserSettingsStore(IsolatedSettings.NewDirectory()));
             var loop = new MessageLoop(
                 initial: new AppState { Columns = [new Column(new Location.RealDirectory(root), Entries: [])], FocusedColumn = 0 },
                 runEffect: runtime.Submit);

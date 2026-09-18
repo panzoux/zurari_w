@@ -36,7 +36,7 @@ public class DrivePaneE2ETests
     public void On_launch_the_cursor_lands_on_the_first_header_and_Space_collapses_it()
     {
         var queue = new ConcurrentQueue<Msg>();
-        using var runtime = new WorkerRuntime(queue.Enqueue);
+        using var runtime = new WorkerRuntime(queue.Enqueue, settings: new Zurari.Runtime.UserSettingsStore(IsolatedSettings.NewDirectory()));
         var loop = new MessageLoop(initial: AppState.Initial, runEffect: runtime.Submit);
 
         // Exactly what MainWindow's constructor does last.
@@ -67,7 +67,7 @@ public class DrivePaneE2ETests
     public void The_cursor_can_be_moved_onto_a_later_header()
     {
         var queue = new ConcurrentQueue<Msg>();
-        using var runtime = new WorkerRuntime(queue.Enqueue);
+        using var runtime = new WorkerRuntime(queue.Enqueue, settings: new Zurari.Runtime.UserSettingsStore(IsolatedSettings.NewDirectory()));
         var loop = new MessageLoop(initial: AppState.Initial, runEffect: runtime.Submit);
 
         loop.Dispatch(new Msg.Refresh());

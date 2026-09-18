@@ -31,7 +31,7 @@ public class CapacityPreviewTests
     public void The_system_drive_reports_a_total_and_a_plausible_used_share()
     {
         var queue = new ConcurrentQueue<Msg>();
-        using var runtime = new WorkerRuntime(queue.Enqueue);
+        using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
         runtime.Submit(new Effect.LoadPreview(1, SystemDrive(), PreviewTarget.Volume));
         var loaded = WaitFor<Msg.PreviewCapacityLoaded>(queue, TimeSpan.FromSeconds(10));
@@ -55,7 +55,7 @@ public class CapacityPreviewTests
     {
         var queue = new ConcurrentQueue<Msg>();
         using var runtime = new WorkerRuntime(
-            queue.Enqueue, trash: () => new TrashPlace("ゴミ箱 (413)", ItemCount: 413, TotalBytes: 12345));
+            queue.Enqueue, trash: () => new TrashPlace("ゴミ箱 (413)", ItemCount: 413, TotalBytes: 12345), settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
         runtime.Submit(new Effect.LoadPreview(7, "::whatever", PreviewTarget.RecycleBin));
         var loaded = WaitFor<Msg.PreviewCapacityLoaded>(queue, TimeSpan.FromSeconds(10));
@@ -83,7 +83,7 @@ public class CapacityPreviewTests
         }
 
         var queue = new ConcurrentQueue<Msg>();
-        using var runtime = new WorkerRuntime(queue.Enqueue);
+        using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
         runtime.Submit(new Effect.LoadPreview(5, notReady.Name, PreviewTarget.Volume));
         var loaded = WaitFor<Msg.PreviewCapacityLoaded>(queue, TimeSpan.FromSeconds(10));
@@ -103,7 +103,7 @@ public class CapacityPreviewTests
     public void A_letter_nothing_is_mounted_on_answers_rather_than_throwing()
     {
         var queue = new ConcurrentQueue<Msg>();
-        using var runtime = new WorkerRuntime(queue.Enqueue);
+        using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
         runtime.Submit(new Effect.LoadPreview(3, MissingDriveLetter(), PreviewTarget.Volume));
         var loaded = WaitFor<Msg.PreviewCapacityLoaded>(queue, TimeSpan.FromSeconds(10));
@@ -118,7 +118,7 @@ public class CapacityPreviewTests
     public void A_drive_root_is_not_read_as_a_file()
     {
         var queue = new ConcurrentQueue<Msg>();
-        using var runtime = new WorkerRuntime(queue.Enqueue);
+        using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
         runtime.Submit(new Effect.LoadPreview(1, SystemDrive(), PreviewTarget.Volume));
         WaitFor<Msg.PreviewCapacityLoaded>(queue, TimeSpan.FromSeconds(10));

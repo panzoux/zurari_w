@@ -63,7 +63,7 @@ public class ShellThumbnailThreadTests
                 {
                     apartment = Thread.CurrentThread.GetApartmentState();
                     return OnePixelPng;
-                });
+                }, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
             runtime.Submit(new Effect.LoadPreview(1, document));
             WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
@@ -106,7 +106,7 @@ public class ShellThumbnailThreadTests
                     Thread.Sleep(300);
                     Interlocked.Decrement(ref running);
                     return OnePixelPng;
-                });
+                }, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
             runtime.Submit(new Effect.LoadPreview(1, first));
             runtime.Submit(new Effect.LoadPreview(2, second));
@@ -141,7 +141,7 @@ public class ShellThumbnailThreadTests
                 {
                     threads.Enqueue(Environment.CurrentManagedThreadId);
                     return OnePixelPng;
-                });
+                }, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
             runtime.Submit(new Effect.LoadPreview(1, first));
             WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
@@ -228,7 +228,7 @@ public class ShellThumbnailThreadTests
                 {
                     Thread.Sleep(TimeSpan.FromSeconds(2.2));
                     return OnePixelPng;
-                });
+                }, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
             runtime.Submit(new Effect.LoadPreview(1, pdf));
 
@@ -269,7 +269,7 @@ public class ShellThumbnailThreadTests
                     Interlocked.Increment(ref asked);
                     Thread.Sleep(TimeSpan.FromSeconds(2));
                     return null;
-                });
+                }, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
             runtime.Submit(new Effect.LoadPreview(1, pdf));
             WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
