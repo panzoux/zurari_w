@@ -6,7 +6,7 @@
 **Phase 6 で残るのは 6e.9(ヘルプ画面 — 判断により後回し)、6f.2(JobEngine のキャンセル競合)と、
 6d-4 の実機での手動確認**(6c.7 と、パスバー/ステータスバーのキーヒント 6e.7 は完了)。
 並べ替えは `S` → `N`/`E`/`S`/`M`(Shift で降順、同じキーでもう一度押すと反転)、`S D` でフォルダ優先、隠しファイルは `Ctrl+Shift+.`(6e.8)—
-850 テスト green。
+847 テスト green。
 進捗の詳細は Phase 6 計画の Status 表と Records を見ること。
 **この行のテスト数は `scripts/status.ps1` が書く。手で直さない** — check.ps1 が古いままの通過を拒否する
 **コンセプト**: zurari(TUI版, 別名 zrr)の multi-column UX を Windows GUI へ。

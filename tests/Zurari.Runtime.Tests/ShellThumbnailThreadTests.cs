@@ -161,47 +161,44 @@ public class ShellThumbnailThreadTests
     /// Latest-wins: holding an arrow down costs one extraction in flight and one waiting, not one
     /// per row. The file the cursor passed over is dropped without ever being asked for.
     /// </summary>
+    /// <remarks>
+    /// Drives <see cref="ShellThumbnailThread"/> directly rather than through
+    /// <see cref="WorkerRuntime"/>: the pool runs each LoadPreview on its own thread, so neither
+    /// "held is already on the shell thread" nor "passed-over asked before landed-on" can be
+    /// observed from outside, and sleeping for them failed under a loaded full test run.
+    /// </remarks>
     [Fact]
-    public void A_newer_request_replaces_the_one_still_waiting()
+    public async Task A_newer_request_replaces_the_one_still_waiting()
     {
-        var dir = TempDirectory.Create("zurari-shellthread");
-        try
+        var asked = new ConcurrentQueue<string>();
+        using var started = new ManualResetEventSlim(false);
+        using var release = new ManualResetEventSlim(false);
+        using var thread = new ShellThumbnailThread((path, _) =>
         {
-            var held = DocumentFile(dir, "held.pdf");
-            var passed = DocumentFile(dir, "passed-over.pdf");
-            var landed = DocumentFile(dir, "landed-on.pdf");
-            var asked = new ConcurrentQueue<string>();
-            using var release = new ManualResetEventSlim(false);
-            var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(
-                queue.Enqueue,
-                thumbnailCache: new ThumbnailCache(Path.Combine(dir, "cache")),
-                shellThumbnail: (path, _) =>
-                {
-                    asked.Enqueue(Path.GetFileName(path));
-                    if (Path.GetFileName(path) == "held.pdf")
-                    {
-                        release.Wait(TimeSpan.FromSeconds(10));
-                    }
+            asked.Enqueue(path);
+            if (path == "held.pdf")
+            {
+                started.Set();
+                release.Wait(TimeSpan.FromSeconds(10));
+            }
 
-                    return OnePixelPng;
-                });
+            return OnePixelPng;
+        });
 
-            runtime.Submit(new Effect.LoadPreview(1, held));
-            Thread.Sleep(400);
-            runtime.Submit(new Effect.LoadPreview(2, passed));
-            Thread.Sleep(400);
-            runtime.Submit(new Effect.LoadPreview(3, landed));
-            Thread.Sleep(400);
-            release.Set();
-            Thread.Sleep(700);
+        var held = thread.Request("held.pdf", 256);
+        Assert.True(started.Wait(TimeSpan.FromSeconds(10)), "held.pdf never reached the shell thread.");
 
-            Assert.Equal(["held.pdf", "landed-on.pdf"], asked);
-        }
-        finally
-        {
-            TempDirectory.Delete(dir);
-        }
+        var passed = thread.Request("passed-over.pdf", 256);
+        var landed = thread.Request("landed-on.pdf", 256);
+
+        // Displaced before it ever ran: answered "nothing" at once, not left to wait.
+        Assert.Null(await passed.WaitAsync(TimeSpan.FromSeconds(10)));
+
+        release.Set();
+        await held.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(OnePixelPng, await landed.WaitAsync(TimeSpan.FromSeconds(10)));
+
+        Assert.Equal(["held.pdf", "landed-on.pdf"], asked);
     }
 
     /// <summary>
