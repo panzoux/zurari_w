@@ -8,6 +8,20 @@ public class PaneTests
     private static Column Dir(string path, params string[] names) =>
         new Column(new Location.RealDirectory(path), [.. names.Select(n => new Entry(n, EntryKind.File))], Cursor: names.Length > 0 ? 0 : -1, Load: LoadState.Loaded);
 
+    /// <summary>
+    /// Two panes, top (id 0, focused) and bottom (id 1), each showing one column. Every test that
+    /// uses this addresses pane 1 - the unfocused one - to prove a Msg reaches the pane it names
+    /// rather than always landing on the focused pane. 7a.3 may add its own <c>TwoPanes</c> helper
+    /// elsewhere; this one stays here for reuse.
+    /// </summary>
+    private static AppState TwoPanes(Column top, Column bottom) =>
+        AppState.Initial with
+        {
+            Panes = [new Pane(new PaneId(0), [top], 0), new Pane(new PaneId(1), [bottom], 0)],
+            FocusedPane = 0,
+            NextPaneId = 2,
+        };
+
     [Fact]
     public void Initial_has_one_pane_with_the_drive_list()
     {
@@ -150,5 +164,100 @@ public class PaneTests
 
         var read = Assert.Single(effects.OfType<Effect.ReadDirectory>());
         Assert.Equal(state.Focused.Ref(1), read.At);
+    }
+
+    [Fact]
+    public void EnterDirectory_on_the_unfocused_pane_reads_into_that_pane_and_leaves_the_other_untouched()
+    {
+        var top = Dir(@"C:\", "a");
+        var bottom = new Column(
+            new Location.RealDirectory(@"D:\"), [new Entry("sub", EntryKind.Directory)], Cursor: 0, Load: LoadState.Loaded);
+        var state = TwoPanes(top, bottom);
+        var at = new ColumnRef(new PaneId(1), 0);
+
+        var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(at, 0));
+
+        var read = Assert.Single(effects.OfType<Effect.ReadDirectory>());
+        Assert.Equal(new PaneId(1), read.At.Pane);
+        Assert.Equal(2, next.Panes[1].Columns.Length);
+        Assert.Same(state.Panes[0], next.Panes[0]);
+        Assert.Equal(0, next.FocusedPane);
+    }
+
+    [Fact]
+    public void Refresh_rereads_columns_in_both_panes()
+    {
+        var state = TwoPanes(Dir(@"C:\", "a"), Dir(@"D:\", "b"));
+
+        var (_, effects) = Transition.Apply(state, new Msg.Refresh());
+
+        var reads = effects.OfType<Effect.ReadDirectory>().ToList();
+        Assert.Contains(reads, r => r.At.Pane == new PaneId(0));
+        Assert.Contains(reads, r => r.At.Pane == new PaneId(1));
+    }
+
+    [Fact]
+    public void ExternalDirectoryChanged_rereads_only_the_pane_showing_that_path()
+    {
+        var top = Dir(@"C:\", "a");
+        var bottom = Dir(@"D:\stale", "b");
+        var state = TwoPanes(top, bottom);
+
+        var (next, effects) = Transition.Apply(state, new Msg.ExternalDirectoryChanged(@"D:\stale"));
+
+        var read = Assert.Single(effects.OfType<Effect.ReadDirectory>());
+        Assert.Equal(new PaneId(1), read.At.Pane);
+        Assert.Same(state.Panes[0], next.Panes[0]);
+    }
+
+    [Fact]
+    public void DirectoryLoaded_reveal_moves_the_target_panes_focus_not_FocusedPane()
+    {
+        var top = Dir(@"C:\", "x");
+        var loadingColumn = new Column(new Location.RealDirectory(@"D:\"), Entries: [], Load: LoadState.Loading);
+        var otherColumn = Dir(@"D:\other", "y");
+        var state = TwoPanes(top, loadingColumn);
+        var pane1 = state.Panes[1] with { Columns = [loadingColumn, otherColumn], FocusedColumn = 1 };
+        state = state.WithPane(pane1) with { RevealTarget = "b" };
+        var at = new ColumnRef(new PaneId(1), 0);
+
+        var (next, _) = Transition.Apply(
+            state,
+            new Msg.DirectoryLoaded(
+                at, new Location.RealDirectory(@"D:\"), [new Entry("a", EntryKind.File), new Entry("b", EntryKind.File)]));
+
+        Assert.Equal("b", next.Panes[1].Columns[0].CursorName);
+        Assert.Equal(0, next.Panes[1].FocusedColumn);
+        Assert.Equal(0, next.FocusedPane);
+        Assert.Null(next.RevealTarget);
+    }
+
+    [Fact]
+    public void Rename_on_the_unfocused_pane_emits_RenameEntry_for_that_pane()
+    {
+        var top = Dir(@"C:\", "a");
+        var bottom = Dir(@"D:\", "old.txt");
+        var state = TwoPanes(top, bottom);
+        var at = new ColumnRef(new PaneId(1), 0);
+
+        var (editing, _) = Transition.Apply(state, new Msg.RenameRequested(at));
+        var (_, effects) = Transition.Apply(editing, new Msg.RenameSubmitted("new.txt"));
+
+        var renamed = Assert.Single(effects.OfType<Effect.RenameEntry>());
+        Assert.Equal(at, renamed.At);
+    }
+
+    [Fact]
+    public void ToggleMark_on_the_unfocused_pane_marks_only_that_panes_entry()
+    {
+        var top = Dir(@"C:\", "a");
+        var bottom = Dir(@"D:\", "b");
+        var state = TwoPanes(top, bottom);
+        var at = new ColumnRef(new PaneId(1), 0);
+
+        var (next, _) = Transition.Apply(state, new Msg.ToggleMark(at, 0));
+
+        Assert.True(next.Panes[1].Columns[0].Entries[0].IsMarked);
+        Assert.Same(state.Panes[0], next.Panes[0]);
     }
 }

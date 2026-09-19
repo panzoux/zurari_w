@@ -83,6 +83,25 @@ public class WorkerRuntimeTests
         Assert.False(string.IsNullOrEmpty(failed.Error));
     }
 
+    /// <summary>
+    /// <see cref="PaneId"/>(0) is <c>default(PaneId)</c>, so every other assertion in this file - all
+    /// against pane 0 - would pass even if the Runtime silently dropped <see cref="ColumnRef.Pane"/>
+    /// and always reported back against the default. A non-default pane id is the only thing that
+    /// can catch that.
+    /// </summary>
+    [Fact]
+    public void ReadDirectory_round_trips_a_non_default_pane_id()
+    {
+        var queue = new ConcurrentQueue<Msg>();
+        using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
+        var at = new ColumnRef(new PaneId(3), 2);
+        runtime.Submit(new Effect.ReadDirectory(at, Location.Drives.Instance));
+
+        var msg = WaitForMsg(queue, TimeSpan.FromSeconds(10));
+        var loaded = Assert.IsType<Msg.DirectoryLoaded>(msg);
+        Assert.Equal(at, loaded.At);
+    }
+
     [Fact]
     public void ReadDirectory_of_virtual_root_reports_drives()
     {

@@ -53,6 +53,36 @@ public class ShellEffectExecutorTests
         }
     }
 
+    /// <summary>
+    /// <see cref="PaneId"/>(0) is <c>default(PaneId)</c>, so every other assertion in this file - all
+    /// against pane 0 - would pass even if the executor silently dropped
+    /// <see cref="ColumnRef.Pane"/> and always reported back against the default. A non-default pane
+    /// id is the only thing that can catch that.
+    /// </summary>
+    [StaFact]
+    public void DeleteToRecycleBin_round_trips_a_non_default_pane_id()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var filePath = Path.Combine(dir, "victim.txt");
+            File.WriteAllText(filePath, "bye");
+
+            var queue = new ConcurrentQueue<Msg>();
+            using var executor = new ShellEffectExecutor(queue.Enqueue);
+            var at = new ColumnRef(new PaneId(3), 2);
+            executor.Submit(new Effect.DeleteToRecycleBin(at, new Location.RealDirectory(dir), [filePath]));
+
+            var msg = WaitForMsg(queue, TimeSpan.FromSeconds(15));
+            var completed = Assert.IsType<Msg.ShellOpCompleted>(msg);
+            Assert.Equal(at, completed.At);
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
+
     [StaFact]
     public void DeleteToRecycleBin_with_Permanent_true_reports_completed_and_removes_file()
     {

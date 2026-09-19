@@ -276,7 +276,7 @@ public static class Transition
             return state;
         }
 
-        return state.WithPane(pane with { FocusedColumn = at.Index });
+        return pane.FocusedColumn == at.Index ? state : state.WithPane(pane with { FocusedColumn = at.Index });
     }
 
     private static (AppState, IReadOnlyList<Effect>) EnterDirectory(
@@ -320,9 +320,15 @@ public static class Transition
         // and reading it again, which would flash 読み込み中… over contents already on screen.
         if (childIndex < pane.Columns.Length && pane.Columns[childIndex].Location == childLocation)
         {
+            var wantedFocus = focusChild ? childIndex : at.Index;
+            if (column.Cursor == entryIndex && pane.FocusedColumn == wantedFocus)
+            {
+                return (state, NoEffects);
+            }
+
             var reused = pane.Columns.SetItem(at.Index, column with { Cursor = entryIndex });
             return (
-                state.WithPane(pane with { Columns = reused, FocusedColumn = focusChild ? childIndex : at.Index }),
+                state.WithPane(pane with { Columns = reused, FocusedColumn = wantedFocus }),
                 NoEffects);
         }
 
@@ -498,7 +504,7 @@ public static class Transition
     private static AppState DirectoryLoaded(
         AppState state, ColumnRef at, Location location, ImmutableArray<Entry> entries)
     {
-        if (state.ColumnAt(at) is not { } column)
+        if (state.ColumnAt(at) is not { } column || state.PaneOf(at.Pane) is not { } pane)
         {
             return state;
         }
@@ -522,8 +528,8 @@ public static class Transition
         var revealed = state.RevealTarget is { } target ? IndexOfName(updated.Entries, target) : -1;
         if (revealed >= 0)
         {
-            var focused = state.WithColumn(at, updated with { Cursor = revealed });
-            return focused.WithPane(focused.PaneOf(at.Pane)! with { FocusedColumn = at.Index }) with { RevealTarget = null };
+            var revealedColumns = pane.Columns.SetItem(at.Index, updated with { Cursor = revealed });
+            return state.WithPane(pane with { Columns = revealedColumns, FocusedColumn = at.Index }) with { RevealTarget = null };
         }
 
         // Otherwise, if this is somewhere the user has been, put the cursor back where they left it.
@@ -1001,12 +1007,6 @@ public static class Transition
     }
 
     /// <summary>
-    /// Resolves where a drop onto <paramref name="column"/> should land: the path of
-    /// <paramref name="targetEntryIndex"/> when it names a Directory or Drive row, otherwise the
-    /// column's own path - unless the column has no filesystem path of its own (the drive list)
-    /// and no container row was targeted, which means nothing (returns null).
-    /// </summary>
-    /// <summary>
     /// Whether a drop at <paramref name="targetEntryIndex"/> landed on the pane itself rather than
     /// on one of its rows - the background, or a section header, which is a label and not a place.
     /// </summary>
@@ -1015,6 +1015,12 @@ public static class Transition
         || targetEntryIndex >= column.Entries.Length
         || column.Entries[targetEntryIndex].Kind == EntryKind.Header;
 
+    /// <summary>
+    /// Resolves where a drop onto <paramref name="column"/> should land: the path of
+    /// <paramref name="targetEntryIndex"/> when it names a Directory or Drive row, otherwise the
+    /// column's own path - unless the column has no filesystem path of its own (the drive list)
+    /// and no container row was targeted, which means nothing (returns null).
+    /// </summary>
     private static string? ResolveDropDest(Column column, int targetEntryIndex)
     {
         if (targetEntryIndex >= 0 && targetEntryIndex < column.Entries.Length)
@@ -1379,7 +1385,7 @@ public static class Transition
     private static (AppState, IReadOnlyList<Effect>) RereadWhere(
         AppState state, Func<ColumnRef, Column, bool> shouldReread)
     {
-        var effects = new List<Effect>();
+        List<Effect>? effects = null;
         var panes = state.Panes;
         for (var p = 0; p < panes.Length; p++)
         {
@@ -1387,19 +1393,23 @@ public static class Transition
             var columns = pane.Columns;
             for (var i = 0; i < columns.Length; i++)
             {
-                if (!shouldReread(pane.Ref(i), columns[i]))
+                var at = pane.Ref(i);
+                if (!shouldReread(at, columns[i]))
                 {
                     continue;
                 }
 
                 columns = columns.SetItem(i, columns[i] with { Load = LoadState.Loading });
-                effects.Add(new Effect.ReadDirectory(pane.Ref(i), columns[i].Location));
+                (effects ??= []).Add(new Effect.ReadDirectory(at, columns[i].Location));
             }
 
-            panes = panes.SetItem(p, pane with { Columns = columns });
+            if (columns != pane.Columns)
+            {
+                panes = panes.SetItem(p, pane with { Columns = columns });
+            }
         }
 
-        return effects.Count == 0 ? (state, NoEffects) : (state with { Panes = panes }, effects);
+        return effects is null ? (state, NoEffects) : (state with { Panes = panes }, effects);
     }
 
     /// <summary>

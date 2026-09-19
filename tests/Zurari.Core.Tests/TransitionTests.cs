@@ -206,6 +206,17 @@ public class TransitionTests
     }
 
     [Fact]
+    public void FocusColumn_on_the_already_focused_column_returns_the_same_instance()
+    {
+        var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loaded));
+
+        var (next, effects) = Transition.Apply(state, new Msg.FocusColumn(Col(0)));
+
+        Assert.Same(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
     public void EnterDirectory_truncates_right_columns_and_emits_ReadDirectory()
     {
         // The column beside the cursor is showing somewhere else, so entering has to read.
