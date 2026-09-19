@@ -62,3 +62,21 @@ pre-commit フックが check.ps1 を実行する(`git config core.hooksPath scr
   Status 表の commit 欄は、その行を書く時点ではまだ存在しないので `(this commit)` と書いておき、
   コミット後に `scripts/status.ps1` が HEAD の短縮ハッシュに置き換える
 - コミットは小さく。コミット前に check.ps1(フックが強制)
+
+## Kanban(`kanban-md`、ボードは `kanban/`)
+
+Kanban は「いま何をするか」だけを管理する。知識ベースにしない。
+CLI は `~/go/bin/kanban-md.exe`(PATH 未登録。`& "$env:USERPROFILE\go\bin\kanban-md.exe"` で呼ぶ)。
+
+- 列は4つだけ: **backlog**(候補・未決定)/ **todo**(実施決定済み・着手可)/ **in-progress** / **done**。
+  `review` 等は必要性が明確になるまで足さない
+- **backlog → todo が「正式に実施する」と決める点。** backlog から直接着手しない
+- 流れ: `board --compact` で俯瞰 → `pick` で todo から1件 → 着手時 todo → in-progress →
+  完了条件(= plan の項目 + check.ps1 green)を満たしたら done。新しいアイデア・未整理の作業はまず backlog
+- カード: 短いタイトル(1行)+ 本文は `現状:` / `次アクション:` / `ブロック:`(ある時のみ)/
+  `完了条件:`(必要な時のみ)。日本語。1カード1論点。一覧だけで把握できる短さに
+- 詳細・設計判断・経緯はカードに書かず文書へ。役割分担:
+  計画・マイルストーン → plan/roadmap.md と plan/phase*.md / 設計上の決定と理由 → docs/superpowers/specs/ と
+  roadmap.md「決定事項」 / 発見した問題・調査事項 → roadmap.md「既知の問題 / 要調査」
+- 7a の各タスクは依存を張ってあるので `list --compact --unblocked --status todo` で次の1件が出る
+- done が溜まって一覧が見づらくなったら archive を検討

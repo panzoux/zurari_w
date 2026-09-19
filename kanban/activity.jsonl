@@ -1,0 +1,17 @@
+{"timestamp":"2026-09-19T20:04:26.6767875+09:00","action":"create","task_id":1,"detail":"7a.1 Pane型導入と互換シム"}
+{"timestamp":"2026-09-19T20:04:40.0766587+09:00","action":"create","task_id":2,"detail":"7a.2 Msg/EffectにColumnRef付与"}
+{"timestamp":"2026-09-19T20:04:40.1912153+09:00","action":"create","task_id":3,"detail":"7a.3 プレビュー・後処理をペイン単位に"}
+{"timestamp":"2026-09-19T20:04:40.2945006+09:00","action":"create","task_id":4,"detail":"7a.4 互換シム削除"}
+{"timestamp":"2026-09-19T20:04:40.4130887+09:00","action":"create","task_id":5,"detail":"7a.5 他ペインのproperty test"}
+{"timestamp":"2026-09-19T20:04:40.5194919+09:00","action":"create","task_id":6,"detail":"7a.6 ToggleSplit / FocusPane"}
+{"timestamp":"2026-09-19T20:04:40.6386177+09:00","action":"create","task_id":7,"detail":"7a.7 SwapPanes / SyncToOtherPane"}
+{"timestamp":"2026-09-19T20:04:40.7534212+09:00","action":"create","task_id":8,"detail":"7a.8 CopyToOtherPane (c/m)"}
+{"timestamp":"2026-09-19T20:04:40.8838465+09:00","action":"create","task_id":9,"detail":"7a.9 Runtime: ペインごとのプレビュー枠"}
+{"timestamp":"2026-09-19T20:04:40.9910384+09:00","action":"create","task_id":10,"detail":"7a.10 App: ペイン単位の投影、PaneView抽出"}
+{"timestamp":"2026-09-19T20:04:41.0999435+09:00","action":"create","task_id":11,"detail":"7a.11 App: 2段目・フォーカス・キー"}
+{"timestamp":"2026-09-19T20:04:41.2399452+09:00","action":"create","task_id":12,"detail":"7a.12 分割状態の永続化"}
+{"timestamp":"2026-09-19T20:04:41.3528756+09:00","action":"create","task_id":13,"detail":"7a.13 E2E: 分割して上→下コピー"}
+{"timestamp":"2026-09-19T20:04:41.4583067+09:00","action":"create","task_id":14,"detail":"7a.14 実機確認とドキュメント"}
+{"timestamp":"2026-09-19T20:04:41.5819166+09:00","action":"create","task_id":15,"detail":"7b 検索/Leap の計画作成"}
+{"timestamp":"2026-09-19T20:04:41.6864054+09:00","action":"create","task_id":16,"detail":"7c ジャンプ一覧の計画作成"}
+{"timestamp":"2026-09-19T20:04:41.8054495+09:00","action":"create","task_id":17,"detail":"7d 操作ログの計画作成"}
