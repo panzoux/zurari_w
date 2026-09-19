@@ -1,10 +1,12 @@
 ---
 id: 2
 title: 7a.2 Msg/EffectにColumnRef付与
-status: todo
+status: done
 priority: high
 created: 2026-09-19T20:04:40.075607+09:00
-updated: 2026-09-19T20:04:40.075607+09:00
+updated: 2026-09-19T21:33:16.286844+09:00
+started: 2026-09-19T21:33:16.2894882+09:00
+completed: 2026-09-19T21:33:16.2894882+09:00
 tags:
     - phase7a
 depends_on:

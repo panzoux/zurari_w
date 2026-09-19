@@ -15,7 +15,7 @@
 
 # Status
 
-863 tests, `scripts/check.ps1` green.
+874 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`; do not edit it by hand. Write `(this commit)`
 in a row's commit cell (no backticks) and `status.ps1` fills in the hash after the commit lands.</sub>
@@ -24,7 +24,7 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
 |---|---|---|---|
 | **7a-front** | **Pane extraction (no visible change)** | `[ ]` | |
 | 7a.1 | `PaneId` / `ColumnRef` / `Pane`; state moves into `Pane` behind a compatibility shim | `[x]` | `55770c0` `05460e3` |
-| 7a.2 | Column-addressed Msgs and Effects carry `ColumnRef` | `[ ]` | |
+| 7a.2 | Column-addressed Msgs and Effects carry `ColumnRef` | `[x]` | `267963f` `b022607` |
 | 7a.3 | Preview Msgs/Effects carry `PaneId`; post-steps run per pane; `ViewRestored` per pane | `[ ]` | |
 | 7a.4 | Remove the compatibility shim | `[ ]` | |
 | 7a.5 | Property tests: refs to panes that do not exist; per-pane invariants | `[ ]` | |
@@ -32,6 +32,7 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
 | 7a.6 | `ToggleSplit` / `FocusPane` | `[ ]` | |
 | 7a.7 | `SwapPanes` / `SyncToOtherPane` | `[ ]` | |
 | 7a.8 | `CopyToOtherPane` (`c` / `m`) | `[ ]` | |
+| 7a.8b | Two-pane correctness follow-ups (from the 7a.2 review): scoped reveal, `ShellOpCompleted` rereads, sections in every drive pane | `[ ]` | |
 | 7a.9 | Runtime: one preview slot per pane | `[ ]` | |
 | 7a.10 | App: coalescing gates and projection cache per pane; `PaneView` extracted (still one row) | `[ ]` | |
 | 7a.11 | App: second row, splitter, focus routing, dimming, keys | `[ ]` | |
@@ -1367,8 +1368,12 @@ Run → build FAILS.
 - [ ] **Step 3: Handlers**
 
 ```csharp
+    // A rename in progress belongs to a row on screen; swapping moves panes between rows and syncing
+    // replaces the columns it was typed into, so both end it (as FocusPane does).
     private static AppState SwapPanes(AppState state) =>
-        state.Panes.Length == 2 ? state with { Panes = [state.Panes[1], state.Panes[0]] } : state;
+        state.Panes.Length == 2
+            ? state with { Panes = [state.Panes[1], state.Panes[0]], Rename = null, InputMode = InputMode.Normal }
+            : state;
 
     private static AppState SyncToOtherPane(AppState state)
     {
@@ -1385,7 +1390,8 @@ Run → build FAILS.
             columns.Add(column.WithView(mine.View));
         }
 
-        return state.WithPane(mine with { Columns = columns.MoveToImmutable(), FocusedColumn = other.FocusedColumn });
+        return state.WithPane(mine with { Columns = columns.MoveToImmutable(), FocusedColumn = other.FocusedColumn })
+            with { Rename = null };
     }
 ```
 
@@ -1643,6 +1649,127 @@ check in `CopyToOtherPane` runs first so that `c`/`m` say why nothing happened i
 ```bash
 git add -A src/Zurari.Core tests/Zurari.Core.Tests
 git commit -m "Copy or move to the other pane with c and m"
+```
+
+---
+
+### Task 7a.8b: Two-pane correctness follow-ups
+
+Found by the 7a.2 code review; each is invisible with one pane and wrong with two.
+
+**Files:** `AppState.cs`, `Transition.cs`, `tests/Zurari.Core.Tests/SplitTests.cs`
+
+- [ ] **Step 1: Failing tests** — append to `SplitTests.cs` (reuse `SplitWith`):
+
+```csharp
+    [Fact]
+    public void A_rename_reveal_lands_in_the_pane_that_renamed_even_if_the_other_loads_first()
+    {
+        var dir = new Location.RealDirectory(@"C:\x");
+        var shown = new Column(dir, [new Entry("old", EntryKind.File)], Cursor: 0, Load: LoadState.Loaded);
+        var state = SplitWith(shown, shown);
+        var mine = new ColumnRef(new PaneId(0), 0);
+        var theirs = new ColumnRef(new PaneId(1), 0);
+        var (renamed, _) = Transition.Apply(state, new Msg.RenameCompleted(mine, dir, "new"));
+
+        var listing = ImmutableArray.Create(new Entry("a", EntryKind.File), new Entry("new", EntryKind.File));
+        var (otherFirst, _) = Transition.Apply(renamed, new Msg.DirectoryLoaded(theirs, dir, listing));
+        var (both, _) = Transition.Apply(otherFirst, new Msg.DirectoryLoaded(mine, dir, listing));
+
+        Assert.Equal("new", both.Panes[0].Columns[0].CursorName);
+        Assert.Equal("a", both.Panes[1].Columns[0].CursorName);   // kept its index, not pulled to "new"
+        Assert.Null(both.RevealTarget);
+    }
+
+    [Fact]
+    public void A_mounted_image_is_revealed_by_whichever_drive_list_loads_first()
+    {
+        var drives = new Column(Location.Drives.Instance, [new Entry(@"C:\", EntryKind.Drive)], Cursor: 0, Load: LoadState.Loaded);
+        var state = SplitWith(drives, drives);
+        var (mounted, _) = Transition.Apply(state, new Msg.ImageMounted(@"E:\"));
+
+        var listing = ImmutableArray.Create(new Entry(@"C:\", EntryKind.Drive), new Entry(@"E:\", EntryKind.Drive));
+        var (next, _) = Transition.Apply(
+            mounted, new Msg.DirectoryLoaded(new ColumnRef(new PaneId(1), 0), Location.Drives.Instance, listing));
+
+        Assert.Equal(@"E:\", next.Panes[1].Columns[0].CursorName);
+    }
+
+    [Fact]
+    public void A_finished_shell_op_rereads_affected_folders_even_when_its_column_is_gone()
+    {
+        var src = new Location.RealDirectory(@"C:\src");
+        var state = SplitWith(
+            new Column(src, [new Entry("f", EntryKind.File)], Cursor: 0, Load: LoadState.Loaded),
+            new Column(new Location.RealDirectory(@"D:\dst"), [], Load: LoadState.Loaded));
+        var closedPane = new ColumnRef(new PaneId(9), 0);
+
+        var (_, effects) = Transition.Apply(
+            state, new Msg.ShellOpCompleted(closedPane, new Location.RealDirectory(@"D:\dst"), [@"C:\src"]));
+
+        var read = Assert.Single(effects.OfType<Effect.ReadDirectory>());
+        Assert.Equal(new ColumnRef(new PaneId(0), 0), read.At);
+    }
+
+    [Fact]
+    public void Collapsing_a_section_collapses_it_in_every_drive_list()
+    {
+        var header = new Entry("net", EntryKind.Header, Group: "net");
+        var row = new Entry(@"\\s\x", EntryKind.Directory, Group: "net");
+        var drives = new Column(Location.Drives.Instance, [header, row], Cursor: 0, Load: LoadState.Loaded);
+        var state = SplitWith(drives, drives);
+
+        var (next, _) = Transition.Apply(state, new Msg.ToggleSection(new ColumnRef(new PaneId(0), 0), 0));
+
+        Assert.Single(next.Panes[0].Columns[0].Entries);
+        Assert.Single(next.Panes[1].Columns[0].Entries);
+    }
+```
+
+Run → the first, third and fourth FAIL (the second documents intended behaviour and may already pass).
+
+- [ ] **Step 2: Scope the reveal**
+
+In `AppState.cs` replace `string? RevealTarget` with:
+
+```csharp
+/// <summary>
+/// A name to put the cursor on when a listing containing it arrives. <paramref name="At"/> names the
+/// one column that may consume it (a rename or a new folder happened there, and the same directory
+/// shown in the other pane must not take it); <c>null</c> lets any listing consume it (a mounted
+/// image appears in every drive list).
+/// </summary>
+public sealed record Reveal(string Name, ColumnRef? At);
+```
+
+and `public Reveal? RevealTarget { get; init; }` (keep its existing remarks). `RereadColumn` sets
+`new Reveal(reveal, at)` (when `reveal` is non-null); `ImageMounted` sets `new Reveal(m.DriveRoot, null)`.
+`DirectoryLoaded` consumes it only when `RevealTarget.At is null || RevealTarget.At == at`, matching
+`RevealTarget.Name`. Existing tests that set `RevealTarget = "x"` become `new Reveal("x", null)`.
+
+- [ ] **Step 3: `ShellOpCompleted` rereads affected folders even when its column is gone**
+
+Replace its staleness early-return with the check inside the predicate:
+
+```csharp
+        return RereadWhere(
+            state,
+            (r, c) => (r == at && c.Location == columnLocation) || IsAffectedDirectory(c.Location, affectedDirs));
+```
+
+- [ ] **Step 4: Sections apply to every drive list**
+
+`ToggleSection` computes the new collapsed set from the addressed column (as today), then applies
+it with `WithCollapsedGroups(set, pane.View)` to every `Location.Drives` column in every pane, and
+still emits one `SetCollapsedGroups`. `CollapsedGroupsRestored` does the same with the restored set.
+
+- [ ] **Step 5: Run, check, commit**
+
+Run: `dotnet test tests/Zurari.Core.Tests` → PASS. `pwsh scripts/check.ps1` → green.
+
+```bash
+git add -A src/Zurari.Core tests/Zurari.Core.Tests
+git commit -m "Scope a reveal to its column, and keep rereads and sections right with two panes"
 ```
 
 ---
@@ -1908,6 +2035,13 @@ speculative read inside the debounce window replaces pane A's and A's child colu
 "loading" forever. `Render` passes `For(projectionCaches, pane.Id)`. When a pane disappears from
 `state.Panes`, remove its three entries.
 
+**Address by pane, not by focus (from the 7a.2 review).** The MainWindow helpers that take a bare
+column index and read the focused pane - `OnEntryDragRequested`, `ResolveFullPath`, `IsEntryMarked`,
+`ResolveMarkedFullPaths`, `ShowContextMenu`, `RenderRename` - take a `ColumnRef` instead and resolve
+through `state.ColumnAt`. Do not convert them to `state.Focused.Columns` (that bakes in the
+assumption 7a.11 must remove). `RenderRename` draws the editor in the `PaneView` showing
+`rename.At.Pane` and clears it in the other.
+
 `Render(state)` renders `state.Panes[0]` into `TopPane` (`Project(state, state.Panes[0], …)`,
 `TopPane.RenderPreview(StateProjection.ProjectPreview(state, state.Panes[0]))`), with the existing
 reference-equality guard kept per pane (`lastRenderedColumns`/`lastRenderedFocusedColumn` become
@@ -2028,7 +2162,8 @@ Wire both `PaneView`s' `ColumnBrowser` events through one method that knows the 
         row < loop.State.Panes.Length ? loop.State.Panes[row].Id : loop.State.Focused.Id;
 ```
 
-Every handler that built `loop.State.Focused.Ref(e.ColumnIndex)` in 7a.2 now builds
+Every handler that built `loop.State.Focused.Ref(e.ColumnIndex)` in 7a.2 (and every helper converted to
+`ColumnRef` in 7a.10) now builds
 `new ColumnRef(PaneInRow(row), e.ColumnIndex)`, where `row` is 0 for `TopPane`'s browser and 1 for
 `BottomPane`'s (pass it when subscribing, e.g. `TopPane.ColumnBrowser.EntryClicked += (s, e) => OnEntryClicked(0, e);`).
 Before dispatching any pointer Msg from row `r`, dispatch `new Msg.FocusPane(PaneInRow(r))` if it
@@ -2379,3 +2514,19 @@ anticipate. Stop and ask rather than deciding unilaterally when something contra
 - Not taken: the reviewer's note that the record's generated `ToString` can throw on an out-of-range
   `FocusedPane`. Only an invalid state reaches that, and the property tests assert
   `CheckInvariants()` (which never throws) first.
+
+## 7a.2 (2026-09-19)
+
+- 30 Msg/Effect records now carry `ColumnRef At`. Transition addresses through `ColumnAt`/`PaneOf`/
+  `WithPane`/`WithColumn`; `RereadWhere` replaces five copies of the "mark Loading and re-read" loop
+  and covers every pane. `check.ps1` green, 863 tests after the main commit, 874 after the follow-up.
+- Spec review: compliant. Quality review (no critical issues) led to a follow-up commit: six tests
+  that address the *unfocused* pane (the single-pane tests could not tell a shim-routed handler
+  from a correct one), a non-default `PaneId` round-trip through Runtime and Shell (`PaneId(0)` is
+  `default`, so a dropped pane id was undetectable), no-op identity for `FocusColumn` and the
+  `EnterDirectory` reuse branch, `RereadWhere` touching only panes that matched.
+- Deferred to later tasks (plan updated): scoped `RevealTarget`, `ShellOpCompleted` rereading
+  affected folders when its own column is gone, and sections in every drive list (new 7a.8b); App
+  helpers and the rename editor addressed by pane rather than focus (7a.10/7a.11); swap and sync end
+  a rename (7a.7). Already covered by 7a.3: `state.View` used while deriving another pane's column,
+  and the post-steps reading only the focused pane.

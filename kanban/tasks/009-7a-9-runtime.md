@@ -4,11 +4,12 @@ title: '7a.9 Runtime: ペインごとのプレビュー枠'
 status: todo
 priority: high
 created: 2026-09-19T20:04:40.8817332+09:00
-updated: 2026-09-19T20:04:40.8817332+09:00
+updated: 2026-09-19T21:24:26.7344716+09:00
 tags:
     - phase7a
 depends_on:
     - 8
+    - 18
 class: standard
 ---
 
