@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using Zurari.Core;
 using Zurari.Runtime;
+using static Zurari.TestSupport.TestPanes;
 
 namespace Zurari.Runtime.Tests;
 
@@ -28,7 +29,7 @@ public class TrashSectionTests
     {
         var queue = new ConcurrentQueue<Msg>();
         using var runtime = new WorkerRuntime(queue.Enqueue, trash: trash, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
-        runtime.Submit(new Effect.ReadDirectory(0, Location.Drives.Instance));
+        runtime.Submit(new Effect.ReadDirectory(Col(0), Location.Drives.Instance));
         return ((Msg.DirectoryLoaded)WaitFor<Msg.DirectoryLoaded>(queue, TimeSpan.FromSeconds(10))).Entries;
     }
 
@@ -72,7 +73,7 @@ public class TrashSectionTests
         // Shell instead. Submitting it here should report a failure rather than pretend.
         var queue = new ConcurrentQueue<Msg>();
         using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
-        runtime.Submit(new Effect.ReadDirectory(0, Location.RecycleBin.Instance));
+        runtime.Submit(new Effect.ReadDirectory(Col(0), Location.RecycleBin.Instance));
 
         var failed = Assert.IsType<Msg.DirectoryLoadFailed>(WaitFor<Msg.DirectoryLoadFailed>(queue, TimeSpan.FromSeconds(10)));
         Assert.Equal(Location.RecycleBin.Instance, failed.Location);

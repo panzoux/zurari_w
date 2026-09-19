@@ -32,12 +32,11 @@ public static class Transition
     /// </remarks>
     private static AppState RememberFocusedCursor(AppState oldState, AppState state)
     {
-        if (!InRange(state, state.FocusedColumn))
+        if (state.Focused.FocusedColumnOrNull is not { } column)
         {
             return state;
         }
 
-        var column = state.Columns[state.FocusedColumn];
         if (column.CursorName is not { } name)
         {
             return state;
@@ -46,7 +45,7 @@ public static class Transition
         // Only on an actual move. Recording unconditionally would mean a message that changed
         // nothing still returned a different state, which is the difference between "ignored" and
         // "ignored except for the bookkeeping" - and every test asserting the former would fail.
-        var previous = FocusedColumnOrNull(oldState);
+        var previous = oldState.Focused.FocusedColumnOrNull;
         if (previous is not null && previous.Location == column.Location && previous.CursorName == name)
         {
             return state;
@@ -86,18 +85,18 @@ public static class Transition
     private static (AppState, IReadOnlyList<Effect>) ReconcileChildColumn(
         AppState oldState, AppState state, IReadOnlyList<Effect> effects)
     {
-        var focusedIndex = state.FocusedColumn;
-        if (!InRange(state, focusedIndex))
+        if (state.Focused.FocusedColumnOrNull is not { } focusedColumn)
         {
             return (state, effects);
         }
 
-        var wanted = ChildOfCursor(state.Columns[focusedIndex]);
+        var focusedIndex = state.FocusedColumn;
+        var wanted = ChildOfCursor(focusedColumn);
 
         // Nothing the message did changed where the cursor points, so leave the columns alone. This
         // is what keeps a message that was ignored actually ignored, rather than every Apply
         // rebuilding the pane underneath it.
-        if (Equals(wanted, ChildOfCursor(FocusedColumnOrNull(oldState))))
+        if (Equals(wanted, ChildOfCursor(oldState.Focused.FocusedColumnOrNull)))
         {
             return (state, effects);
         }
@@ -119,15 +118,8 @@ public static class Transition
         var withChild = truncated.Add(new Column(wanted, Entries: [], Cursor: -1, Load: LoadState.Loading));
         return (
             state with { Columns = withChild },
-            Append(effects, new Effect.ReadDirectory(childIndex, wanted, Speculative: true)));
+            Append(effects, new Effect.ReadDirectory(state.Focused.Ref(childIndex), wanted, Speculative: true)));
     }
-
-    /// <summary>
-    /// Where the row under <paramref name="column"/>'s cursor leads, or <c>null</c> when it leads
-    /// nowhere - an empty column, a file, or a section header.
-    /// </summary>
-    private static Column? FocusedColumnOrNull(AppState state) =>
-        InRange(state, state.FocusedColumn) ? state.Columns[state.FocusedColumn] : null;
 
     private static Location? ChildOfCursor(Column? column)
     {
@@ -145,29 +137,29 @@ public static class Transition
         return msg switch
         {
             Msg.Noop => (state, NoEffects),
-            Msg.CursorUp m => (MoveCursor(state, m.ColumnIndex, delta: -1), NoEffects),
-            Msg.CursorDown m => (MoveCursor(state, m.ColumnIndex, delta: 1), NoEffects),
-            Msg.CursorPageUp m => (MoveCursor(state, m.ColumnIndex, delta: -Math.Max(1, m.PageSize)), NoEffects),
-            Msg.CursorPageDown m => (MoveCursor(state, m.ColumnIndex, delta: Math.Max(1, m.PageSize)), NoEffects),
-            Msg.CursorHome m => (MoveCursorTo(state, m.ColumnIndex, index: 0), NoEffects),
-            Msg.CursorEnd m => (MoveCursorTo(state, m.ColumnIndex, index: int.MaxValue), NoEffects),
-            Msg.CursorTo m => (MoveCursorTo(state, m.ColumnIndex, m.EntryIndex), NoEffects),
-            Msg.FocusColumn m => (FocusColumn(state, m.ColumnIndex), NoEffects),
-            Msg.EnterDirectory m => EnterDirectory(state, m.ColumnIndex, m.EntryIndex, m.FocusChild),
-            Msg.GoToParent m => (GoToParent(state, m.ColumnIndex), NoEffects),
+            Msg.CursorUp m => (MoveCursor(state, m.At, delta: -1), NoEffects),
+            Msg.CursorDown m => (MoveCursor(state, m.At, delta: 1), NoEffects),
+            Msg.CursorPageUp m => (MoveCursor(state, m.At, delta: -Math.Max(1, m.PageSize)), NoEffects),
+            Msg.CursorPageDown m => (MoveCursor(state, m.At, delta: Math.Max(1, m.PageSize)), NoEffects),
+            Msg.CursorHome m => (MoveCursorTo(state, m.At, index: 0), NoEffects),
+            Msg.CursorEnd m => (MoveCursorTo(state, m.At, index: int.MaxValue), NoEffects),
+            Msg.CursorTo m => (MoveCursorTo(state, m.At, m.EntryIndex), NoEffects),
+            Msg.FocusColumn m => (FocusColumn(state, m.At), NoEffects),
+            Msg.EnterDirectory m => EnterDirectory(state, m.At, m.EntryIndex, m.FocusChild),
+            Msg.GoToParent m => (GoToParent(state, m.At), NoEffects),
             Msg.Refresh => Refresh(state),
-            Msg.DirectoryLoaded m => (DirectoryLoaded(state, m.ColumnIndex, m.Location, m.Entries), NoEffects),
-            Msg.DirectoryLoadFailed m => (DirectoryLoadFailed(state, m.ColumnIndex, m.Location, m.Error), NoEffects),
-            Msg.DeleteEntry m => DeleteEntry(state, m.ColumnIndex, m.EntryIndex, m.Permanent),
-            Msg.DropFiles m => DropFiles(state, m.ColumnIndex, m.TargetEntryIndex, m.Paths, m.ShiftHeld, m.CtrlHeld),
-            Msg.ShellOpCompleted m => ShellOpCompleted(state, m.ColumnIndex, m.ColumnLocation, m.AffectedDirs),
-            Msg.ShellOpFailed m => (ShellOpFailed(state, m.ColumnIndex, m.ColumnLocation, m.Error), NoEffects),
-            Msg.ToggleMark m => (ToggleMark(state, m.ColumnIndex, m.EntryIndex), NoEffects),
-            Msg.ToggleMarkAtCursor m => ToggleMarkAtCursor(state, m.ColumnIndex),
-            Msg.ClearMarks m => (ClearMarks(state, m.ColumnIndex), NoEffects),
-            Msg.DeleteMarked m => DeleteMarked(state, m.ColumnIndex, m.Permanent),
-            Msg.MarkRange m => (MarkRange(state, m.ColumnIndex, m.FromIndex, m.ToIndex, m.Additive), NoEffects),
-            Msg.PasteRequested m => PasteRequested(state, m.ColumnIndex, m.Sources, m.IsMove),
+            Msg.DirectoryLoaded m => (DirectoryLoaded(state, m.At, m.Location, m.Entries), NoEffects),
+            Msg.DirectoryLoadFailed m => (DirectoryLoadFailed(state, m.At, m.Location, m.Error), NoEffects),
+            Msg.DeleteEntry m => DeleteEntry(state, m.At, m.EntryIndex, m.Permanent),
+            Msg.DropFiles m => DropFiles(state, m.At, m.TargetEntryIndex, m.Paths, m.ShiftHeld, m.CtrlHeld),
+            Msg.ShellOpCompleted m => ShellOpCompleted(state, m.At, m.ColumnLocation, m.AffectedDirs),
+            Msg.ShellOpFailed m => (ShellOpFailed(state, m.At, m.ColumnLocation, m.Error), NoEffects),
+            Msg.ToggleMark m => (ToggleMark(state, m.At, m.EntryIndex), NoEffects),
+            Msg.ToggleMarkAtCursor m => ToggleMarkAtCursor(state, m.At),
+            Msg.ClearMarks m => (ClearMarks(state, m.At), NoEffects),
+            Msg.DeleteMarked m => DeleteMarked(state, m.At, m.Permanent),
+            Msg.MarkRange m => (MarkRange(state, m.At, m.FromIndex, m.ToIndex, m.Additive), NoEffects),
+            Msg.PasteRequested m => PasteRequested(state, m.At, m.Sources, m.IsMove),
             Msg.JobProgress m =>
                 (JobProgress(state, m.JobId, m.DoneFiles, m.TotalFiles, m.DoneBytes, m.TotalBytes, m.CurrentFile), NoEffects),
             Msg.JobCompleted m => JobFinished(
@@ -185,20 +177,20 @@ public static class Transition
             Msg.JobConflictsFound m => (JobConflictsFound(state, m.JobId, m.ConflictCount), NoEffects),
             Msg.JobConflictResolved m => JobConflictResolved(state, m.JobId, m.Decision),
             Msg.ExternalDirectoryChanged m => ExternalDirectoryChanged(state, m.Path),
-            Msg.PinFocusedLocation m => PinFocusedLocation(state, m.ColumnIndex),
-            Msg.PinEntryAtCursor m => PinEntryAtCursor(state, m.ColumnIndex),
+            Msg.PinFocusedLocation m => PinFocusedLocation(state, m.At),
+            Msg.PinEntryAtCursor m => PinEntryAtCursor(state, m.At),
             Msg.PlacesChanged => ReloadDrivePanes(state),
             Msg.ImageMounted m => ReloadDrivePanes(state with { RevealTarget = m.DriveRoot }),
             Msg.NoticeRaised m => (state with { Notice = m.Message }, NoEffects),
-            Msg.RenameRequested m => (BeginRename(state, m.ColumnIndex), NoEffects),
+            Msg.RenameRequested m => (BeginRename(state, m.At), NoEffects),
             Msg.RenameCancelled => (state with { Rename = null }, NoEffects),
             Msg.RenameSubmitted m => SubmitRename(state, m.NewName),
-            Msg.RenameCompleted m => RenameCompleted(state, m.ColumnIndex, m.Location, m.NewName),
+            Msg.RenameCompleted m => RenameCompleted(state, m.At, m.Location, m.NewName),
             Msg.RenameFailed m => (
                 state.Rename is { } editing ? state with { Rename = editing with { Error = m.Error } } : state,
                 NoEffects),
-            Msg.CreateFolderRequested m => CreateFolder(state, m.ColumnIndex),
-            Msg.FolderCreated m => RereadColumn(state, m.ColumnIndex, m.Location, reveal: m.Name),
+            Msg.CreateFolderRequested m => CreateFolder(state, m.At),
+            Msg.FolderCreated m => RereadColumn(state, m.At, m.Location, reveal: m.Name),
             // Each choice sort mode offers also ends it: the mode is one decision long.
             Msg.SetSortMode m => Rederive(
                 LeaveSortMode(state), state.View with { Sort = state.View.Sort.Select(m.Mode) }, remember: true),
@@ -221,21 +213,15 @@ public static class Transition
             Msg.SetSortDescending m => Rederive(
                 LeaveSortMode(state), state.View with { Sort = state.View.Sort with { Mode = m.Mode, Descending = true } }, remember: true),
             Msg.ViewRestored m => Rederive(state, m.View, remember: false),
-            Msg.ToggleSection m => ToggleSection(state, m.ColumnIndex, m.EntryIndex),
+            Msg.ToggleSection m => ToggleSection(state, m.At, m.EntryIndex),
             Msg.RetryPreview => RetryPreview(state),
-            Msg.CollapsedGroupsRestored m => (RestoreCollapsedGroups(state, m.ColumnIndex, m.Groups), NoEffects),
+            Msg.CollapsedGroupsRestored m => (RestoreCollapsedGroups(state, m.At, m.Groups), NoEffects),
             _ => (state, NoEffects),
         };
     }
 
     private static AppState LeaveSortMode(AppState state) =>
         state.InputMode == InputMode.Normal ? state : state with { InputMode = InputMode.Normal };
-
-    private static bool InRange(AppState state, int columnIndex) =>
-        columnIndex >= 0 && columnIndex < state.Columns.Length;
-
-    private static AppState WithColumn(AppState state, int columnIndex, Column column) =>
-        state with { Columns = state.Columns.SetItem(columnIndex, column) };
 
     /// <summary>
     /// Where opening <paramref name="entry"/> from <paramref name="column"/> leads: the row's own
@@ -251,52 +237,56 @@ public static class Transition
     /// </summary>
     private static string? EntryPath(Column column, Entry entry) => column.PathOf(entry);
 
-    private static AppState MoveCursor(AppState state, int columnIndex, int delta)
+    private static AppState MoveCursor(AppState state, ColumnRef at, int delta)
     {
-        if (!InRange(state, columnIndex))
+        if (state.ColumnAt(at) is not { } column)
         {
             return state;
         }
 
-        var column = state.Columns[columnIndex];
         if (column.Cursor == -1)
         {
             return state;
         }
 
         var next = Math.Clamp(column.Cursor + delta, 0, column.Entries.Length - 1);
-        return next == column.Cursor ? state : WithColumn(state, columnIndex, column with { Cursor = next });
+        return next == column.Cursor ? state : state.WithColumn(at, column with { Cursor = next });
     }
 
-    private static AppState MoveCursorTo(AppState state, int columnIndex, int index)
+    private static AppState MoveCursorTo(AppState state, ColumnRef at, int index)
     {
-        if (!InRange(state, columnIndex))
+        if (state.ColumnAt(at) is not { } column)
         {
             return state;
         }
 
-        var column = state.Columns[columnIndex];
         if (column.Cursor == -1)
         {
             return state;
         }
 
         var next = Math.Clamp(index, 0, column.Entries.Length - 1);
-        return next == column.Cursor ? state : WithColumn(state, columnIndex, column with { Cursor = next });
+        return next == column.Cursor ? state : state.WithColumn(at, column with { Cursor = next });
     }
 
-    private static AppState FocusColumn(AppState state, int columnIndex) =>
-        InRange(state, columnIndex) ? state with { FocusedColumn = columnIndex } : state;
+    private static AppState FocusColumn(AppState state, ColumnRef at)
+    {
+        if (state.ColumnAt(at) is null || state.PaneOf(at.Pane) is not { } pane)
+        {
+            return state;
+        }
+
+        return state.WithPane(pane with { FocusedColumn = at.Index });
+    }
 
     private static (AppState, IReadOnlyList<Effect>) EnterDirectory(
-        AppState state, int columnIndex, int entryIndex, bool focusChild)
+        AppState state, ColumnRef at, int entryIndex, bool focusChild)
     {
-        if (!InRange(state, columnIndex))
+        if (state.ColumnAt(at) is not { } column || state.PaneOf(at.Pane) is not { } pane)
         {
             return (state, NoEffects);
         }
 
-        var column = state.Columns[columnIndex];
         if (entryIndex < 0 || entryIndex >= column.Entries.Length)
         {
             return (state, NoEffects);
@@ -305,9 +295,9 @@ public static class Transition
         var entry = column.Entries[entryIndex];
         if (entry.Kind is EntryKind.File or EntryKind.Header)
         {
-            var fileTruncated = state.Columns.Take(columnIndex + 1).ToImmutableArray();
-            fileTruncated = fileTruncated.SetItem(columnIndex, column with { Cursor = entryIndex });
-            var fileState = state with { Columns = fileTruncated, FocusedColumn = columnIndex };
+            var fileTruncated = pane.Columns.Take(at.Index + 1).ToImmutableArray();
+            fileTruncated = fileTruncated.SetItem(at.Index, column with { Cursor = entryIndex });
+            var fileState = state.WithPane(pane with { Columns = fileTruncated, FocusedColumn = at.Index });
 
             if (entry.Kind != EntryKind.File || EntryPath(column, entry) is not { } filePath)
             {
@@ -323,28 +313,30 @@ public static class Transition
         }
 
         var childLocation = ChildLocation(column, entry);
-        var childIndex = columnIndex + 1;
+        var childIndex = at.Index + 1;
 
         // The column beside the cursor is usually already showing this - it opened the moment the
         // cursor landed here. Entering then means moving into it, not throwing away a loaded listing
         // and reading it again, which would flash 読み込み中… over contents already on screen.
-        if (childIndex < state.Columns.Length && state.Columns[childIndex].Location == childLocation)
+        if (childIndex < pane.Columns.Length && pane.Columns[childIndex].Location == childLocation)
         {
-            var reused = state.Columns.SetItem(columnIndex, column with { Cursor = entryIndex });
+            var reused = pane.Columns.SetItem(at.Index, column with { Cursor = entryIndex });
             return (
-                state with { Columns = reused, FocusedColumn = focusChild ? childIndex : columnIndex },
+                state.WithPane(pane with { Columns = reused, FocusedColumn = focusChild ? childIndex : at.Index }),
                 NoEffects);
         }
 
-        var truncated = state.Columns.Take(columnIndex + 1).ToImmutableArray();
-        truncated = truncated.SetItem(columnIndex, column with { Cursor = entryIndex });
+        var truncated = pane.Columns.Take(at.Index + 1).ToImmutableArray();
+        truncated = truncated.SetItem(at.Index, column with { Cursor = entryIndex });
 
         var newColumnIndex = truncated.Length;
         var newColumn = new Column(childLocation, Entries: [], Cursor: -1, Load: LoadState.Loading);
-        var newColumns = truncated.Add(newColumn);
-
-        var newState = state with { Columns = newColumns, FocusedColumn = focusChild ? newColumnIndex : columnIndex };
-        return (newState, [new Effect.ReadDirectory(newColumnIndex, childLocation)]);
+        var newState = state.WithPane(pane with
+        {
+            Columns = truncated.Add(newColumn),
+            FocusedColumn = focusChild ? newColumnIndex : at.Index,
+        });
+        return (newState, [new Effect.ReadDirectory(pane.Ref(newColumnIndex), childLocation)]);
     }
 
     /// <summary>
@@ -390,14 +382,13 @@ public static class Transition
     /// renaming a favorite would mean renaming the folder it points at, which is not what the row
     /// looks like it is offering.
     /// </remarks>
-    private static AppState BeginRename(AppState state, int columnIndex)
+    private static AppState BeginRename(AppState state, ColumnRef at)
     {
-        if (!InRange(state, columnIndex))
+        if (state.ColumnAt(at) is not { } column)
         {
             return state;
         }
 
-        var column = state.Columns[columnIndex];
         if (column.Location is Location.Drives || column.Cursor < 0 || column.Cursor >= column.Entries.Length)
         {
             return state;
@@ -406,7 +397,7 @@ public static class Transition
         var entry = column.Entries[column.Cursor];
         return entry.Kind is EntryKind.Header or EntryKind.Drive
             ? state
-            : state with { Rename = new RenameState(columnIndex, entry.Name) };
+            : state with { Rename = new RenameState(at, entry.Name) };
     }
 
     /// <summary>
@@ -419,7 +410,7 @@ public static class Transition
     /// </remarks>
     private static (AppState, IReadOnlyList<Effect>) SubmitRename(AppState state, string newName)
     {
-        if (state.Rename is not { } editing || !InRange(state, editing.ColumnIndex))
+        if (state.Rename is not { } editing || state.ColumnAt(editing.At) is not { } column)
         {
             return (state, NoEffects);
         }
@@ -443,33 +434,31 @@ public static class Transition
                 NoEffects);
         }
 
-        var column = state.Columns[editing.ColumnIndex];
         return (
             state with { Rename = editing with { Error = null } },
-            new Effect[] { new Effect.RenameEntry(editing.ColumnIndex, column.Location, editing.EntryName, trimmed) });
+            new Effect[] { new Effect.RenameEntry(editing.At, column.Location, editing.EntryName, trimmed) });
     }
 
     private static (AppState, IReadOnlyList<Effect>) RenameCompleted(
-        AppState state, int columnIndex, Location location, string newName)
+        AppState state, ColumnRef at, Location location, string newName)
     {
         var closed = state with { Rename = null };
-        return RereadColumn(closed, columnIndex, location, reveal: newName);
+        return RereadColumn(closed, at, location, reveal: newName);
     }
 
     /// <summary>
     /// Asks for a new folder where the column is pointing. Refused where there is no such place -
     /// the drive pane holds places, not files, and the recycle bin is not somewhere to put things.
     /// </summary>
-    private static (AppState, IReadOnlyList<Effect>) CreateFolder(AppState state, int columnIndex)
+    private static (AppState, IReadOnlyList<Effect>) CreateFolder(AppState state, ColumnRef at)
     {
-        if (!InRange(state, columnIndex))
+        if (state.ColumnAt(at) is not { } column)
         {
             return (state, NoEffects);
         }
 
-        var column = state.Columns[columnIndex];
         return column.Location is Location.RealDirectory
-            ? (state, new Effect[] { new Effect.CreateFolder(columnIndex, column.Location) })
+            ? (state, new Effect[] { new Effect.CreateFolder(at, column.Location) })
             : (state with { Notice = "ここにはフォルダーを作れません" }, NoEffects);
     }
 
@@ -478,52 +467,42 @@ public static class Transition
     /// there. Ignores a report about a column that has since moved elsewhere.
     /// </summary>
     private static (AppState, IReadOnlyList<Effect>) RereadColumn(
-        AppState state, int columnIndex, Location location, string? reveal)
+        AppState state, ColumnRef at, Location location, string? reveal)
     {
-        if (!InRange(state, columnIndex) || state.Columns[columnIndex].Location != location)
+        if (state.ColumnAt(at) is not { } column || column.Location != location)
         {
             return (state, NoEffects);
         }
 
-        var loading = WithColumn(state, columnIndex, state.Columns[columnIndex] with { Load = LoadState.Loading });
+        var loading = state.WithColumn(at, column with { Load = LoadState.Loading });
         return (
             loading with { RevealTarget = reveal },
-            new Effect[] { new Effect.ReadDirectory(columnIndex, location) });
+            new Effect[] { new Effect.ReadDirectory(at, location) });
     }
 
-    private static AppState GoToParent(AppState state, int columnIndex)
+    private static AppState GoToParent(AppState state, ColumnRef at)
     {
-        if (!InRange(state, columnIndex) || columnIndex == 0)
+        if (state.ColumnAt(at) is null || at.Index == 0 || state.PaneOf(at.Pane) is not { } pane)
         {
             return state;
         }
 
-        return state with { FocusedColumn = columnIndex - 1 };
+        return state.WithPane(pane with { FocusedColumn = at.Index - 1 });
     }
 
     private static (AppState, IReadOnlyList<Effect>) Refresh(AppState state)
     {
-        var columns = state.Columns;
-        var effects = new Effect[columns.Length];
-        var newColumns = ImmutableArray.CreateBuilder<Column>(columns.Length);
-        for (var i = 0; i < columns.Length; i++)
-        {
-            newColumns.Add(columns[i] with { Load = LoadState.Loading });
-            effects[i] = new Effect.ReadDirectory(i, columns[i].Location);
-        }
-
-        return (state with { Columns = newColumns.MoveToImmutable() }, effects);
+        return RereadWhere(state, (_, _) => true);
     }
 
     private static AppState DirectoryLoaded(
-        AppState state, int columnIndex, Location location, ImmutableArray<Entry> entries)
+        AppState state, ColumnRef at, Location location, ImmutableArray<Entry> entries)
     {
-        if (!InRange(state, columnIndex))
+        if (state.ColumnAt(at) is not { } column)
         {
             return state;
         }
 
-        var column = state.Columns[columnIndex];
         if (column.Location != location)
         {
             return state;
@@ -543,8 +522,8 @@ public static class Transition
         var revealed = state.RevealTarget is { } target ? IndexOfName(updated.Entries, target) : -1;
         if (revealed >= 0)
         {
-            var focused = WithColumn(state, columnIndex, updated with { Cursor = revealed });
-            return focused with { FocusedColumn = columnIndex, RevealTarget = null };
+            var focused = state.WithColumn(at, updated with { Cursor = revealed });
+            return focused.WithPane(focused.PaneOf(at.Pane)! with { FocusedColumn = at.Index }) with { RevealTarget = null };
         }
 
         // Otherwise, if this is somewhere the user has been, put the cursor back where they left it.
@@ -555,11 +534,11 @@ public static class Transition
             var index = IndexOfName(updated.Entries, recalled);
             if (index >= 0)
             {
-                return WithColumn(state, columnIndex, updated with { Cursor = index });
+                return state.WithColumn(at, updated with { Cursor = index });
             }
         }
 
-        return WithColumn(state, columnIndex, updated);
+        return state.WithColumn(at, updated);
     }
 
     /// <summary>Index of the entry called <paramref name="name"/>, or -1.</summary>
@@ -595,32 +574,30 @@ public static class Transition
             .ToImmutableArray();
     }
 
-    private static AppState DirectoryLoadFailed(AppState state, int columnIndex, Location location, string error)
+    private static AppState DirectoryLoadFailed(AppState state, ColumnRef at, Location location, string error)
     {
-        if (!InRange(state, columnIndex))
+        if (state.ColumnAt(at) is not { } column)
         {
             return state;
         }
 
-        var column = state.Columns[columnIndex];
         if (column.Location != location)
         {
             return state;
         }
 
         var updated = column with { Load = LoadState.Error, ErrorMessage = error };
-        return WithColumn(state, columnIndex, updated);
+        return state.WithColumn(at, updated);
     }
 
     private static (AppState, IReadOnlyList<Effect>) DeleteEntry(
-        AppState state, int columnIndex, int entryIndex, bool permanent)
+        AppState state, ColumnRef at, int entryIndex, bool permanent)
     {
-        if (!InRange(state, columnIndex))
+        if (state.ColumnAt(at) is not { } column)
         {
             return (state, NoEffects);
         }
 
-        var column = state.Columns[columnIndex];
         if (entryIndex < 0 || entryIndex >= column.Entries.Length)
         {
             return (state, NoEffects);
@@ -647,8 +624,8 @@ public static class Transition
             return (state, NoEffects);
         }
 
-        var newState = WithColumn(state, columnIndex, column with { Load = LoadState.Loading });
-        return (newState, [new Effect.DeleteToRecycleBin(columnIndex, column.Location, [targetFullPath], permanent)]);
+        var newState = state.WithColumn(at, column with { Load = LoadState.Loading });
+        return (newState, [new Effect.DeleteToRecycleBin(at, column.Location, [targetFullPath], permanent)]);
     }
 
     /// <summary>
@@ -698,13 +675,12 @@ public static class Transition
     private static bool AllowsDeletion(Column column) => column.Location is not Location.Drives;
 
     /// <summary>
-    /// Pins whatever <paramref name="columnIndex"/> is showing. A column with no filesystem path -
+    /// Pins whatever <paramref name="at"/> is showing. A column with no filesystem path -
     /// the drive pane itself - has nothing to pin.
     /// </summary>
-    private static (AppState, IReadOnlyList<Effect>) PinFocusedLocation(AppState state, int columnIndex)
+    private static (AppState, IReadOnlyList<Effect>) PinFocusedLocation(AppState state, ColumnRef at)
     {
-        if (!InRange(state, columnIndex) ||
-            state.Columns[columnIndex].Location.FilesystemPath is not { } path)
+        if (state.ColumnAt(at) is not { } column || column.Location.FilesystemPath is not { } path)
         {
             return (state, NoEffects);
         }
@@ -716,14 +692,13 @@ public static class Transition
     /// Adds the folder under the cursor to the drive pane. Only a row you could open is a place -
     /// a file is not, and neither is a header.
     /// </summary>
-    private static (AppState, IReadOnlyList<Effect>) PinEntryAtCursor(AppState state, int columnIndex)
+    private static (AppState, IReadOnlyList<Effect>) PinEntryAtCursor(AppState state, ColumnRef at)
     {
-        if (!InRange(state, columnIndex))
+        if (state.ColumnAt(at) is not { } column)
         {
             return (state, NoEffects);
         }
 
-        var column = state.Columns[columnIndex];
         if (column.Cursor < 0 || column.Cursor >= column.Entries.Length)
         {
             return (state, NoEffects);
@@ -743,14 +718,13 @@ public static class Transition
     /// Collapses or expands the section headed by <paramref name="entryIndex"/>, leaving the cursor
     /// where it was.
     /// </summary>
-    private static (AppState, IReadOnlyList<Effect>) ToggleSection(AppState state, int columnIndex, int entryIndex)
+    private static (AppState, IReadOnlyList<Effect>) ToggleSection(AppState state, ColumnRef at, int entryIndex)
     {
-        if (!InRange(state, columnIndex))
+        if (state.ColumnAt(at) is not { } column)
         {
             return (state, NoEffects);
         }
 
-        var column = state.Columns[columnIndex];
         if (entryIndex < 0 || entryIndex >= column.Entries.Length)
         {
             return (state, NoEffects);
@@ -758,7 +732,7 @@ public static class Transition
 
         var entry = column.Entries[entryIndex];
         return entry is { Kind: EntryKind.Header, Group: { } group }
-            ? Collapse(state, columnIndex, column, group)
+            ? Collapse(state, at, column, group)
             : (state, NoEffects);
     }
 
@@ -772,10 +746,10 @@ public static class Transition
     /// never be used.
     /// </remarks>
     private static (AppState, IReadOnlyList<Effect>) Collapse(
-        AppState state, int columnIndex, Column column, string group)
+        AppState state, ColumnRef at, Column column, string group)
     {
         var toggled = column.ToggleGroup(group, state.View);
-        var next = WithColumn(state, columnIndex, toggled);
+        var next = state.WithColumn(at, toggled);
         return column.Location is Location.Drives
             ? (next, new Effect[] { new Effect.SetCollapsedGroups([.. toggled.CollapsedGroups]) })
             : (next, NoEffects);
@@ -791,49 +765,31 @@ public static class Transition
     /// not happen.
     /// </remarks>
     private static AppState RestoreCollapsedGroups(
-        AppState state, int columnIndex, ImmutableArray<string> groups)
+        AppState state, ColumnRef at, ImmutableArray<string> groups)
     {
-        if (!InRange(state, columnIndex))
+        if (state.ColumnAt(at) is not { } column)
         {
             return state;
         }
 
-        var column = state.Columns[columnIndex];
         return column.Location is Location.Drives
-            ? WithColumn(state, columnIndex, column.WithCollapsedGroups([.. groups], state.View))
+            ? state.WithColumn(at, column.WithCollapsedGroups([.. groups], state.View))
             : state;
     }
 
     /// <summary>
     /// Re-reads every column showing the drive pane, after the pinned places changed underneath it.
     /// </summary>
-    private static (AppState, IReadOnlyList<Effect>) ReloadDrivePanes(AppState state)
+    private static (AppState, IReadOnlyList<Effect>) ReloadDrivePanes(AppState state) =>
+        RereadWhere(state, (_, column) => column.Location is Location.Drives);
+
+    private static AppState ToggleMark(AppState state, ColumnRef at, int entryIndex)
     {
-        var columns = state.Columns;
-        var newColumns = columns;
-        var effects = new List<Effect>();
-        for (var i = 0; i < columns.Length; i++)
-        {
-            if (columns[i].Location is not Location.Drives)
-            {
-                continue;
-            }
-
-            newColumns = newColumns.SetItem(i, columns[i] with { Load = LoadState.Loading });
-            effects.Add(new Effect.ReadDirectory(i, columns[i].Location));
-        }
-
-        return (state with { Columns = newColumns }, effects);
-    }
-
-    private static AppState ToggleMark(AppState state, int columnIndex, int entryIndex)
-    {
-        if (!InRange(state, columnIndex))
+        if (state.ColumnAt(at) is not { } column)
         {
             return state;
         }
 
-        var column = state.Columns[columnIndex];
         if (entryIndex < 0 || entryIndex >= column.Entries.Length || !AllowsMarks(column))
         {
             return state;
@@ -847,7 +803,7 @@ public static class Transition
 
         var updated = WithMarkChange(
             column, state.View, e => ReferenceEquals(e, target) ? e with { IsMarked = !e.IsMarked } : e);
-        return WithColumn(state, columnIndex, updated with { Cursor = entryIndex });
+        return state.WithColumn(at, updated with { Cursor = entryIndex });
     }
 
     /// <summary>
@@ -859,14 +815,13 @@ public static class Transition
     /// knows what the row is. The two meanings never compete: a header cannot be marked, and the one
     /// pane that has headers does not have marks either.
     /// </remarks>
-    private static (AppState, IReadOnlyList<Effect>) ToggleMarkAtCursor(AppState state, int columnIndex)
+    private static (AppState, IReadOnlyList<Effect>) ToggleMarkAtCursor(AppState state, ColumnRef at)
     {
-        if (!InRange(state, columnIndex))
+        if (state.ColumnAt(at) is not { } column)
         {
             return (state, NoEffects);
         }
 
-        var column = state.Columns[columnIndex];
         if (column.Cursor < 0 || column.Cursor >= column.Entries.Length)
         {
             return (state, NoEffects);
@@ -876,7 +831,7 @@ public static class Transition
         if (target.Kind == EntryKind.Header)
         {
             return target.Group is { } group
-                ? Collapse(state, columnIndex, column, group)
+                ? Collapse(state, at, column, group)
                 : (state, NoEffects);
         }
 
@@ -891,7 +846,7 @@ public static class Transition
         // Advancing past the row you just marked is what makes marking a run of files one keypress
         // each. Skips a header, which is never a mark target.
         var nextCursor = AdvancePastHeaders(updated.Entries, column.Cursor + 1);
-        return (WithColumn(state, columnIndex, updated with { Cursor = nextCursor }), NoEffects);
+        return (state.WithColumn(at, updated with { Cursor = nextCursor }), NoEffects);
     }
 
     /// <summary>
@@ -908,14 +863,12 @@ public static class Transition
         return index;
     }
 
-    private static AppState ClearMarks(AppState state, int columnIndex)
+    private static AppState ClearMarks(AppState state, ColumnRef at)
     {
-        if (!InRange(state, columnIndex))
+        if (state.ColumnAt(at) is not { } column)
         {
             return state;
         }
-
-        var column = state.Columns[columnIndex];
 
         // Clears hidden marks too: Esc means "nothing is marked", and leaving marks alive on rows
         // the user cannot see would make them reappear the next time the view widened.
@@ -925,17 +878,16 @@ public static class Transition
         }
 
         var updated = WithMarkChange(column, state.View, e => e.IsMarked ? e with { IsMarked = false } : e);
-        return WithColumn(state, columnIndex, updated);
+        return state.WithColumn(at, updated);
     }
 
-    private static (AppState, IReadOnlyList<Effect>) DeleteMarked(AppState state, int columnIndex, bool permanent)
+    private static (AppState, IReadOnlyList<Effect>) DeleteMarked(AppState state, ColumnRef at, bool permanent)
     {
-        if (!InRange(state, columnIndex))
+        if (state.ColumnAt(at) is not { } column)
         {
             return (state, NoEffects);
         }
 
-        var column = state.Columns[columnIndex];
         if (!AllowsDeletion(column))
         {
             return (state, NoEffects);
@@ -960,20 +912,19 @@ public static class Transition
             return (state, NoEffects);
         }
 
-        var newState = WithColumn(state, columnIndex, column with { Load = LoadState.Loading });
+        var newState = state.WithColumn(at, column with { Load = LoadState.Loading });
         return (
             newState,
-            [new Effect.DeleteToRecycleBin(columnIndex, column.Location, targets.ToImmutable(), permanent)]);
+            [new Effect.DeleteToRecycleBin(at, column.Location, targets.ToImmutable(), permanent)]);
     }
 
-    private static AppState MarkRange(AppState state, int columnIndex, int fromIndex, int toIndex, bool additive)
+    private static AppState MarkRange(AppState state, ColumnRef at, int fromIndex, int toIndex, bool additive)
     {
-        if (!InRange(state, columnIndex))
+        if (state.ColumnAt(at) is not { } column)
         {
             return state;
         }
 
-        var column = state.Columns[columnIndex];
         if (column.Entries.Length == 0 || !AllowsMarks(column))
         {
             return state;
@@ -1006,18 +957,17 @@ public static class Transition
             return additive || !e.IsMarked ? e : e with { IsMarked = false };
         });
 
-        return WithColumn(state, columnIndex, updated with { Cursor = clampedTo });
+        return state.WithColumn(at, updated with { Cursor = clampedTo });
     }
 
     private static (AppState, IReadOnlyList<Effect>) DropFiles(
-        AppState state, int columnIndex, int targetEntryIndex, ImmutableArray<string> paths, bool shiftHeld, bool ctrlHeld)
+        AppState state, ColumnRef at, int targetEntryIndex, ImmutableArray<string> paths, bool shiftHeld, bool ctrlHeld)
     {
-        if (!InRange(state, columnIndex))
+        if (state.ColumnAt(at) is not { } column)
         {
             return (state, NoEffects);
         }
 
-        var column = state.Columns[columnIndex];
         if (paths.IsDefaultOrEmpty)
         {
             return (state, NoEffects);
@@ -1046,8 +996,8 @@ public static class Transition
 
         var isMove = shiftHeld || (!ctrlHeld && SameVolume(dest, filtered[0]));
 
-        var newState = WithColumn(state, columnIndex, column with { Load = LoadState.Loading });
-        return (newState, [new Effect.ShellCopyOrMove(columnIndex, column.Location, dest, filtered, isMove)]);
+        var newState = state.WithColumn(at, column with { Load = LoadState.Loading });
+        return (newState, [new Effect.ShellCopyOrMove(at, column.Location, dest, filtered, isMove)]);
     }
 
     /// <summary>
@@ -1164,14 +1114,13 @@ public static class Transition
     }
 
     private static (AppState, IReadOnlyList<Effect>) ShellOpCompleted(
-        AppState state, int columnIndex, Location columnLocation, ImmutableArray<string> affectedDirs)
+        AppState state, ColumnRef at, Location columnLocation, ImmutableArray<string> affectedDirs)
     {
-        if (!InRange(state, columnIndex))
+        if (state.ColumnAt(at) is not { } column)
         {
             return (state, NoEffects);
         }
 
-        var column = state.Columns[columnIndex];
         if (column.Location != columnLocation)
         {
             return (state, NoEffects);
@@ -1183,21 +1132,7 @@ public static class Transition
         // re-read columns actually affected, plus the completing column itself (belt and
         // braces); columns showing an unrelated directory are left alone. Marks survive via the
         // name-match carry-over in DirectoryLoaded.
-        var columns = state.Columns;
-        var newColumns = columns;
-        var effects = new List<Effect>();
-        for (var i = 0; i < columns.Length; i++)
-        {
-            if (i != columnIndex && !IsAffectedDirectory(columns[i].Location, affectedDirs))
-            {
-                continue;
-            }
-
-            newColumns = newColumns.SetItem(i, columns[i] with { Load = LoadState.Loading });
-            effects.Add(new Effect.ReadDirectory(i, columns[i].Location));
-        }
-
-        return (state with { Columns = newColumns }, effects);
+        return RereadWhere(state, (r, c) => r == at || IsAffectedDirectory(c.Location, affectedDirs));
     }
 
     /// <summary>
@@ -1225,32 +1160,30 @@ public static class Transition
         return false;
     }
 
-    private static AppState ShellOpFailed(AppState state, int columnIndex, Location columnLocation, string error)
+    private static AppState ShellOpFailed(AppState state, ColumnRef at, Location columnLocation, string error)
     {
-        if (!InRange(state, columnIndex))
+        if (state.ColumnAt(at) is not { } column)
         {
             return state;
         }
 
-        var column = state.Columns[columnIndex];
         if (column.Location != columnLocation)
         {
             return state;
         }
 
         var updated = column with { Load = LoadState.Error, ErrorMessage = error };
-        return WithColumn(state, columnIndex, updated);
+        return state.WithColumn(at, updated);
     }
 
     private static (AppState, IReadOnlyList<Effect>) PasteRequested(
-        AppState state, int columnIndex, ImmutableArray<string> sources, bool isMove)
+        AppState state, ColumnRef at, ImmutableArray<string> sources, bool isMove)
     {
-        if (!InRange(state, columnIndex))
+        if (state.ColumnAt(at) is not { } column)
         {
             return (state, NoEffects);
         }
 
-        var column = state.Columns[columnIndex];
         if (column.Location.FilesystemPath is not { } destDir || sources.IsDefaultOrEmpty)
         {
             return (state, NoEffects);
@@ -1354,21 +1287,7 @@ public static class Transition
             });
         var stateWithJob = state with { Jobs = jobs };
 
-        var columns = stateWithJob.Columns;
-        var newColumns = columns;
-        var effects = new List<Effect>();
-        for (var i = 0; i < columns.Length; i++)
-        {
-            if (!IsAffectedDirectory(columns[i].Location, affectedDirs))
-            {
-                continue;
-            }
-
-            newColumns = newColumns.SetItem(i, columns[i] with { Load = LoadState.Loading });
-            effects.Add(new Effect.ReadDirectory(i, columns[i].Location));
-        }
-
-        return (stateWithJob with { Columns = newColumns }, effects);
+        return RereadWhere(stateWithJob, (_, c) => IsAffectedDirectory(c.Location, affectedDirs));
     }
 
     private static (AppState, IReadOnlyList<Effect>) JobCancelRequested(AppState state, int jobId)
@@ -1449,23 +1368,38 @@ public static class Transition
     /// <see cref="Msg.ExternalDirectoryChanged"/>'s remarks for why our own jobs/shell ops
     /// harmlessly triggering this too is not special-cased away.
     /// </summary>
-    private static (AppState, IReadOnlyList<Effect>) ExternalDirectoryChanged(AppState state, string path)
+    private static (AppState, IReadOnlyList<Effect>) ExternalDirectoryChanged(AppState state, string path) =>
+        RereadWhere(state, (_, column) => IsAffectedDirectory(column.Location, [path]));
+
+    /// <summary>
+    /// Marks every column in every pane that <paramref name="shouldReread"/> accepts as
+    /// <see cref="LoadState.Loading"/> and requests it again. A directory that changed is stale
+    /// wherever it is shown, so this deliberately does not stop at one pane.
+    /// </summary>
+    private static (AppState, IReadOnlyList<Effect>) RereadWhere(
+        AppState state, Func<ColumnRef, Column, bool> shouldReread)
     {
-        var columns = state.Columns;
-        var newColumns = columns;
         var effects = new List<Effect>();
-        for (var i = 0; i < columns.Length; i++)
+        var panes = state.Panes;
+        for (var p = 0; p < panes.Length; p++)
         {
-            if (!IsAffectedDirectory(columns[i].Location, [path]))
+            var pane = panes[p];
+            var columns = pane.Columns;
+            for (var i = 0; i < columns.Length; i++)
             {
-                continue;
+                if (!shouldReread(pane.Ref(i), columns[i]))
+                {
+                    continue;
+                }
+
+                columns = columns.SetItem(i, columns[i] with { Load = LoadState.Loading });
+                effects.Add(new Effect.ReadDirectory(pane.Ref(i), columns[i].Location));
             }
 
-            newColumns = newColumns.SetItem(i, columns[i] with { Load = LoadState.Loading });
-            effects.Add(new Effect.ReadDirectory(i, columns[i].Location));
+            panes = panes.SetItem(p, pane with { Columns = columns });
         }
 
-        return (state with { Columns = newColumns }, effects);
+        return effects.Count == 0 ? (state, NoEffects) : (state with { Panes = panes }, effects);
     }
 
     /// <summary>
@@ -1550,12 +1484,11 @@ public static class Transition
     /// </summary>
     private static CursorTarget ResolveCursorFileTarget(AppState state)
     {
-        if (!InRange(state, state.FocusedColumn))
+        if (state.Focused.FocusedColumnOrNull is not { } column)
         {
             return default;
         }
 
-        var column = state.Columns[state.FocusedColumn];
         if (column.Cursor < 0 || column.Cursor >= column.Entries.Length)
         {
             return default;

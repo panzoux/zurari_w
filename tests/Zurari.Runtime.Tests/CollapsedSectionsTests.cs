@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Zurari.Core;
 using Zurari.Runtime;
+using static Zurari.TestSupport.TestPanes;
 
 namespace Zurari.Runtime.Tests;
 
@@ -68,14 +69,14 @@ public class CollapsedSectionsTests
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(settingsDir));
 
-            runtime.Submit(new Effect.ReadDirectory(0, Location.Drives.Instance));
+            runtime.Submit(new Effect.ReadDirectory(Col(0), Location.Drives.Instance));
 
             // The listing arrives first; what is hidden in it follows, because a section cannot be
             // collapsed before its rows exist.
             WaitFor<Msg.DirectoryLoaded>(queue, TimeSpan.FromSeconds(10));
             var restored = WaitFor<Msg.CollapsedGroupsRestored>(queue, TimeSpan.FromSeconds(10));
 
-            Assert.Equal(0, restored.ColumnIndex);
+            Assert.Equal(0, restored.At.Index);
             Assert.Equal([EntryGroups.Drives], restored.Groups);
         }
         finally
@@ -102,10 +103,10 @@ public class CollapsedSectionsTests
             using var runtime = new WorkerRuntime(
                 queue.Enqueue, settings: new UserSettingsStore(settingsDir));
 
-            runtime.Submit(new Effect.ReadDirectory(0, Location.Drives.Instance));
+            runtime.Submit(new Effect.ReadDirectory(Col(0), Location.Drives.Instance));
             WaitFor<Msg.CollapsedGroupsRestored>(queue, TimeSpan.FromSeconds(10));
 
-            runtime.Submit(new Effect.ReadDirectory(0, Location.Drives.Instance));
+            runtime.Submit(new Effect.ReadDirectory(Col(0), Location.Drives.Instance));
             WaitFor<Msg.DirectoryLoaded>(queue, TimeSpan.FromSeconds(10));
 
             Thread.Sleep(100);
@@ -127,7 +128,7 @@ public class CollapsedSectionsTests
             using var runtime = new WorkerRuntime(
                 queue.Enqueue, settings: new UserSettingsStore(Path.Combine(dir, "cfg")));
 
-            runtime.Submit(new Effect.ReadDirectory(0, new Location.RealDirectory(dir)));
+            runtime.Submit(new Effect.ReadDirectory(Col(0), new Location.RealDirectory(dir)));
             WaitFor<Msg.DirectoryLoaded>(queue, TimeSpan.FromSeconds(10));
 
             Thread.Sleep(100);
@@ -166,7 +167,7 @@ public class CollapsedSectionsTests
             Assert.True(store.Load().SortDescending);
             Assert.False(store.Load().DirectoriesFirst);
 
-            runtime.Submit(new Effect.ReadDirectory(0, Location.Drives.Instance));
+            runtime.Submit(new Effect.ReadDirectory(Col(0), Location.Drives.Instance));
             var restored = WaitFor<Msg.ViewRestored>(queue, TimeSpan.FromSeconds(10));
 
             Assert.Equal(
@@ -195,7 +196,7 @@ public class CollapsedSectionsTests
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(settingsDir));
 
-            runtime.Submit(new Effect.ReadDirectory(0, Location.Drives.Instance));
+            runtime.Submit(new Effect.ReadDirectory(Col(0), Location.Drives.Instance));
             var restored = WaitFor<Msg.ViewRestored>(queue, TimeSpan.FromSeconds(10));
 
             Assert.Equal(SortOrder.Default.Mode, restored.View.Sort.Mode);

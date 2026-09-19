@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Text;
 using Zurari.Core;
 using Zurari.Runtime;
+using static Zurari.TestSupport.TestPanes;
 
 namespace Zurari.Runtime.Tests;
 
@@ -556,7 +557,7 @@ public class LoadPreviewTests
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, workerCount: 1, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
             runtime.Submit(new Effect.LoadPreview(1, Path.Combine(dir, "a.txt")));
-            runtime.Submit(new Effect.ReadDirectory(0, new Location.RealDirectory(dir)));
+            runtime.Submit(new Effect.ReadDirectory(Col(0), new Location.RealDirectory(dir)));
 
             var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
             while (DateTime.UtcNow < deadline)

@@ -15,75 +15,76 @@ public abstract record Msg
     /// <summary>Does nothing. Exists so the transition harness is testable from day zero.</summary>
     public sealed record Noop : Msg;
 
-    /// <summary>Move the cursor of <paramref name="ColumnIndex"/> up by one entry.</summary>
-    public sealed record CursorUp(int ColumnIndex) : Msg;
+    /// <summary>Move the cursor of <paramref name="At"/> up by one entry.</summary>
+    public sealed record CursorUp(ColumnRef At) : Msg;
 
-    /// <summary>Move the cursor of <paramref name="ColumnIndex"/> down by one entry.</summary>
-    public sealed record CursorDown(int ColumnIndex) : Msg;
+    /// <summary>Move the cursor of <paramref name="At"/> down by one entry.</summary>
+    public sealed record CursorDown(ColumnRef At) : Msg;
 
-    /// <summary>Move the cursor of <paramref name="ColumnIndex"/> up by <paramref name="PageSize"/> entries.</summary>
-    public sealed record CursorPageUp(int ColumnIndex, int PageSize) : Msg;
+    /// <summary>Move the cursor of <paramref name="At"/> up by <paramref name="PageSize"/> entries.</summary>
+    public sealed record CursorPageUp(ColumnRef At, int PageSize) : Msg;
 
-    /// <summary>Move the cursor of <paramref name="ColumnIndex"/> down by <paramref name="PageSize"/> entries.</summary>
-    public sealed record CursorPageDown(int ColumnIndex, int PageSize) : Msg;
+    /// <summary>Move the cursor of <paramref name="At"/> down by <paramref name="PageSize"/> entries.</summary>
+    public sealed record CursorPageDown(ColumnRef At, int PageSize) : Msg;
 
-    /// <summary>Move the cursor of <paramref name="ColumnIndex"/> to its first entry.</summary>
-    public sealed record CursorHome(int ColumnIndex) : Msg;
+    /// <summary>Move the cursor of <paramref name="At"/> to its first entry.</summary>
+    public sealed record CursorHome(ColumnRef At) : Msg;
 
-    /// <summary>Move the cursor of <paramref name="ColumnIndex"/> to its last entry.</summary>
-    public sealed record CursorEnd(int ColumnIndex) : Msg;
+    /// <summary>Move the cursor of <paramref name="At"/> to its last entry.</summary>
+    public sealed record CursorEnd(ColumnRef At) : Msg;
 
     /// <summary>
-    /// Move the cursor of <paramref name="ColumnIndex"/> directly to <paramref name="EntryIndex"/>
+    /// Move the cursor of <paramref name="At"/> directly to <paramref name="EntryIndex"/>
     /// (clamped into range). Used for pointer clicks, which pick an absolute row rather than a delta.
     /// </summary>
-    public sealed record CursorTo(int ColumnIndex, int EntryIndex) : Msg;
+    public sealed record CursorTo(ColumnRef At, int EntryIndex) : Msg;
 
-    /// <summary>Give keyboard focus to <paramref name="ColumnIndex"/>.</summary>
-    public sealed record FocusColumn(int ColumnIndex) : Msg;
+    /// <summary>Give keyboard focus to <paramref name="At"/>.</summary>
+    public sealed record FocusColumn(ColumnRef At) : Msg;
 
     /// <summary>
-    /// Activate the entry at <paramref name="EntryIndex"/> in <paramref name="ColumnIndex"/>. For a
+    /// Activate the entry at <paramref name="EntryIndex"/> in <paramref name="At"/>. For a
     /// directory or drive, extends the browser one column to the right and requests its listing;
     /// <paramref name="FocusChild"/> (default <c>true</c>) decides whether keyboard focus follows
-    /// into that new child column (Enter / → / double-click) or stays on <paramref name="ColumnIndex"/>
+    /// into that new child column (Enter / → / double-click) or stays on <paramref name="At"/>
     /// itself (a plain click on the directory - the child pane still opens, but the strong
     /// cursor-row highlight and title-bar path stay put). For a file, selects it and moves focus to
-    /// <paramref name="ColumnIndex"/> regardless of <paramref name="FocusChild"/> - there is no
+    /// <paramref name="At"/> regardless of <paramref name="FocusChild"/> - there is no
     /// child column to focus.
     /// </summary>
-    public sealed record EnterDirectory(int ColumnIndex, int EntryIndex, bool FocusChild = true) : Msg;
+    public sealed record EnterDirectory(ColumnRef At, int EntryIndex, bool FocusChild = true) : Msg;
 
-    /// <summary>Move focus from <paramref name="ColumnIndex"/> to the column to its left, Finder style.</summary>
-    public sealed record GoToParent(int ColumnIndex) : Msg;
+    /// <summary>Move focus from <paramref name="At"/> to the column to its left, Finder style.</summary>
+    public sealed record GoToParent(ColumnRef At) : Msg;
 
     /// <summary>Re-request the listing of every column, keeping current entries visible while loading.</summary>
     public sealed record Refresh : Msg;
 
     /// <summary>
     /// A <c>ReadDirectory</c> effect succeeded. Race-safe: ignored unless
-    /// <paramref name="ColumnIndex"/> is still in range and that column's location still equals
+    /// <paramref name="At"/> is still in range and that column's location still equals
     /// <paramref name="Location"/> (otherwise it is a stale result from a superseded read).
+    /// Ignored when <c>At.Pane</c> no longer exists (the pane was closed).
     /// </summary>
-    public sealed record DirectoryLoaded(int ColumnIndex, Location Location, ImmutableArray<Entry> Entries) : Msg;
+    public sealed record DirectoryLoaded(ColumnRef At, Location Location, ImmutableArray<Entry> Entries) : Msg;
 
     /// <summary>
     /// A <c>ReadDirectory</c> effect failed. Subject to the same staleness check as
     /// <see cref="DirectoryLoaded"/>.
     /// </summary>
-    public sealed record DirectoryLoadFailed(int ColumnIndex, Location Location, string Error) : Msg;
+    public sealed record DirectoryLoadFailed(ColumnRef At, Location Location, string Error) : Msg;
 
     /// <summary>
-    /// Delete the entry at <paramref name="EntryIndex"/> in <paramref name="ColumnIndex"/> to the
+    /// Delete the entry at <paramref name="EntryIndex"/> in <paramref name="At"/> to the
     /// recycle bin, or - when <paramref name="Permanent"/> is <c>true</c> (Shift+Delete) - bypassing
     /// it entirely. Drive entries are ignored (there is nothing to delete). Marks the column
     /// <see cref="LoadState.Loading"/> (keeping its entries visible) and emits
     /// <see cref="Effect.DeleteToRecycleBin"/>.
     /// </summary>
-    public sealed record DeleteEntry(int ColumnIndex, int EntryIndex, bool Permanent = false) : Msg;
+    public sealed record DeleteEntry(ColumnRef At, int EntryIndex, bool Permanent = false) : Msg;
 
     /// <summary>
-    /// Drop <paramref name="Paths"/> onto <paramref name="ColumnIndex"/>, to be copied or moved
+    /// Drop <paramref name="Paths"/> onto <paramref name="At"/>, to be copied or moved
     /// there. When <paramref name="TargetEntryIndex"/> names a Directory or Drive row in that
     /// column, the destination is that entry's child path; otherwise (background drop, or a row
     /// that is not a container) the destination is the column's own path. Ignored if the column is
@@ -98,71 +99,71 @@ public abstract record Msg
     /// <see cref="Effect.ShellCopyOrMove"/>.
     /// </summary>
     public sealed record DropFiles(
-        int ColumnIndex, int TargetEntryIndex, ImmutableArray<string> Paths, bool ShiftHeld, bool CtrlHeld) : Msg;
+        ColumnRef At, int TargetEntryIndex, ImmutableArray<string> Paths, bool ShiftHeld, bool CtrlHeld) : Msg;
 
     /// <summary>
     /// A shell operation (<see cref="Effect.DeleteToRecycleBin"/> or
     /// <see cref="Effect.ShellCopyOrMove"/>) succeeded. Subject to the same staleness check as
-    /// <see cref="DirectoryLoaded"/> (<paramref name="ColumnIndex"/> in range and that column's
+    /// <see cref="DirectoryLoaded"/> (<paramref name="At"/> in range and that column's
     /// location still equals <paramref name="ColumnLocation"/>). <paramref name="AffectedDirs"/> lists every
     /// directory whose contents actually changed (e.g. a move's destination and, for a move only,
     /// the distinct parents of its sources; a delete's targets' distinct parents) - computed by the
     /// Shell executor, which has the effect at hand. Re-emits <see cref="Effect.ReadDirectory"/> for
-    /// <paramref name="ColumnIndex"/> and for every other column whose path matches one of
+    /// <paramref name="At"/> and for every other column whose path matches one of
     /// <paramref name="AffectedDirs"/>; those columns stay <see cref="LoadState.Loading"/> until
     /// their read completes. Columns showing an unrelated directory are left untouched.
     /// </summary>
     public sealed record ShellOpCompleted(
-        int ColumnIndex, Location ColumnLocation, ImmutableArray<string> AffectedDirs) : Msg;
+        ColumnRef At, Location ColumnLocation, ImmutableArray<string> AffectedDirs) : Msg;
 
     /// <summary>
     /// A shell operation (<see cref="Effect.DeleteToRecycleBin"/> or
     /// <see cref="Effect.ShellCopyOrMove"/>) failed. Subject to the same staleness check as
     /// <see cref="ShellOpCompleted"/>.
     /// </summary>
-    public sealed record ShellOpFailed(int ColumnIndex, Location ColumnLocation, string Error) : Msg;
+    public sealed record ShellOpFailed(ColumnRef At, Location ColumnLocation, string Error) : Msg;
 
     /// <summary>
-    /// Flip the mark of the entry at <paramref name="EntryIndex"/> in <paramref name="ColumnIndex"/>
+    /// Flip the mark of the entry at <paramref name="EntryIndex"/> in <paramref name="At"/>
     /// and move that column's cursor to it. Out-of-range column or entry index is a no-op. Drive
     /// entries can be marked like any other entry (harmless, since <see cref="DeleteMarked"/>
     /// ignores marked drives).
     /// </summary>
-    public sealed record ToggleMark(int ColumnIndex, int EntryIndex) : Msg;
+    public sealed record ToggleMark(ColumnRef At, int EntryIndex) : Msg;
 
     /// <summary>
-    /// Flip the mark of the entry currently under <paramref name="ColumnIndex"/>'s cursor, then
+    /// Flip the mark of the entry currently under <paramref name="At"/>'s cursor, then
     /// advance the cursor by one (clamped to the last entry) - the classic filer Space behavior.
     /// No-op when the column is out of range, empty, or its cursor is -1.
     /// </summary>
-    public sealed record ToggleMarkAtCursor(int ColumnIndex) : Msg;
+    public sealed record ToggleMarkAtCursor(ColumnRef At) : Msg;
 
-    /// <summary>Unmark every entry in <paramref name="ColumnIndex"/>. Out-of-range column is a no-op.</summary>
-    public sealed record ClearMarks(int ColumnIndex) : Msg;
+    /// <summary>Unmark every entry in <paramref name="At"/>. Out-of-range column is a no-op.</summary>
+    public sealed record ClearMarks(ColumnRef At) : Msg;
 
     /// <summary>
     /// Delete every marked Directory/File entry (marked Drives are ignored) in
-    /// <paramref name="ColumnIndex"/> to the recycle bin as a single batch, or - when
+    /// <paramref name="At"/> to the recycle bin as a single batch, or - when
     /// <paramref name="Permanent"/> is <c>true</c> (Shift+Delete) - bypassing it entirely. No-op if
     /// the column has no such marked entry (or is out of range) - the App layer is expected to fall
     /// back to <see cref="DeleteEntry"/> for the cursor entry in that case. Marks the column
     /// <see cref="LoadState.Loading"/> (keeping its entries visible) and emits one
     /// <see cref="Effect.DeleteToRecycleBin"/> carrying all marked full paths.
     /// </summary>
-    public sealed record DeleteMarked(int ColumnIndex, bool Permanent = false) : Msg;
+    public sealed record DeleteMarked(ColumnRef At, bool Permanent = false) : Msg;
 
     /// <summary>
-    /// Marks every entry in <paramref name="ColumnIndex"/> between <paramref name="FromIndex"/> and
+    /// Marks every entry in <paramref name="At"/> between <paramref name="FromIndex"/> and
     /// <paramref name="ToIndex"/> (either order; both clamped into the column's entries range), then
     /// moves the cursor to the clamped <paramref name="ToIndex"/>. When <paramref name="Additive"/>
     /// is <c>false</c>, every entry outside the range is unmarked (replaces the selection); when
     /// <c>true</c>, existing marks outside the range are preserved. Used by rubber-band (rectangle)
     /// multi-select. Out-of-range column or an empty column is a no-op.
     /// </summary>
-    public sealed record MarkRange(int ColumnIndex, int FromIndex, int ToIndex, bool Additive) : Msg;
+    public sealed record MarkRange(ColumnRef At, int FromIndex, int ToIndex, bool Additive) : Msg;
 
     /// <summary>
-    /// Paste <paramref name="Sources"/> into <paramref name="ColumnIndex"/>'s directory, copying
+    /// Paste <paramref name="Sources"/> into <paramref name="At"/>'s directory, copying
     /// when <paramref name="IsMove"/> is <c>false</c> or moving when it is <c>true</c>. Ignored if
     /// the column is out of range, its Path is empty (the virtual root has nothing to paste into),
     /// or <paramref name="Sources"/> is empty. Subject to the same no-op filtering as
@@ -172,7 +173,7 @@ public abstract record Msg
     /// <see cref="AppState.Jobs"/>, increments <see cref="AppState.NextJobId"/>, and emits
     /// <see cref="Effect.RunFileJob"/>.
     /// </summary>
-    public sealed record PasteRequested(int ColumnIndex, ImmutableArray<string> Sources, bool IsMove) : Msg;
+    public sealed record PasteRequested(ColumnRef At, ImmutableArray<string> Sources, bool IsMove) : Msg;
 
     /// <summary>
     /// Progress report for the job engine's <paramref name="JobId"/>: marks it Running and updates
@@ -310,14 +311,14 @@ public abstract record Msg
     public sealed record ExternalDirectoryChanged(string Path) : Msg;
 
     /// <summary>
-    /// Pin the location <paramref name="ColumnIndex"/> is showing, so it appears in the drive pane's
+    /// Pin the location <paramref name="At"/> is showing, so it appears in the drive pane's
     /// network section. Ignored for a column with no filesystem path of its own - the drive pane
     /// cannot pin itself.
     /// </summary>
-    public sealed record PinFocusedLocation(int ColumnIndex) : Msg;
+    public sealed record PinFocusedLocation(ColumnRef At) : Msg;
 
     /// <summary>
-    /// Add the folder under <paramref name="ColumnIndex"/>'s cursor to the drive pane, without
+    /// Add the folder under <paramref name="At"/>'s cursor to the drive pane, without
     /// having to go into it first. Ignored unless the cursor is on something you can open.
     /// </summary>
     /// <remarks>
@@ -326,7 +327,7 @@ public abstract record Msg
     /// so adding a place has to work from the keyboard, pointing at a folder rather than standing
     /// in it.
     /// </remarks>
-    public sealed record PinEntryAtCursor(int ColumnIndex) : Msg;
+    public sealed record PinEntryAtCursor(ColumnRef At) : Msg;
 
     /// <summary>
     /// The pinned places changed, so any column showing the drive pane is stale. Re-reads every
@@ -342,7 +343,7 @@ public abstract record Msg
     /// Distinct from <see cref="ToggleMarkAtCursor"/>, which acts wherever the cursor happens to be:
     /// clicking one section's toggle must not move the cursor out of another.
     /// </remarks>
-    public sealed record ToggleSection(int ColumnIndex, int EntryIndex) : Msg;
+    public sealed record ToggleSection(ColumnRef At, int EntryIndex) : Msg;
 
     /// <summary>
     /// The sections that were collapsed when the app last ran, applied to a drive pane that has just
@@ -353,7 +354,7 @@ public abstract record Msg
     /// and how much of it is showing are different questions, and only the one pane that has sections
     /// has an answer to the second.
     /// </remarks>
-    public sealed record CollapsedGroupsRestored(int ColumnIndex, ImmutableArray<string> Groups) : Msg;
+    public sealed record CollapsedGroupsRestored(ColumnRef At, ImmutableArray<string> Groups) : Msg;
 
     /// <summary>
     /// An <see cref="Effect.MountImage"/> succeeded and <paramref name="DriveRoot"/> appeared.
@@ -402,7 +403,7 @@ public abstract record Msg
     /// Start renaming the row under the cursor. Ignored where a rename means nothing - a header, a
     /// drive, or anything in the drive pane, which holds places rather than files.
     /// </summary>
-    public sealed record RenameRequested(int ColumnIndex) : Msg;
+    public sealed record RenameRequested(ColumnRef At) : Msg;
 
     /// <summary>Abandons the rename in progress, changing nothing.</summary>
     public sealed record RenameCancelled : Msg;
@@ -415,7 +416,7 @@ public abstract record Msg
     public sealed record RenameSubmitted(string NewName) : Msg;
 
     /// <summary>The rename happened. Closes the editor and puts the cursor on the new name.</summary>
-    public sealed record RenameCompleted(int ColumnIndex, Location Location, string NewName) : Msg;
+    public sealed record RenameCompleted(ColumnRef At, Location Location, string NewName) : Msg;
 
     /// <summary>
     /// The rename was refused - a name already taken, a file in use, a permission. The editor stays
@@ -424,12 +425,12 @@ public abstract record Msg
     public sealed record RenameFailed(string Error) : Msg;
 
     /// <summary>Make a new folder in the focused column's location.</summary>
-    public sealed record CreateFolderRequested(int ColumnIndex) : Msg;
+    public sealed record CreateFolderRequested(ColumnRef At) : Msg;
 
     /// <summary>
     /// A folder was created. Re-reads the column and puts the cursor on it once its row arrives.
     /// </summary>
-    public sealed record FolderCreated(int ColumnIndex, Location Location, string Name) : Msg;
+    public sealed record FolderCreated(ColumnRef At, Location Location, string Name) : Msg;
 
     /// <summary>
     /// Something to tell the user in the status bar - see <see cref="AppState.Notice"/>. Replaces

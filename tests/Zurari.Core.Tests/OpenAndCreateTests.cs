@@ -1,4 +1,5 @@
 using Zurari.Core;
+using static Zurari.TestSupport.TestPanes;
 
 namespace Zurari.Core.Tests;
 
@@ -19,7 +20,7 @@ public class OpenAndCreateTests
     {
         var state = With(Here, new Entry("notes.txt", EntryKind.File));
 
-        var (_, effects) = Transition.Apply(state, new Msg.EnterDirectory(0, 0));
+        var (_, effects) = Transition.Apply(state, new Msg.EnterDirectory(Col(0), 0));
 
         Assert.Equal(
             new Effect.OpenWithDefaultApp(@"C:\here\notes.txt"),
@@ -32,7 +33,7 @@ public class OpenAndCreateTests
     {
         var state = With(Here, new Entry("ubuntu.iso", EntryKind.File));
 
-        var (_, effects) = Transition.Apply(state, new Msg.EnterDirectory(0, 0));
+        var (_, effects) = Transition.Apply(state, new Msg.EnterDirectory(Col(0), 0));
 
         Assert.Single(effects.OfType<Effect.MountImage>());
         Assert.Empty(effects.OfType<Effect.OpenWithDefaultApp>());
@@ -43,7 +44,7 @@ public class OpenAndCreateTests
     {
         var state = With(Here, new Entry("sub", EntryKind.Directory));
 
-        var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(0, 0));
+        var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(Col(0), 0));
 
         Assert.Empty(effects.OfType<Effect.OpenWithDefaultApp>());
         Assert.Equal(2, next.Columns.Length);
@@ -54,7 +55,7 @@ public class OpenAndCreateTests
     {
         var state = With(Location.Drives.Instance, new Entry("ドライブ", EntryKind.Header, Group: EntryGroups.Drives));
 
-        var (_, effects) = Transition.Apply(state, new Msg.EnterDirectory(0, 0));
+        var (_, effects) = Transition.Apply(state, new Msg.EnterDirectory(Col(0), 0));
 
         Assert.Empty(effects);
     }
@@ -64,9 +65,9 @@ public class OpenAndCreateTests
     {
         var state = With(Here, new Entry("a.txt", EntryKind.File));
 
-        var (_, effects) = Transition.Apply(state, new Msg.CreateFolderRequested(0));
+        var (_, effects) = Transition.Apply(state, new Msg.CreateFolderRequested(Col(0)));
 
-        Assert.Equal(new Effect.CreateFolder(0, Here), Assert.Single(effects.OfType<Effect.CreateFolder>()));
+        Assert.Equal(new Effect.CreateFolder(Col(0), Here), Assert.Single(effects.OfType<Effect.CreateFolder>()));
     }
 
     /// <summary>
@@ -80,7 +81,7 @@ public class OpenAndCreateTests
     {
         var state = With(bin ? Location.RecycleBin.Instance : Location.Drives.Instance);
 
-        var (next, effects) = Transition.Apply(state, new Msg.CreateFolderRequested(0));
+        var (next, effects) = Transition.Apply(state, new Msg.CreateFolderRequested(Col(0)));
 
         Assert.Empty(effects.OfType<Effect.CreateFolder>());
         Assert.NotNull(next.Notice);
@@ -91,16 +92,15 @@ public class OpenAndCreateTests
     {
         var state = With(Here, new Entry("a.txt", EntryKind.File));
 
-        var (asked, effects) = Transition.Apply(state, new Msg.FolderCreated(0, Here, "新しいフォルダー"));
+        var (asked, effects) = Transition.Apply(state, new Msg.FolderCreated(Col(0), Here, "新しいフォルダー"));
 
         Assert.Equal("新しいフォルダー", asked.RevealTarget);
         Assert.Equal(LoadState.Loading, asked.Columns[0].Load);
-        Assert.Equal(new Effect.ReadDirectory(0, Here), Assert.Single(effects.OfType<Effect.ReadDirectory>()));
+        Assert.Equal(new Effect.ReadDirectory(Col(0), Here), Assert.Single(effects.OfType<Effect.ReadDirectory>()));
 
         var (loaded, _) = Transition.Apply(
             asked,
-            new Msg.DirectoryLoaded(
-                0, Here, [new Entry("新しいフォルダー", EntryKind.Directory), new Entry("a.txt", EntryKind.File)]));
+            new Msg.DirectoryLoaded(Col(0), Here, [new Entry("新しいフォルダー", EntryKind.Directory), new Entry("a.txt", EntryKind.File)]));
 
         Assert.Equal("新しいフォルダー", loaded.Columns[0].Entries[loaded.Columns[0].Cursor].Name);
         Assert.Null(loaded.RevealTarget);
@@ -115,7 +115,7 @@ public class OpenAndCreateTests
     {
         var state = With(new Location.RealDirectory(@"C:\elsewhere"), new Entry("a.txt", EntryKind.File));
 
-        var (next, effects) = Transition.Apply(state, new Msg.FolderCreated(0, Here, "新しいフォルダー"));
+        var (next, effects) = Transition.Apply(state, new Msg.FolderCreated(Col(0), Here, "新しいフォルダー"));
 
         Assert.Empty(effects);
         Assert.Null(next.RevealTarget);

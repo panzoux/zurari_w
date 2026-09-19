@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.IO;
 using Zurari.Core;
 using Zurari.Runtime;
+using static Zurari.TestSupport.TestPanes;
 
 namespace Zurari.App.Tests;
 
@@ -69,11 +70,11 @@ public class HeadlessBrowsingTests
             Assert.Equal(0, rootVms[0].CursorIndex);
 
             // 2. Move the cursor onto "Alpha" and enter it.
-            loop.Dispatch(new Msg.CursorTo(0, alphaIndex));
+            loop.Dispatch(new Msg.CursorTo(Col(0), alphaIndex));
             Assert.Equal(alphaIndex, loop.State.Columns[0].Cursor);
 
             // Entering moves into the column that is already there rather than reloading it.
-            loop.Dispatch(new Msg.EnterDirectory(0, alphaIndex));
+            loop.Dispatch(new Msg.EnterDirectory(Col(0), alphaIndex));
             Assert.Equal(2, loop.State.Columns.Length);
             Assert.Equal(1, loop.State.FocusedColumn);
             DrainUntil(loop, queue, () => loop.State.Columns[1].Load == LoadState.Loaded, TimeSpan.FromSeconds(10));
@@ -87,11 +88,11 @@ public class HeadlessBrowsingTests
             Assert.Equal("inner.txt", afterEnterVms[1].Entries[0].Name);
 
             // 3. Move the cursor down in the child column (clamps at the single entry).
-            loop.Dispatch(new Msg.CursorDown(1));
+            loop.Dispatch(new Msg.CursorDown(Col(1)));
             Assert.Equal(0, loop.State.Columns[1].Cursor);
 
             // 4. Go back to the parent column: focus moves left, right columns stay.
-            loop.Dispatch(new Msg.GoToParent(1));
+            loop.Dispatch(new Msg.GoToParent(Col(1)));
             Assert.Equal(0, loop.State.FocusedColumn);
             Assert.Equal(2, loop.State.Columns.Length);
 

@@ -1,4 +1,5 @@
 using Zurari.Core;
+using static Zurari.TestSupport.TestPanes;
 
 namespace Zurari.Core.Tests;
 
@@ -80,7 +81,7 @@ public class PreviewRetryTests
     [Fact]
     public void Moving_to_another_file_starts_again_at_the_first_attempt()
     {
-        var (next, effects) = Transition.Apply(TimedOut(2), new Msg.CursorDown(0));
+        var (next, effects) = Transition.Apply(TimedOut(2), new Msg.CursorDown(Col(0)));
 
         Assert.Equal(1, next.Preview.Attempt);
         Assert.False(next.Preview.TimedOut);

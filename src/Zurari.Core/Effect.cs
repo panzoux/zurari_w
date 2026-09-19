@@ -17,11 +17,11 @@ public abstract record Effect
     /// <summary>
     /// Enumerate <paramref name="Location"/> and report it back as
     /// <see cref="Msg.DirectoryLoaded"/> or <see cref="Msg.DirectoryLoadFailed"/> for
-    /// <paramref name="ColumnIndex"/>. How it is enumerated is the Runtime's business: a
+    /// <paramref name="At"/>. How it is enumerated is the Runtime's business: a
     /// <see cref="Zurari.Core.Location.RealDirectory"/> is a filesystem listing, while
     /// <see cref="Zurari.Core.Location.Drives"/> is synthesized from the machine's drives.
     /// </summary>
-    /// <param name="ColumnIndex">Which column the result belongs to.</param>
+    /// <param name="At">Which column the result belongs to.</param>
     /// <param name="Location">What to enumerate.</param>
     /// <param name="Speculative">
     /// Whether this read is only to show what the cursor is resting on, rather than somewhere the
@@ -31,31 +31,31 @@ public abstract record Effect
     /// pool for every keystroke of a held-down arrow.
     /// </param>
     public sealed record ReadDirectory(
-        int ColumnIndex, Location Location, bool Speculative = false) : Effect;
+        ColumnRef At, Location Location, bool Speculative = false) : Effect;
 
     /// <summary>
     /// Move every path in <paramref name="Targets"/> to the recycle bin as a single batch
     /// operation - or, when <paramref name="Permanent"/> is <c>true</c>, delete them outright,
     /// bypassing the recycle bin (Shift+Delete). Reports the outcome back as
     /// <see cref="Msg.ShellOpCompleted"/> or <see cref="Msg.ShellOpFailed"/> for
-    /// <paramref name="ColumnIndex"/>/<paramref name="ColumnLocation"/> (the containing column, so a
+    /// <paramref name="At"/>/<paramref name="ColumnLocation"/> (the containing column, so a
     /// successful delete can trigger a re-read of that column).
     /// </summary>
     public sealed record DeleteToRecycleBin(
-        int ColumnIndex, Location ColumnLocation, ImmutableArray<string> Targets, bool Permanent = false) : Effect;
+        ColumnRef At, Location ColumnLocation, ImmutableArray<string> Targets, bool Permanent = false) : Effect;
 
     /// <summary>
     /// Copy or move <paramref name="Paths"/> into <paramref name="DestPath"/> via the shell's
     /// <c>IFileOperation</c>, which owns its own progress/overwrite UI. <paramref name="DestPath"/>
     /// may be a subdirectory row within the column rather than the column's own path (a
     /// row-granular drop), so the outcome is reported back against <paramref name="ColumnLocation"/> -
-    /// the location shown by <paramref name="ColumnIndex"/> at the time the drop was issued - as
+    /// the location shown by <paramref name="At"/> at the time the drop was issued - as
     /// <see cref="Msg.ShellOpCompleted"/> or <see cref="Msg.ShellOpFailed"/>, matching the
     /// staleness contract every other column-keyed result follows (ignored unless the column still
     /// shows that location) and triggering a re-read of the column, not the row that was dropped onto.
     /// </summary>
     public sealed record ShellCopyOrMove(
-        int ColumnIndex, Location ColumnLocation, string DestPath, ImmutableArray<string> Paths, bool IsMove) : Effect;
+        ColumnRef At, Location ColumnLocation, string DestPath, ImmutableArray<string> Paths, bool IsMove) : Effect;
 
     /// <summary>
     /// Runs the internal job engine's copy or move of <paramref name="Sources"/> into
@@ -149,7 +149,7 @@ public abstract record Effect
     /// Renames one entry, reporting back as <see cref="Msg.RenameCompleted"/> or
     /// <see cref="Msg.RenameFailed"/>.
     /// </summary>
-    public sealed record RenameEntry(int ColumnIndex, Location Location, string OldName, string NewName) : Effect;
+    public sealed record RenameEntry(ColumnRef At, Location Location, string OldName, string NewName) : Effect;
 
     /// <summary>
     /// Creates a new folder in <paramref name="Location"/>, reporting the name it ended up with.
@@ -158,7 +158,7 @@ public abstract record Effect
     /// The name is the Runtime's to decide, because deciding it means looking at what is already
     /// there: "新しいフォルダー" may be taken, and finding that out is a directory read.
     /// </remarks>
-    public sealed record CreateFolder(int ColumnIndex, Location Location) : Effect;
+    public sealed record CreateFolder(ColumnRef At, Location Location) : Effect;
 
     /// <summary>
     /// Remembers how listings are shown, so they come back the way they were left.

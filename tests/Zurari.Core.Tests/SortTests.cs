@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Zurari.Core;
+using static Zurari.TestSupport.TestPanes;
 
 namespace Zurari.Core.Tests;
 
@@ -24,7 +25,7 @@ public class SortTests
     {
         var state = With(sort, entries);
         var (loaded, _) = Transition.Apply(
-            state, new Msg.DirectoryLoaded(0, new Location.RealDirectory(@"C:\"), [.. entries]));
+            state, new Msg.DirectoryLoaded(Col(0), new Location.RealDirectory(@"C:\"), [.. entries]));
         return [.. loaded.Columns[0].Entries.Select(e => e.Name)];
     }
 
@@ -142,7 +143,7 @@ public class SortTests
         var state = With(new SortOrder(SortMode.Size), first, second);
 
         var (loaded, _) = Transition.Apply(
-            state, new Msg.DirectoryLoaded(0, new Location.RealDirectory(@"C:\"), [first, second]));
+            state, new Msg.DirectoryLoaded(Col(0), new Location.RealDirectory(@"C:\"), [first, second]));
 
         Assert.Same(first, loaded.Columns[0].Entries[0]);
         Assert.Same(second, loaded.Columns[0].Entries[1]);
@@ -289,8 +290,7 @@ public class SortTests
 
         var (loaded, _) = Transition.Apply(
             state,
-            new Msg.DirectoryLoaded(
-                0, new Location.RealDirectory(@"C:\"), [File("a.txt"), Hidden("desktop.ini"), File("b.txt")]));
+            new Msg.DirectoryLoaded(Col(0), new Location.RealDirectory(@"C:\"), [File("a.txt"), Hidden("desktop.ini"), File("b.txt")]));
 
         Assert.Equal(["a.txt", "b.txt"], loaded.Columns[0].Entries.Select(e => e.Name));
         Assert.Equal(3, loaded.Columns[0].AllEntries.Length);
@@ -306,8 +306,7 @@ public class SortTests
         var state = With(SortOrder.Default);
         var (loaded, _) = Transition.Apply(
             state,
-            new Msg.DirectoryLoaded(
-                0, new Location.RealDirectory(@"C:\"), [File("a.txt"), Hidden("desktop.ini")]));
+            new Msg.DirectoryLoaded(Col(0), new Location.RealDirectory(@"C:\"), [File("a.txt"), Hidden("desktop.ini")]));
 
         var (shown, effects) = Transition.Apply(loaded, new Msg.ToggleHiddenFiles());
 
@@ -363,9 +362,8 @@ public class SortTests
         var state = With(SortOrder.Default) with { View = ViewOptions.Default with { ShowHidden = true } };
         var (loaded, _) = Transition.Apply(
             state,
-            new Msg.DirectoryLoaded(
-                0, new Location.RealDirectory(@"C:\"), [File("a.txt"), Hidden("hidden.txt")]));
-        var (onHidden, _) = Transition.Apply(loaded, new Msg.CursorTo(0, 1));
+            new Msg.DirectoryLoaded(Col(0), new Location.RealDirectory(@"C:\"), [File("a.txt"), Hidden("hidden.txt")]));
+        var (onHidden, _) = Transition.Apply(loaded, new Msg.CursorTo(Col(0), 1));
         Assert.Equal("hidden.txt", onHidden.Columns[0].Entries[onHidden.Columns[0].Cursor].Name);
 
         var (concealed, _) = Transition.Apply(onHidden, new Msg.ToggleHiddenFiles());
@@ -470,7 +468,7 @@ public class SortTests
     public void Sort_mode_does_not_open_while_renaming()
     {
         var state = new AppState { Columns = [Listing()], FocusedColumn = 0 };
-        var (renaming, _) = Transition.Apply(state, new Msg.RenameRequested(0));
+        var (renaming, _) = Transition.Apply(state, new Msg.RenameRequested(Col(0)));
         Assert.NotNull(renaming.Rename);
 
         var (next, _) = Transition.Apply(renaming, new Msg.EnterSortMode());

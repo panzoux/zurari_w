@@ -515,7 +515,7 @@ public sealed class WorkerRuntime : IDisposable
                 return;
             }
 
-            _post(new Msg.RenameCompleted(effect.ColumnIndex, effect.Location, effect.NewName));
+            _post(new Msg.RenameCompleted(effect.At, effect.Location, effect.NewName));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {
@@ -550,7 +550,7 @@ public sealed class WorkerRuntime : IDisposable
                 }
 
                 Directory.CreateDirectory(path);
-                _post(new Msg.FolderCreated(effect.ColumnIndex, effect.Location, name));
+                _post(new Msg.FolderCreated(effect.At, effect.Location, name));
                 return;
             }
 
@@ -573,7 +573,7 @@ public sealed class WorkerRuntime : IDisposable
                 _ => throw new NotSupportedException(
                     $"No reader for location kind {effect.Location.GetType().Name}."),
             };
-            _post(new Msg.DirectoryLoaded(effect.ColumnIndex, effect.Location, entries));
+            _post(new Msg.DirectoryLoaded(effect.At, effect.Location, entries));
 
             // Sections only exist in the drive pane, and only once its rows are in place - so this
             // follows the load rather than riding along with it.
@@ -586,13 +586,13 @@ public sealed class WorkerRuntime : IDisposable
             {
                 var settings = _settings.Load();
                 _post(new Msg.CollapsedGroupsRestored(
-                    effect.ColumnIndex, [.. settings.CollapsedGroups ?? []]));
+                    effect.At, [.. settings.CollapsedGroups ?? []]));
                 _post(new Msg.ViewRestored(ReadViewOptions(settings)));
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _post(new Msg.DirectoryLoadFailed(effect.ColumnIndex, effect.Location, ex.Message));
+            _post(new Msg.DirectoryLoadFailed(effect.At, effect.Location, ex.Message));
         }
     }
 

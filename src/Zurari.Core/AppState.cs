@@ -624,7 +624,7 @@ public sealed record PreviewMetadata(
 /// <summary>
 /// A rename in progress: which row is being edited, and why the last attempt was refused.
 /// </summary>
-/// <param name="ColumnIndex">The column the row is in.</param>
+/// <param name="At">The column the row is in.</param>
 /// <param name="EntryName">The <see cref="Entry.Name"/> being renamed - the row's identity while editing.</param>
 /// <param name="Error">
 /// Why the last submission was refused, or <c>null</c>. The editor stays open showing this rather
@@ -635,7 +635,7 @@ public sealed record PreviewMetadata(
 /// it is submitted; routing every keystroke through the state machine would buy nothing and would
 /// make IME composition - where a keystroke is not yet a character - something Core had to model.
 /// </remarks>
-public sealed record RenameState(int ColumnIndex, string EntryName, string? Error = null);
+public sealed record RenameState(ColumnRef At, string EntryName, string? Error = null);
 
 /// <summary>Where the cursor was in one place the user has been.</summary>
 /// <param name="Location">The place.</param>

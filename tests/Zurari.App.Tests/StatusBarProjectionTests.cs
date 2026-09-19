@@ -1,5 +1,6 @@
 using Zurari.App;
 using Zurari.Core;
+using static Zurari.TestSupport.TestPanes;
 
 namespace Zurari.App.Tests;
 
@@ -98,7 +99,7 @@ public class StatusBarProjectionTests
     public void While_renaming_there_are_no_hints()
     {
         var (renaming, _) = Transition.Apply(
-            StateWith(Folder(new Entry("b.txt", EntryKind.File))), new Msg.RenameRequested(0));
+            StateWith(Folder(new Entry("b.txt", EntryKind.File))), new Msg.RenameRequested(Col(0)));
         Assert.NotNull(renaming.Rename);
 
         Assert.Equal(string.Empty, StateProjection.ProjectStatusBar(renaming).Hints);

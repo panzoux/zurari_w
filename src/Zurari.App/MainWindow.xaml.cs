@@ -142,19 +142,22 @@ public sealed partial class MainWindow : Window, IDisposable
         directoryWatcher = new DirectoryWatcher(post: PostToLoop);
         loop = new MessageLoop(AppState.Initial, RunEffect, Render);
 
-        Browser.CursorMoveRequested += (_, e) => Dispatch(ToCursorMsg(e));
-        Browser.ColumnFocusRequested += (_, e) => Dispatch(new Msg.FocusColumn(e.ColumnIndex));
-        Browser.EntryActivated += (_, e) => Dispatch(new Msg.EnterDirectory(e.ColumnIndex, e.EntryIndex));
-        Browser.NavigateUpRequested += (_, e) => Dispatch(new Msg.GoToParent(e.ColumnIndex));
+        Browser.CursorMoveRequested += (_, e) => Dispatch(ToCursorMsg(e, loop.State.Focused.Ref(e.ColumnIndex)));
+        Browser.ColumnFocusRequested += (_, e) => Dispatch(new Msg.FocusColumn(loop.State.Focused.Ref(e.ColumnIndex)));
+        Browser.EntryActivated += (_, e) => Dispatch(
+            new Msg.EnterDirectory(loop.State.Focused.Ref(e.ColumnIndex), e.EntryIndex));
+        Browser.NavigateUpRequested += (_, e) => Dispatch(new Msg.GoToParent(loop.State.Focused.Ref(e.ColumnIndex)));
         Browser.EntryPointerPressed += OnEntryPointerPressed;
         Browser.EntryClicked += OnEntryClicked;
         Browser.EntryDragRequested += OnEntryDragRequested;
         Browser.FileDropRequested += (_, e) => Dispatch(
-            new Msg.DropFiles(e.ColumnIndex, e.TargetEntryIndex, [.. e.Paths], e.ShiftHeld, e.CtrlHeld));
+            new Msg.DropFiles(
+                loop.State.Focused.Ref(e.ColumnIndex), e.TargetEntryIndex, [.. e.Paths], e.ShiftHeld, e.CtrlHeld));
         Browser.MarkRangeRequested += (_, e) => Dispatch(
-            new Msg.MarkRange(e.ColumnIndex, e.FromIndex, e.ToIndex, e.Additive));
+            new Msg.MarkRange(loop.State.Focused.Ref(e.ColumnIndex), e.FromIndex, e.ToIndex, e.Additive));
         Browser.RubberBandStarted += OnRubberBandStarted;
-        Browser.SectionToggleRequested += (_, e) => Dispatch(new Msg.ToggleSection(e.ColumnIndex, e.EntryIndex));
+        Browser.SectionToggleRequested += (_, e) => Dispatch(
+            new Msg.ToggleSection(loop.State.Focused.Ref(e.ColumnIndex), e.EntryIndex));
         Browser.RenameSubmitted += (_, e) => Dispatch(new Msg.RenameSubmitted(e.NewName));
         Browser.RenameCancelled += (_, _) => Dispatch(new Msg.RenameCancelled());
 
@@ -479,17 +482,17 @@ public sealed partial class MainWindow : Window, IDisposable
     /// <summary>The link under a timed-out preview: try again, waiting longer.</summary>
     private void OnPreviewRetryClick(object sender, RoutedEventArgs e) => Dispatch(new Msg.RetryPreview());
 
-    private static Msg ToCursorMsg(CursorMoveRequestedEventArgs e)
+    private static Msg ToCursorMsg(CursorMoveRequestedEventArgs e, ColumnRef at)
     {
         var pageSize = Math.Max(1, e.VisibleRowCount);
         return e.Move switch
         {
-            CursorMove.Up => new Msg.CursorUp(e.ColumnIndex),
-            CursorMove.Down => new Msg.CursorDown(e.ColumnIndex),
-            CursorMove.PageUp => new Msg.CursorPageUp(e.ColumnIndex, pageSize),
-            CursorMove.PageDown => new Msg.CursorPageDown(e.ColumnIndex, pageSize),
-            CursorMove.Home => new Msg.CursorHome(e.ColumnIndex),
-            CursorMove.End => new Msg.CursorEnd(e.ColumnIndex),
+            CursorMove.Up => new Msg.CursorUp(at),
+            CursorMove.Down => new Msg.CursorDown(at),
+            CursorMove.PageUp => new Msg.CursorPageUp(at, pageSize),
+            CursorMove.PageDown => new Msg.CursorPageDown(at, pageSize),
+            CursorMove.Home => new Msg.CursorHome(at),
+            CursorMove.End => new Msg.CursorEnd(at),
             _ => new Msg.Noop(),
         };
     }
@@ -519,7 +522,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
         if (!(e.Button == MouseButton.Left && e.Modifiers == ModifierKeys.Control))
         {
-            Dispatch(new Msg.CursorTo(e.ColumnIndex, e.EntryIndex));
+            Dispatch(new Msg.CursorTo(loop.State.Focused.Ref(e.ColumnIndex), e.EntryIndex));
         }
 
         if (e.Button != MouseButton.Right)
@@ -593,12 +596,12 @@ public sealed partial class MainWindow : Window, IDisposable
 
         if ((Keyboard.Modifiers & ModifierKeys.Control) != 0)
         {
-            Dispatch(new Msg.ToggleMark(e.ColumnIndex, e.EntryIndex));
+            Dispatch(new Msg.ToggleMark(loop.State.Focused.Ref(e.ColumnIndex), e.EntryIndex));
             return;
         }
 
-        Dispatch(new Msg.ClearMarks(e.ColumnIndex));
-        Dispatch(new Msg.EnterDirectory(e.ColumnIndex, e.EntryIndex, FocusChild: false));
+        Dispatch(new Msg.ClearMarks(loop.State.Focused.Ref(e.ColumnIndex)));
+        Dispatch(new Msg.EnterDirectory(loop.State.Focused.Ref(e.ColumnIndex), e.EntryIndex, FocusChild: false));
     }
 
     /// <summary>
@@ -615,7 +618,7 @@ public sealed partial class MainWindow : Window, IDisposable
     {
         if (!e.Additive)
         {
-            Dispatch(new Msg.ClearMarks(e.ColumnIndex));
+            Dispatch(new Msg.ClearMarks(loop.State.Focused.Ref(e.ColumnIndex)));
         }
     }
 
@@ -893,33 +896,33 @@ public sealed partial class MainWindow : Window, IDisposable
         }
         else if (e.Key == Key.Space && Keyboard.Modifiers == ModifierKeys.None)
         {
-            Dispatch(new Msg.ToggleMarkAtCursor(loop.State.FocusedColumn));
+            Dispatch(new Msg.ToggleMarkAtCursor(loop.State.Focused.FocusedRef));
             e.Handled = true;
         }
         else if (e.Key == Key.B && Keyboard.Modifiers == ModifierKeys.Control)
         {
             // Ctrl+B adds the folder the cursor is pointing at, without having to enter it. The
             // gesture that matters once several columns are open and the drive pane is off-screen.
-            Dispatch(new Msg.PinEntryAtCursor(loop.State.FocusedColumn));
+            Dispatch(new Msg.PinEntryAtCursor(loop.State.Focused.FocusedRef));
             e.Handled = true;
         }
         else if (e.Key == Key.D && Keyboard.Modifiers == ModifierKeys.Control)
         {
             // Ctrl+D pins the location this column is showing into the drive pane, the way a browser
             // bookmarks the current page. Delete on the pinned row removes it again.
-            Dispatch(new Msg.PinFocusedLocation(loop.State.FocusedColumn));
+            Dispatch(new Msg.PinFocusedLocation(loop.State.Focused.FocusedRef));
             e.Handled = true;
         }
         else if (e.Key == Key.F2 && Keyboard.Modifiers == ModifierKeys.None)
         {
             // F2 is Explorer's own, so it needs no explaining.
-            Dispatch(new Msg.RenameRequested(loop.State.FocusedColumn));
+            Dispatch(new Msg.RenameRequested(loop.State.Focused.FocusedRef));
             e.Handled = true;
         }
         else if (e.Key == Key.N && Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
         {
             // Ctrl+Shift+N is Explorer's own, so it needs no explaining.
-            Dispatch(new Msg.CreateFolderRequested(loop.State.FocusedColumn));
+            Dispatch(new Msg.CreateFolderRequested(loop.State.Focused.FocusedRef));
             e.Handled = true;
         }
         else if (e.Key is Key.Apps || (e.Key == Key.F10 && Keyboard.Modifiers == ModifierKeys.Shift))
@@ -929,7 +932,7 @@ public sealed partial class MainWindow : Window, IDisposable
         }
         else if (e.Key == Key.Escape)
         {
-            Dispatch(new Msg.ClearMarks(loop.State.FocusedColumn));
+            Dispatch(new Msg.ClearMarks(loop.State.Focused.FocusedRef));
             e.Handled = true;
         }
         else if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control)
@@ -1024,7 +1027,7 @@ public sealed partial class MainWindow : Window, IDisposable
                 return;
             }
 
-            Dispatch(new Msg.PasteRequested(loop.State.FocusedColumn, [.. paths], isMove));
+            Dispatch(new Msg.PasteRequested(loop.State.Focused.FocusedRef, [.. paths], isMove));
         }
         catch (System.Runtime.InteropServices.ExternalException)
         {
@@ -1066,7 +1069,7 @@ public sealed partial class MainWindow : Window, IDisposable
                 MessageBoxImage.Question);
             if (markedResult == MessageBoxResult.Yes)
             {
-                Dispatch(new Msg.DeleteMarked(columnIndex, permanent));
+                Dispatch(new Msg.DeleteMarked(state.Focused.Ref(columnIndex), permanent));
             }
 
             return;
@@ -1101,7 +1104,7 @@ public sealed partial class MainWindow : Window, IDisposable
             MessageBoxImage.Question);
         if (result == MessageBoxResult.Yes)
         {
-            Dispatch(new Msg.DeleteEntry(columnIndex, column.Cursor, permanent));
+            Dispatch(new Msg.DeleteEntry(state.Focused.Ref(columnIndex), column.Cursor, permanent));
         }
     }
 
@@ -1303,13 +1306,12 @@ public sealed partial class MainWindow : Window, IDisposable
     /// </remarks>
     private void RenderRename(AppState state)
     {
-        if (state.Rename is not { } rename || rename.ColumnIndex >= state.Columns.Length)
+        if (state.Rename is not { } rename || state.ColumnAt(rename.At) is not { } column)
         {
             Browser.SyncRenameEditor(-1, -1, null, null);
             return;
         }
 
-        var column = state.Columns[rename.ColumnIndex];
         var index = -1;
         for (var i = 0; i < column.Entries.Length; i++)
         {
@@ -1327,7 +1329,7 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
-        Browser.SyncRenameEditor(rename.ColumnIndex, index, column.Entries[index].Label, rename.Error);
+        Browser.SyncRenameEditor(rename.At.Index, index, column.Entries[index].Label, rename.Error);
     }
 
     /// <summary>

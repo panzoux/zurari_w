@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Zurari.Core;
+using static Zurari.TestSupport.TestPanes;
 
 namespace Zurari.Core.Tests;
 
@@ -23,7 +24,7 @@ public class CursorMemoryTests
     {
         var state = At(Home, File("a.txt"), File("b.txt"), File("c.txt"));
 
-        var (moved, _) = Transition.Apply(state, new Msg.CursorTo(0, 2));
+        var (moved, _) = Transition.Apply(state, new Msg.CursorTo(Col(0), 2));
 
         Assert.Equal("c.txt", moved.RecallCursor(Home));
     }
@@ -36,7 +37,7 @@ public class CursorMemoryTests
     public void Coming_back_lands_on_the_entry_even_though_the_listing_changed_shape()
     {
         var state = At(Home, File("a.txt"), File("b.txt"), File("c.txt"));
-        var (moved, _) = Transition.Apply(state, new Msg.CursorTo(0, 2));
+        var (moved, _) = Transition.Apply(state, new Msg.CursorTo(Col(0), 2));
 
         // Somewhere else, then back - and in the meantime a file appeared above the one we want.
         var elsewhere = moved with
@@ -45,7 +46,7 @@ public class CursorMemoryTests
         };
         var (back, _) = Transition.Apply(
             elsewhere,
-            new Msg.DirectoryLoaded(0, Home, [File("aa.txt"), File("a.txt"), File("b.txt"), File("c.txt")]));
+            new Msg.DirectoryLoaded(Col(0), Home, [File("aa.txt"), File("a.txt"), File("b.txt"), File("c.txt")]));
 
         Assert.Equal("c.txt", back.Columns[0].Entries[back.Columns[0].Cursor].Name);
     }
@@ -57,7 +58,7 @@ public class CursorMemoryTests
         var opening = state with { Columns = [new Column(Away, [], Cursor: -1, Load: LoadState.Loading)] };
 
         var (loaded, _) = Transition.Apply(
-            opening, new Msg.DirectoryLoaded(0, Away, [File("x.txt"), File("y.txt")]));
+            opening, new Msg.DirectoryLoaded(Col(0), Away, [File("x.txt"), File("y.txt")]));
 
         Assert.Equal(0, loaded.Columns[0].Cursor);
     }
@@ -70,10 +71,10 @@ public class CursorMemoryTests
     public void A_remembered_entry_that_is_gone_falls_back_to_the_top()
     {
         var state = At(Home, File("a.txt"), File("gone.txt"));
-        var (moved, _) = Transition.Apply(state, new Msg.CursorTo(0, 1));
+        var (moved, _) = Transition.Apply(state, new Msg.CursorTo(Col(0), 1));
         var reopening = moved with { Columns = [new Column(Home, [], Cursor: -1, Load: LoadState.Loading)] };
 
-        var (loaded, _) = Transition.Apply(reopening, new Msg.DirectoryLoaded(0, Home, [File("a.txt")]));
+        var (loaded, _) = Transition.Apply(reopening, new Msg.DirectoryLoaded(Col(0), Home, [File("a.txt")]));
 
         Assert.Equal(0, loaded.Columns[0].Cursor);
         Assert.Empty(loaded.CheckInvariants());
@@ -87,11 +88,11 @@ public class CursorMemoryTests
     public void Refreshing_a_column_in_use_does_not_move_the_cursor_back()
     {
         var state = At(Home, File("a.txt"), File("b.txt"), File("c.txt"));
-        var (onC, _) = Transition.Apply(state, new Msg.CursorTo(0, 2));
-        var (onA, _) = Transition.Apply(onC, new Msg.CursorTo(0, 0));
+        var (onC, _) = Transition.Apply(state, new Msg.CursorTo(Col(0), 2));
+        var (onA, _) = Transition.Apply(onC, new Msg.CursorTo(Col(0), 0));
 
         var (reloaded, _) = Transition.Apply(
-            onA, new Msg.DirectoryLoaded(0, Home, [File("a.txt"), File("b.txt"), File("c.txt")]));
+            onA, new Msg.DirectoryLoaded(Col(0), Home, [File("a.txt"), File("b.txt"), File("c.txt")]));
 
         Assert.Equal("a.txt", reloaded.Columns[0].Entries[reloaded.Columns[0].Cursor].Name);
     }
@@ -104,7 +105,7 @@ public class CursorMemoryTests
     public void An_explicit_reveal_wins_over_the_memory()
     {
         var state = At(Home, File("a.txt"), File("b.txt"));
-        var (moved, _) = Transition.Apply(state, new Msg.CursorTo(0, 1));
+        var (moved, _) = Transition.Apply(state, new Msg.CursorTo(Col(0), 1));
         var reopening = moved with
         {
             Columns = [new Column(Home, [], Cursor: -1, Load: LoadState.Loading)],
@@ -112,7 +113,7 @@ public class CursorMemoryTests
         };
 
         var (loaded, _) = Transition.Apply(
-            reopening, new Msg.DirectoryLoaded(0, Home, [File("a.txt"), File("b.txt")]));
+            reopening, new Msg.DirectoryLoaded(Col(0), Home, [File("a.txt"), File("b.txt")]));
 
         Assert.Equal("a.txt", loaded.Columns[0].Entries[loaded.Columns[0].Cursor].Name);
         Assert.Null(loaded.RevealTarget);
@@ -123,8 +124,8 @@ public class CursorMemoryTests
     {
         var state = At(Home, File("a.txt"), File("b.txt"));
 
-        var (first, _) = Transition.Apply(state, new Msg.CursorTo(0, 1));
-        var (second, _) = Transition.Apply(first, new Msg.CursorTo(0, 0));
+        var (first, _) = Transition.Apply(state, new Msg.CursorTo(Col(0), 1));
+        var (second, _) = Transition.Apply(first, new Msg.CursorTo(Col(0), 0));
 
         Assert.Single(second.CursorMemory);
         Assert.Equal("a.txt", second.RecallCursor(Home));
@@ -203,7 +204,7 @@ public class CursorMemoryTests
         };
 
         var (loaded, _) = Transition.Apply(
-            state, new Msg.DirectoryLoaded(0, Home, [new Entry("sub", EntryKind.Directory)]));
+            state, new Msg.DirectoryLoaded(Col(0), Home, [new Entry("sub", EntryKind.Directory)]));
 
         // The child column opened, but only the focused column's location was recorded.
         Assert.Equal(2, loaded.Columns.Length);

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using Zurari.Core;
 using Zurari.Runtime;
+using static Zurari.TestSupport.TestPanes;
 
 namespace Zurari.Runtime.Tests;
 
@@ -29,7 +30,7 @@ public class RootPaneTests
     {
         var queue = new ConcurrentQueue<Msg>();
         using var runtime = new WorkerRuntime(queue.Enqueue, places: places, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
-        runtime.Submit(new Effect.ReadDirectory(0, Location.Drives.Instance));
+        runtime.Submit(new Effect.ReadDirectory(Col(0), Location.Drives.Instance));
         var loaded = Assert.IsType<Msg.DirectoryLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
         return loaded.Entries;
     }
@@ -124,7 +125,7 @@ public class RootPaneTests
     {
         var queue = new ConcurrentQueue<Msg>();
         using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
-        runtime.Submit(new Effect.ReadDirectory(0, Location.Drives.Instance));
+        runtime.Submit(new Effect.ReadDirectory(Col(0), Location.Drives.Instance));
 
         var loaded = Assert.IsType<Msg.DirectoryLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
 
@@ -142,7 +143,7 @@ public class RootPaneTests
     {
         var queue = new ConcurrentQueue<Msg>();
         using var runtime = new WorkerRuntime(queue.Enqueue, displayName: path => "名前 " + path, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
-        runtime.Submit(new Effect.ReadDirectory(0, Location.Drives.Instance));
+        runtime.Submit(new Effect.ReadDirectory(Col(0), Location.Drives.Instance));
         var loaded = Assert.IsType<Msg.DirectoryLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
 
         var drives = loaded.Entries.Where(e => e.Kind == EntryKind.Drive).ToList();
@@ -159,7 +160,7 @@ public class RootPaneTests
     {
         var queue = new ConcurrentQueue<Msg>();
         using var runtime = new WorkerRuntime(queue.Enqueue, displayName: _ => null, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
-        runtime.Submit(new Effect.ReadDirectory(0, Location.Drives.Instance));
+        runtime.Submit(new Effect.ReadDirectory(Col(0), Location.Drives.Instance));
         var loaded = Assert.IsType<Msg.DirectoryLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
 
         var drives = loaded.Entries.Where(e => e.Kind == EntryKind.Drive).ToList();

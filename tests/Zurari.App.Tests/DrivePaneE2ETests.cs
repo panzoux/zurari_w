@@ -4,6 +4,7 @@ using System.Linq;
 using Zurari.App;
 using Zurari.Core;
 using Zurari.Runtime;
+using static Zurari.TestSupport.TestPanes;
 
 namespace Zurari.App.Tests;
 
@@ -55,7 +56,7 @@ public class DrivePaneE2ETests
         var before = column.Entries.Length;
 
         // Space, as OnWindowKeyDown sends it.
-        loop.Dispatch(new Msg.ToggleMarkAtCursor(loop.State.FocusedColumn));
+        loop.Dispatch(new Msg.ToggleMarkAtCursor(loop.State.Focused.FocusedRef));
 
         var after = loop.State.Columns[0];
         Assert.True(after.Entries.Length < before, "the section should have collapsed");
@@ -91,7 +92,7 @@ public class DrivePaneE2ETests
 
         for (var i = 0; i < laterHeader; i++)
         {
-            loop.Dispatch(new Msg.CursorDown(0));
+            loop.Dispatch(new Msg.CursorDown(Col(0)));
         }
 
         Assert.Equal(laterHeader, loop.State.Columns[0].Cursor);
@@ -135,7 +136,7 @@ public class DrivePaneE2ETests
             DrainUntil(loop, queue, () => loop.State.Columns[0].Load == LoadState.Loaded, TimeSpan.FromSeconds(10));
             Assert.Equal(0, loop.State.Columns[0].Cursor);
 
-            loop.Dispatch(new Msg.PinEntryAtCursor(0));
+            loop.Dispatch(new Msg.PinEntryAtCursor(Col(0)));
             DrainUntil(loop, queue, () => store.Load().PinnedPaths?.Count > 0, TimeSpan.FromSeconds(10));
 
             Assert.Equal([target], store.Load().PinnedPaths);
@@ -175,7 +176,7 @@ public class DrivePaneE2ETests
                 loop.Dispatch(new Msg.Refresh());
                 DrainUntil(loop, queue, () => loop.State.Columns[0].Load == LoadState.Loaded, TimeSpan.FromSeconds(10));
 
-                loop.Dispatch(new Msg.PinEntryAtCursor(0));
+                loop.Dispatch(new Msg.PinEntryAtCursor(Col(0)));
                 DrainUntil(loop, queue, () => store.Load().PinnedPaths?.Count > 0, TimeSpan.FromSeconds(10));
             }
 
@@ -204,7 +205,7 @@ public class DrivePaneE2ETests
                 // under お気に入り, and collapsing that would hide the very thing session three checks.
                 var header = loop.State.Columns[0].Entries.ToList()
                     .FindIndex(e => e.Kind == EntryKind.Header && e.Group == EntryGroups.Drives);
-                loop.Dispatch(new Msg.ToggleSection(0, header));
+                loop.Dispatch(new Msg.ToggleSection(Col(0), header));
                 DrainUntil(loop, queue, () => store.Load().CollapsedGroups?.Count > 0, TimeSpan.FromSeconds(10));
                 Assert.Equal([EntryGroups.Drives], store.Load().CollapsedGroups);
             }

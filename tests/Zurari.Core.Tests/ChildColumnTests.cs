@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Zurari.Core;
+using static Zurari.TestSupport.TestPanes;
 
 namespace Zurari.Core.Tests;
 
@@ -24,7 +25,7 @@ public class ChildColumnTests
     {
         var state = With(Root(2, Doc, Other, Sub));
 
-        var (next, effects) = Transition.Apply(state, new Msg.CursorUp(0));
+        var (next, effects) = Transition.Apply(state, new Msg.CursorUp(Col(0)));
 
         Assert.Equal(2, next.Columns.Length);
         Assert.Equal(new Location.RealDirectory(@"C:\other"), next.Columns[1].Location);
@@ -32,7 +33,7 @@ public class ChildColumnTests
         Assert.Equal(0, next.FocusedColumn);
 
         var read = Assert.Single(effects.OfType<Effect.ReadDirectory>());
-        Assert.Equal(1, read.ColumnIndex);
+        Assert.Equal(1, read.At.Index);
         Assert.True(read.Speculative, "a column the cursor is only resting on is speculative");
     }
 
@@ -40,10 +41,10 @@ public class ChildColumnTests
     public void Landing_on_a_file_takes_the_column_away_again()
     {
         var state = With(Root(0, Doc, Sub));
-        var (opened, _) = Transition.Apply(state, new Msg.CursorTo(0, 1));
+        var (opened, _) = Transition.Apply(state, new Msg.CursorTo(Col(0), 1));
         Assert.Equal(2, opened.Columns.Length);
 
-        var (closed, _) = Transition.Apply(opened, new Msg.CursorTo(0, 0));
+        var (closed, _) = Transition.Apply(opened, new Msg.CursorTo(Col(0), 0));
 
         Assert.Single(closed.Columns);
     }
@@ -57,7 +58,7 @@ public class ChildColumnTests
             Cursor: 1,
             Load: LoadState.Loaded);
 
-        var (next, _) = Transition.Apply(With(column), new Msg.CursorUp(0));
+        var (next, _) = Transition.Apply(With(column), new Msg.CursorUp(Col(0)));
 
         Assert.Single(next.Columns);
     }
@@ -71,7 +72,7 @@ public class ChildColumnTests
             Cursor: 0,
             Load: LoadState.Loaded);
 
-        var (next, _) = Transition.Apply(With(column), new Msg.CursorDown(0));
+        var (next, _) = Transition.Apply(With(column), new Msg.CursorDown(Col(0)));
 
         Assert.Equal(2, next.Columns.Length);
         Assert.Equal(new Location.RealDirectory(@"C:\"), next.Columns[1].Location);
@@ -87,14 +88,13 @@ public class ChildColumnTests
     public void The_childs_own_contents_arriving_does_not_open_a_grandchild()
     {
         var empty = With(new Column(new Location.RealDirectory(@"C:\"), [], Cursor: -1));
-        var (opened, _) = Transition.Apply(empty, new Msg.DirectoryLoaded(
-            0, new Location.RealDirectory(@"C:\"), [Sub]));
+        var (opened, _) = Transition.Apply(empty, new Msg.DirectoryLoaded(Col(0), new Location.RealDirectory(@"C:\"), [Sub]));
         Assert.Equal(2, opened.Columns.Length);
 
         // The child's listing arrives, and its own cursor lands on a folder.
         var (loaded, effects) = Transition.Apply(
             opened,
-            new Msg.DirectoryLoaded(1, new Location.RealDirectory(@"C:\sub"), [new Entry("deep", EntryKind.Directory)]));
+            new Msg.DirectoryLoaded(Col(1), new Location.RealDirectory(@"C:\sub"), [new Entry("deep", EntryKind.Directory)]));
 
         Assert.Equal(2, loaded.Columns.Length);
         Assert.Empty(effects.OfType<Effect.ReadDirectory>());
@@ -118,7 +118,7 @@ public class ChildColumnTests
             FocusedColumn = 1,
         };
 
-        var (next, effects) = Transition.Apply(state, new Msg.GoToParent(1));
+        var (next, effects) = Transition.Apply(state, new Msg.GoToParent(Col(1)));
 
         Assert.Equal(0, next.FocusedColumn);
         Assert.Equal(3, next.Columns.Length);
@@ -145,7 +145,7 @@ public class ChildColumnTests
     {
         var state = With(Root(0, Sub));
 
-        var (next, _) = Transition.Apply(state, new Msg.EnterDirectory(0, 0));
+        var (next, _) = Transition.Apply(state, new Msg.EnterDirectory(Col(0), 0));
 
         Assert.Equal(2, next.Columns.Length);
         Assert.Equal(1, next.FocusedColumn);
@@ -178,7 +178,7 @@ public class ChildColumnTests
 
         foreach (var index in new[] { 1, 2, 0, 2, 1 })
         {
-            (state, _) = Transition.Apply(state, new Msg.CursorTo(0, index));
+            (state, _) = Transition.Apply(state, new Msg.CursorTo(Col(0), index));
             Assert.Empty(state.CheckInvariants());
         }
     }

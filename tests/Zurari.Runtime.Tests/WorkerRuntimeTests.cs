@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Zurari.Core;
 using Zurari.Runtime;
+using static Zurari.TestSupport.TestPanes;
 
 namespace Zurari.Runtime.Tests;
 
@@ -37,11 +38,11 @@ public class WorkerRuntimeTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
-            runtime.Submit(new Effect.ReadDirectory(0, new Location.RealDirectory(dir)));
+            runtime.Submit(new Effect.ReadDirectory(Col(0), new Location.RealDirectory(dir)));
 
             var msg = WaitForMsg(queue, TimeSpan.FromSeconds(10));
             var loaded = Assert.IsType<Msg.DirectoryLoaded>(msg);
-            Assert.Equal(0, loaded.ColumnIndex);
+            Assert.Equal(0, loaded.At.Index);
             Assert.Equal(new Location.RealDirectory(dir), loaded.Location);
             Assert.Equal(4, loaded.Entries.Length);
 
@@ -73,11 +74,11 @@ public class WorkerRuntimeTests
         var dir = Path.Combine(Path.GetTempPath(), "zurari-does-not-exist-" + Guid.NewGuid());
         var queue = new ConcurrentQueue<Msg>();
         using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
-        runtime.Submit(new Effect.ReadDirectory(3, new Location.RealDirectory(dir)));
+        runtime.Submit(new Effect.ReadDirectory(Col(3), new Location.RealDirectory(dir)));
 
         var msg = WaitForMsg(queue, TimeSpan.FromSeconds(10));
         var failed = Assert.IsType<Msg.DirectoryLoadFailed>(msg);
-        Assert.Equal(3, failed.ColumnIndex);
+        Assert.Equal(3, failed.At.Index);
         Assert.Equal(new Location.RealDirectory(dir), failed.Location);
         Assert.False(string.IsNullOrEmpty(failed.Error));
     }
@@ -87,11 +88,11 @@ public class WorkerRuntimeTests
     {
         var queue = new ConcurrentQueue<Msg>();
         using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
-        runtime.Submit(new Effect.ReadDirectory(0, Location.Drives.Instance));
+        runtime.Submit(new Effect.ReadDirectory(Col(0), Location.Drives.Instance));
 
         var msg = WaitForMsg(queue, TimeSpan.FromSeconds(10));
         var loaded = Assert.IsType<Msg.DirectoryLoaded>(msg);
-        Assert.Equal(0, loaded.ColumnIndex);
+        Assert.Equal(0, loaded.At.Index);
         Assert.Equal(Location.Drives.Instance, loaded.Location);
         Assert.NotEmpty(loaded.Entries);
 
@@ -117,7 +118,7 @@ public class WorkerRuntimeTests
         var runtime = new WorkerRuntime(queue.Enqueue, workerCount: 1, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
         for (var i = 0; i < 200; i++)
         {
-            runtime.Submit(new Effect.ReadDirectory(i, Location.Drives.Instance));
+            runtime.Submit(new Effect.ReadDirectory(Col(i), Location.Drives.Instance));
         }
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -186,7 +187,7 @@ public class WorkerRuntimeTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
-            runtime.Submit(new Effect.ReadDirectory(0, new Location.RealDirectory(dir)));
+            runtime.Submit(new Effect.ReadDirectory(Col(0), new Location.RealDirectory(dir)));
             var loaded = Assert.IsType<Msg.DirectoryLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
 
             Assert.Equal(2, loaded.Entries.Length);
@@ -208,7 +209,7 @@ public class WorkerRuntimeTests
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-            runtime.Submit(new Effect.CreateFolder(0, new Location.RealDirectory(dir)));
+            runtime.Submit(new Effect.CreateFolder(Col(0), new Location.RealDirectory(dir)));
             var created = Assert.IsType<Msg.FolderCreated>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
 
             Assert.Equal("新しいフォルダー", created.Name);
@@ -235,7 +236,7 @@ public class WorkerRuntimeTests
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-            runtime.Submit(new Effect.CreateFolder(0, new Location.RealDirectory(dir)));
+            runtime.Submit(new Effect.CreateFolder(Col(0), new Location.RealDirectory(dir)));
             var created = Assert.IsType<Msg.FolderCreated>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
 
             Assert.Equal("新しいフォルダー (2)", created.Name);
@@ -253,7 +254,7 @@ public class WorkerRuntimeTests
         var queue = new ConcurrentQueue<Msg>();
         using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-        runtime.Submit(new Effect.CreateFolder(0, Location.Drives.Instance));
+        runtime.Submit(new Effect.CreateFolder(Col(0), Location.Drives.Instance));
         var msg = WaitForMsg(queue, TimeSpan.FromSeconds(10));
 
         Assert.IsType<Msg.NoticeRaised>(msg);
@@ -269,7 +270,7 @@ public class WorkerRuntimeTests
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-            runtime.Submit(new Effect.RenameEntry(0, new Location.RealDirectory(dir), "before.txt", "after.txt"));
+            runtime.Submit(new Effect.RenameEntry(Col(0), new Location.RealDirectory(dir), "before.txt", "after.txt"));
             var done = Assert.IsType<Msg.RenameCompleted>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
 
             Assert.Equal("after.txt", done.NewName);
@@ -292,7 +293,7 @@ public class WorkerRuntimeTests
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-            runtime.Submit(new Effect.RenameEntry(0, new Location.RealDirectory(dir), "before", "after"));
+            runtime.Submit(new Effect.RenameEntry(Col(0), new Location.RealDirectory(dir), "before", "after"));
             Assert.IsType<Msg.RenameCompleted>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
 
             Assert.True(Directory.Exists(Path.Combine(dir, "after")));
@@ -318,7 +319,7 @@ public class WorkerRuntimeTests
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-            runtime.Submit(new Effect.RenameEntry(0, new Location.RealDirectory(dir), "before.txt", "taken.txt"));
+            runtime.Submit(new Effect.RenameEntry(Col(0), new Location.RealDirectory(dir), "before.txt", "taken.txt"));
             Assert.IsType<Msg.RenameFailed>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
 
             Assert.Equal("mine", File.ReadAllText(Path.Combine(dir, "before.txt")));
@@ -344,7 +345,7 @@ public class WorkerRuntimeTests
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-            runtime.Submit(new Effect.RenameEntry(0, new Location.RealDirectory(dir), "readme.txt", "README.TXT"));
+            runtime.Submit(new Effect.RenameEntry(Col(0), new Location.RealDirectory(dir), "readme.txt", "README.TXT"));
             var done = Assert.IsType<Msg.RenameCompleted>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
 
             Assert.Equal("README.TXT", done.NewName);
@@ -365,7 +366,7 @@ public class WorkerRuntimeTests
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-            runtime.Submit(new Effect.RenameEntry(0, new Location.RealDirectory(dir), "ghost.txt", "other.txt"));
+            runtime.Submit(new Effect.RenameEntry(Col(0), new Location.RealDirectory(dir), "ghost.txt", "other.txt"));
 
             Assert.IsType<Msg.RenameFailed>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
         }

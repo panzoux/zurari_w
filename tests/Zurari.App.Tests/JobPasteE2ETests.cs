@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.IO;
 using Zurari.Core;
 using Zurari.Runtime;
+using static Zurari.TestSupport.TestPanes;
 
 namespace Zurari.App.Tests;
 
@@ -77,7 +78,7 @@ public class JobPasteE2ETests
             var (loop, queue, runtime, jobEngine) = BuildLoop(initial);
             try
             {
-                loop.Dispatch(new Msg.PasteRequested(0, [sourceFile], IsMove: false));
+                loop.Dispatch(new Msg.PasteRequested(Col(0), [sourceFile], IsMove: false));
 
                 Assert.Single(loop.State.Jobs);
 
@@ -129,7 +130,7 @@ public class JobPasteE2ETests
             var (loop, queue, runtime, jobEngine) = BuildLoop(initial);
             try
             {
-                loop.Dispatch(new Msg.PasteRequested(1, [sourceFile], IsMove: true));
+                loop.Dispatch(new Msg.PasteRequested(Col(1), [sourceFile], IsMove: true));
 
                 Assert.Single(loop.State.Jobs);
 

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using Zurari.Core;
 using Zurari.Runtime;
+using static Zurari.TestSupport.TestPanes;
 
 namespace Zurari.Runtime.Tests;
 
@@ -28,7 +29,7 @@ public class PinnedPlacesTests
 
     private static ImmutableArray<Entry> ReadRoot(WorkerRuntime runtime, ConcurrentQueue<Msg> queue)
     {
-        runtime.Submit(new Effect.ReadDirectory(0, Location.Drives.Instance));
+        runtime.Submit(new Effect.ReadDirectory(Col(0), Location.Drives.Instance));
         var loaded = (Msg.DirectoryLoaded)WaitFor<Msg.DirectoryLoaded>(queue, TimeSpan.FromSeconds(10));
         return loaded.Entries;
     }

@@ -125,4 +125,30 @@ public class PaneTests
 
         Assert.Contains(state.CheckInvariants(), v => v.Contains("Panes[1].Columns[0].Cursor", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void A_listing_for_a_pane_that_no_longer_exists_is_ignored()
+    {
+        var state = AppState.SinglePane([new Column(new Location.RealDirectory(@"C:\"), Entries: [])]);
+        var ghost = new ColumnRef(new PaneId(42), 0);
+
+        var (next, effects) = Transition.Apply(
+            state, new Msg.DirectoryLoaded(ghost, new Location.RealDirectory(@"C:\"), [new Entry("a", EntryKind.File)]));
+
+        Assert.Same(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void Entering_a_directory_reads_it_for_the_same_pane()
+    {
+        var root = new Column(
+            new Location.RealDirectory(@"C:\"), [new Entry("sub", EntryKind.Directory)], Cursor: 0, Load: LoadState.Loaded);
+        var state = AppState.SinglePane([root]);
+
+        var (_, effects) = Transition.Apply(state, new Msg.EnterDirectory(state.Focused.Ref(0), 0));
+
+        var read = Assert.Single(effects.OfType<Effect.ReadDirectory>());
+        Assert.Equal(state.Focused.Ref(1), read.At);
+    }
 }

@@ -1,4 +1,5 @@
 using Zurari.Core;
+using static Zurari.TestSupport.TestPanes;
 
 namespace Zurari.Core.Tests;
 
@@ -18,7 +19,7 @@ public class RenameTests
     {
         target = new Entry("notes.txt", EntryKind.File);
         var state = With(Here, 0, target);
-        var (editing, _) = Transition.Apply(state, new Msg.RenameRequested(0));
+        var (editing, _) = Transition.Apply(state, new Msg.RenameRequested(Col(0)));
         return editing;
     }
 
@@ -43,7 +44,7 @@ public class RenameTests
     {
         var state = With(Location.Drives.Instance, 0, new Entry("x", kind, Group: EntryGroups.Drives));
 
-        var (next, _) = Transition.Apply(state, new Msg.RenameRequested(0));
+        var (next, _) = Transition.Apply(state, new Msg.RenameRequested(Col(0)));
 
         Assert.Null(next.Rename);
     }
@@ -56,7 +57,7 @@ public class RenameTests
             0,
             new Entry(@"C:\work", EntryKind.Directory, Group: EntryGroups.Favorites, IsRemovable: true));
 
-        var (next, _) = Transition.Apply(state, new Msg.RenameRequested(0));
+        var (next, _) = Transition.Apply(state, new Msg.RenameRequested(Col(0)));
 
         Assert.Null(next.Rename);
     }
@@ -69,7 +70,7 @@ public class RenameTests
         var (next, effects) = Transition.Apply(state, new Msg.RenameSubmitted("readme.txt"));
 
         Assert.Equal(
-            new Effect.RenameEntry(0, Here, "notes.txt", "readme.txt"),
+            new Effect.RenameEntry(Col(0), Here, "notes.txt", "readme.txt"),
             Assert.Single(effects.OfType<Effect.RenameEntry>()));
 
         // Still open: it closes when the rename actually happened, not when it was asked for.
@@ -150,14 +151,14 @@ public class RenameTests
         var state = Editing(out _);
         var (asked, _) = Transition.Apply(state, new Msg.RenameSubmitted("readme.txt"));
 
-        var (done, effects) = Transition.Apply(asked, new Msg.RenameCompleted(0, Here, "readme.txt"));
+        var (done, effects) = Transition.Apply(asked, new Msg.RenameCompleted(Col(0), Here, "readme.txt"));
 
         Assert.Null(done.Rename);
         Assert.Equal("readme.txt", done.RevealTarget);
         Assert.Single(effects.OfType<Effect.ReadDirectory>());
 
         var (loaded, _) = Transition.Apply(
-            done, new Msg.DirectoryLoaded(0, Here, [new Entry("readme.txt", EntryKind.File)]));
+            done, new Msg.DirectoryLoaded(Col(0), Here, [new Entry("readme.txt", EntryKind.File)]));
 
         Assert.Equal("readme.txt", loaded.Columns[0].Entries[loaded.Columns[0].Cursor].Name);
     }

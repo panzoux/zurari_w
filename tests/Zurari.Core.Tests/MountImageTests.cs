@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Zurari.Core;
+using static Zurari.TestSupport.TestPanes;
 
 namespace Zurari.Core.Tests;
 
@@ -30,7 +31,7 @@ public class MountImageTests
             Cursor: 0,
             Load: LoadState.Loaded);
 
-        var (_, effects) = Transition.Apply(With(column), new Msg.EnterDirectory(0, 0));
+        var (_, effects) = Transition.Apply(With(column), new Msg.EnterDirectory(Col(0), 0));
 
         Assert.Equal(
             new Effect.MountImage(@"D:\images\ubuntu.iso"),
@@ -55,7 +56,7 @@ public class MountImageTests
             Cursor: 0,
             Load: LoadState.Loaded);
 
-        var (_, effects) = Transition.Apply(With(column), new Msg.EnterDirectory(0, 0));
+        var (_, effects) = Transition.Apply(With(column), new Msg.EnterDirectory(Col(0), 0));
 
         Assert.Equal(mounts, effects.OfType<Effect.MountImage>().Any());
     }
@@ -71,7 +72,7 @@ public class MountImageTests
         var (withNotice, _) = Transition.Apply(With(column), new Msg.NoticeRaised("何か"));
         Assert.Equal("何か", withNotice.Notice);
 
-        var (moved, _) = Transition.Apply(withNotice, new Msg.CursorDown(0));
+        var (moved, _) = Transition.Apply(withNotice, new Msg.CursorDown(Col(0)));
 
         Assert.Null(moved.Notice);
     }
@@ -86,7 +87,7 @@ public class MountImageTests
         Assert.Equal(@"E:\", next.RevealTarget);
         Assert.Equal(LoadState.Loading, next.Columns[0].Load);
         Assert.Equal(
-            new Effect.ReadDirectory(0, Location.Drives.Instance),
+            new Effect.ReadDirectory(Col(0), Location.Drives.Instance),
             Assert.Single(effects.OfType<Effect.ReadDirectory>()));
     }
 
@@ -97,7 +98,7 @@ public class MountImageTests
 
         var (loaded, _) = Transition.Apply(
             waiting,
-            new Msg.DirectoryLoaded(0, Location.Drives.Instance, [Fixed, Optical]));
+            new Msg.DirectoryLoaded(Col(0), Location.Drives.Instance, [Fixed, Optical]));
 
         Assert.Equal(1, loaded.Columns[0].Cursor);
         Assert.Equal(@"E:\", loaded.Columns[0].Entries[loaded.Columns[0].Cursor].Name);
@@ -114,7 +115,7 @@ public class MountImageTests
 
         var (loaded, _) = Transition.Apply(
             waiting,
-            new Msg.DirectoryLoaded(0, Location.Drives.Instance, [Fixed, Optical]));
+            new Msg.DirectoryLoaded(Col(0), Location.Drives.Instance, [Fixed, Optical]));
 
         Assert.Equal(0, loaded.FocusedColumn);
     }
@@ -126,7 +127,7 @@ public class MountImageTests
 
         var (loaded, _) = Transition.Apply(
             waiting,
-            new Msg.DirectoryLoaded(0, Location.Drives.Instance, [Fixed]));
+            new Msg.DirectoryLoaded(Col(0), Location.Drives.Instance, [Fixed]));
 
         Assert.Equal(@"E:\", loaded.RevealTarget);
     }

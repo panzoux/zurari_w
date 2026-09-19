@@ -1,5 +1,6 @@
 using Zurari.App;
 using Zurari.Core;
+using static Zurari.TestSupport.TestPanes;
 
 namespace Zurari.App.Tests;
 
@@ -20,8 +21,8 @@ public class PendingPreviewGateTests
     {
         var gate = new PendingEffectGate<Effect.ReadDirectory>();
 
-        gate.Hold(new Effect.ReadDirectory(1, new Location.RealDirectory(@"C:\a"), Speculative: true));
-        gate.Hold(new Effect.ReadDirectory(1, new Location.RealDirectory(@"C:\b"), Speculative: true));
+        gate.Hold(new Effect.ReadDirectory(Col(1), new Location.RealDirectory(@"C:\a"), Speculative: true));
+        gate.Hold(new Effect.ReadDirectory(Col(1), new Location.RealDirectory(@"C:\b"), Speculative: true));
 
         Assert.Equal(new Location.RealDirectory(@"C:\b"), gate.Take()!.Location);
         Assert.Null(gate.Take());
