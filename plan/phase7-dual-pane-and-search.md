@@ -1,74 +1,43 @@
-# Phase 7 — 二画面分割 + 検索・ジャンプ系
+# Phase 7 — 二画面分割 + 検索・ジャンプ系(要約)
 
-**状態**: `[ ]` 未着手(ガワのみ。着手時にこのファイルへタスクを書き下す)
+**状態**: `[~]` 設計済み、7a 計画中
 **前提**: Phase 6 完了
 **位置づけ**: [roadmap.md](roadmap.md) の Phase 7
+**設計**: [2026-09-19-phase7-dual-pane-and-search-design.md](../docs/superpowers/specs/2026-09-19-phase7-dual-pane-and-search-design.md)
+
+このファイルは要約。**サブフェーズごとに計画ファイルを分け**、タスク・Status 表・Records はそちらに置く。
 
 ---
 
 ## 目的
 
-zrr(TUI版)の操作体験の核を GUI に持ち込む。二画面分割と、キーボードでの高速な絞り込み・
-ジャンプ。ここまで来ると「zrr の GUI 版」と呼べる状態になる。
+zrr(TUI版)の操作体験の核 — 二画面分割と、キーボードでの高速な絞り込み・ジャンプ — を GUI に持ち込む。
+挙動は原則 zrr に倣い(ユーザーが数週間実使用して評価済み)、変える箇所は設計書に理由付きで明示する。
 
-## スコープ
+## サブフェーズ
 
-### やること
+| | 内容 | 状態 | 計画 |
+|---|---|---|---|
+| **7a** | **画面分割**: 前段 `Pane` 抽出(`ColumnRef(PaneId, Column)`、見た目の変化なし)→ 後段 分割 UI(Ctrl+W / Tab / Shift+O / `o` / `c`・`m`、ペインごとのプレビューと並べ替え、分割の永続化) | `[ ]` | phase7a-screen-split.md(作成中) |
+| **7b** | **インクリメンタル検索 / Leap**: 共通マッチャ(AND セグメント・regex は NonBacktracking)、migemo(cmigemo → 内蔵 rustmigemo 移植 + BSD 辞書)、`/` 検索、Leap(F3) | `[ ]` | 未作成 |
+| 7c | ジャンプ一覧: 履歴、ブックマーク(= 既存のピン)、`ListPicker`、アドレスバー(Ctrl+L)、非分割時の `c`/`m` 宛先ピッカー | `[ ]` | 未作成 |
+| 7d | 操作ログ(Shift+L) | `[ ]` | 未作成 |
 
-**二画面分割**
+## 主な決定(詳細と理由は設計書)
 
-- [ ] 上下(または左右)分割のトグルと、ペイン間のフォーカス切替
-- [ ] 各ペインが独立した multi-column 列群と独立したカーソル/マークを持つ
-- [ ] ペイン間のコピー/移動(既存ジョブエンジンを流用)、ドラッグ&ドロップ
-- [ ] 分割状態・分割比率の永続化(`UserSettingsStore`)
+- 分割は上下。プレビューも並べ替え・隠しファイル設定も**ペインごと**。
+- 共有するもの: ジョブ、カーソルメモリ、履歴、migemo、通知、リネーム・並べ替えモード(作用はフォーカスペイン)。
+- 永続化は分割の開閉・比率・位置ごとの表示設定まで。場所は復元しない。
+- Leap のフィルタは `Column.Derive` の入力。スペース区切りの AND 検索。**Leap 中はプレビューを空にする**
+  (zrr で「別ファイルのプレビューが残る」のが紛らわしかったため)。
+- ブックマークは既存のピンを使い、別概念を作らない。
 
-**検索・ジャンプ**
+## やらないこと
 
-- [ ] インクリメンタル検索(列内の絞り込み・ジャンプ)
-- [ ] migemo 対応(ローマ字入力で日本語ファイル名を検索)
-- [ ] Leap ナビゲーション(絞り込みモード)
-- [ ] ブックマーク(登録・一覧・ジャンプ)
-- [ ] 履歴ジャンプ(訪問したディレクトリの履歴)
-- [ ] パス直接入力(アドレスバー)
-- [ ] 操作ログの表示
-
-### やらないこと
-
-- 検索結果を「仮想ディレクトリの列」として開く機能 → Phase 8 の基盤が要るので後回し。
-  本フェーズの検索はあくまで **列内の絞り込み・ジャンプ**(zrr と同じ挙動)に留める。
-
-## 設計メモ
-
-**二画面分割が最大の設計判断**。`AppState` は現状 `Columns` + `FocusedColumn` を1組しか持たない。
-zrr は `Pane` を導入して `ScreenState.FocusedPane` で切り替えている(`..\zurari\Program.cs` の
-`sealed class Pane`)。同じ構造を C# の immutable state に写すなら:
-
-```
-AppState { ImmutableArray<Pane> Panes; int FocusedPane; ... }
-Pane { ImmutableArray<Column> Columns; int FocusedColumn; }
-```
-
-これは `Transition` のほぼ全ハンドラ(現在 `state.Columns[...]` を直接触っている)に波及する。
-Phase 8 の `Location` 抽象化と**どちらを先にやるか**は着手時に再検討する価値がある
-(両方とも Core 全体に触る大きなリファクタなので、まとめてやる方が安いかもしれない)。
-
-- 検索 UI は**パスバーの位置に出す入力欄**(2026-09-13 決定)。zrr と同じく `/` で検索モードに入り、
-  その間パスバーが検索入力欄に替わる。Phase 6 の 6e.7 でパスバーをステータスバーの上に置いたのは、
-  この置き場所を先に用意するため。検索は `/` で始まるので英字キーを検索開始に取られず、
-  並べ替えの `S` モード(6e.8)とも衝突しない。Controls 層に「馬鹿なビュー」として追加し、
-  入力は既存同様イベントで外に出す。パスバーはいずれ Finder 風のパンくずリストにする予定。
-- migemo は辞書ファイルが要る。zrr は `MigemoProvider` を持つ(`..\zurari\Program.cs`)。
-  辞書の配布方法(同梱するか、あれば使うか)を決める必要がある。
-- ブックマーク/履歴は `UserSettingsStore`(Phase 5 で追加済み)を拡張して永続化する。
-
-## 参照
-
-- zrr のペイン構造: `..\zurari\Program.cs` の `Pane` / `ScreenState` / `ToggleSplitAsync`
-- zrr の検索: 同 `SearchState` / `SearchHelper` / `MigemoProvider`
-- zrr の Leap: 同 `LeapState` / `EnterLeapMode` / `HandleLeapKeyAsync`
-- zrr のブックマーク: 同 `Bookmarks` / `BuildBookmarkAndHistoryList`
+- 検索結果を仮想ディレクトリの列として開く(Phase 8 の基盤の上で後日)。
+- 分割方向の切り替え、各ペインの最後の場所の復元、zrr の Shift+Y(列幅の複製)。
 
 ## 検証
 
-- `scripts/check.ps1` green
-- 手動: 二画面での相互コピー/移動、CJK ファイル名の migemo 検索
+- 各サブフェーズ: 計画の項目を満たし `scripts/check.ps1` green。
+- 手動: 二画面での相互コピー/移動、CJK ファイル名の migemo 検索、Leap の AND 検索とプレビュー消去。

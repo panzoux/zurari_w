@@ -24,7 +24,7 @@ zrr(`..\zurari\Program.cs`)は二画面・`/` 検索・Leap・ブックマーク
 
 | 項目 | 決定 |
 |---|---|
-| 分割順 | 7a Pane 抽出 → 7b 分割 UI → 7c `/` 検索 + マッチャ + migemo → 7d Leap → 7e ジャンプ一覧 → 7f 操作ログ |
+| 分割順 | **7a 画面分割**(前段 Pane 抽出 → 後段 分割 UI)→ **7b インクリメンタル検索 / Leap**(マッチャ + migemo + `/` 検索 + Leap)→ 7c ジャンプ一覧 → 7d 操作ログ。計画はサブフェーズごとに `plan/phase7a-*.md` 等の別ファイル、`plan/phase7-dual-pane-and-search.md` は要約 |
 | 分割方向 | 上下(zrr と同じ) |
 | プレビュー | **ペインごと**。各行が `[列 \| スプリッタ \| プレビュー]` を持つ。`PreviewState` は `Pane` へ移る |
 | 並べ替え・隠しファイル | **ペインごと**。`ViewOptions` は `Pane` へ移る |
@@ -36,7 +36,7 @@ zrr(`..\zurari\Program.cs`)は二画面・`/` 検索・Leap・ブックマーク
 
 ---
 
-## 7a — Pane 抽出(見た目の変化なし)
+## 7a 前段 — Pane 抽出(見た目の変化なし)
 
 ### 状態
 
@@ -48,7 +48,7 @@ public sealed record Pane(PaneId Id, ImmutableArray<Column> Columns, int Focused
 {
     public PreviewState Preview { get; init; } = PreviewState.Initial;  // AppState から移動
     public ViewOptions  View    { get; init; } = ViewOptions.Default;   // AppState から移動
-    // 7c/7d で追加: Search, Leap, NeedsRefresh
+    // 7b で追加: Search, Leap, NeedsRefresh
 }
 
 public sealed record AppState
@@ -94,18 +94,18 @@ public sealed record AppState
 
 ### App
 
-- `StateProjection` は `state.Focused` を投影する(7b で2つ目のブラウザを足す)。
+- `StateProjection` は `state.Focused` を投影する(後段で2つ目のブラウザを足す)。
 - `ColumnBrowser` のイベントは、発生元のブラウザが属するペインの `PaneId` を付けて Msg にする。
 
 ### テスト
 
 - `GenMsg` は `ColumnRef` を生成する。**存在しない `PaneId` 宛ても混ぜ**、古い結果の経路を踏ませる。
 - 既存テストは機械的に移植する。
-- 完了条件: `scripts/check.ps1` green かつ、アプリの挙動が 7a 以前と同一。
+- 完了条件: `scripts/check.ps1` green かつ、アプリの挙動が前段以前と同一。
 
 ---
 
-## 7b — 分割 UI
+## 7a 後段 — 分割 UI
 
 ### Msg(すべて `GenMsg` に追加)
 
@@ -114,7 +114,7 @@ public sealed record AppState
 | `ToggleSplit` | Ctrl+W | 開: 新しい `PaneId` の下ペインを追加。初期位置はフォーカスペインのフォーカス列の Location、`View` はフォーカスペインの複製。フォーカスは元のペインのまま。閉: フォーカスペインだけを残す(他方への未着の結果は古い結果として捨てられる) |
 | `FocusPane(PaneId)` | Tab(他方へ)/ ペイン内のクリック | 分割していなければ Tab は何もしない |
 | `SwapPanes` | Shift+O | `Panes` の順を入れ替える。`FocusedPane` は**位置**を保つ(上は上のまま)ので、入れ替わるのは「どちらの内容がアクティブか」。ID はペインと一緒に動く |
-| `SyncToOtherPane` | `o` | フォーカスペインを他方のペインの Location に合わせる(同じなら何もしない)。列の積み直しは純粋ヘルパー `JumpTo(PaneId, Location)` で行う。7e のジャンプ系もこれを使う |
+| `SyncToOtherPane` | `o` | フォーカスペインを他方のペインの Location に合わせる(同じなら何もしない)。列の積み直しは純粋ヘルパー `JumpTo(PaneId, Location)` で行う。7c のジャンプ系もこれを使う |
 | `CopyToOtherPane(bool IsMove)` | `c` / `m` | 下記 |
 
 **`CopyToOtherPane`**:
@@ -124,7 +124,7 @@ public sealed record AppState
   表示と食い違い1階層上を指すバグが zrr で実際にあった)。
 - 以降は `PasteRequested` と同じ経路(`RunFileJob`、衝突確認つき)。
 - 拒否して `Notice` を出す場合: 宛先がドライブ一覧、宛先が対象そのもの・対象の配下(自分自身への移動)。
-- **分割していない場合**: 7b では `Notice`(「分割していません」)。7e で宛先ピッカーに置き換える。
+- **分割していない場合**: 7a では `Notice`(「分割していません」)。7c で宛先ピッカーに置き換える。
 
 **見送り**: zrr の Shift+Y(列幅を他方ペインへ複製)。列幅は `ColumnBrowser` のビュー局所状態で、
 複製には App→ブラウザの新しい経路が要る。zrr の分割系キーで最も使われないもの。
@@ -162,11 +162,11 @@ public sealed record AppState
 
 ---
 
-## 7c〜7f — 後続サブフェーズが従う決定
+## 7b〜7d — 後続サブフェーズが従う決定
 
 各サブフェーズは着手時に短い設計パスを行う。ここに書くのは、それらが守るべき共通の決定。
 
-### 共通マッチャ(7c、Core・純粋)
+### 共通マッチャ(7b、Core・純粋)
 
 - `NameMatcher.Compile(query, mode)` → 純粋なデータ仕様。モードは literal / regex / literal+migemo。
 - 正規表現は `RegexOptions.NonBacktracking`。利用者が打った病的なパターンで UI スレッドが止まらない。
@@ -174,7 +174,7 @@ public sealed record AppState
 - スペース区切りの AND セグメント(`\ ` でエスケープ、順不同)と、順位
   「前方一致 > 部分一致 > migemo(通常の一致が無いときだけ)」は zrr の Leap をそのまま移す。
 
-### migemo(7c、Runtime)
+### migemo(7b、Runtime)
 
 Core は `Effect.ExpandMigemo(PaneId, query)` を出し、Runtime が `Msg.MigemoExpanded(PaneId, query, pattern?)` を返す。
 Core は literal の一致を即座に適用し、パターンが届いたら migemo の一致を足す。現在のクエリと違う応答は捨てる。
@@ -202,35 +202,40 @@ wappsw の実測から引き継ぐこと:
 移植の検証: ローマ字クエリの集合(`nihon`、`kaisha`、`a`、`tt` …)について、Rust の `query` 出力と C# 移植の出力を
 比べるゴールデンファイルテスト。ゴールデンは rustmigemo(`examples` / `main.rs`)で一度生成してリポジトリに入れる。
 
-### `/` 検索(7c)
+### `/` 検索(7b)
 
 - `Pane.Search { Query, IsRegex, AnchorName, Matches, MatchIndex }`。一致を**強調するだけで隠さない**。
 - キーは zrr と同じ: 文字入力 / Backspace、Ctrl+R で regex 切替、↑↓・Ctrl+N/P で一致間を巡回(端で折り返す)、
   Enter で確定(カーソルはその位置)、Esc で取消(`AnchorName` へ戻る)。
 - 入力欄はパスバーの位置に出る(2026-09-13 決定)。本物の TextBox なので IME も通る。App はテキストの変化だけを Msg にする。
 
-### Leap(7d)
+### Leap(7b)
 
 - フィルタは `Column.Derive` の新しい入力(隠しファイル・折りたたみセクションと同列)。
   `AllEntries`・マーク・部分集合不変条件がそのまま保たれ、zrr の手管理の `VisibleIndices` と
   「非同期読み込み後にフィルタが古いまま」の回復処理(`RecoverStaleLeapFilterAsync`)が不要になる —
   `DirectoryLoaded` が来れば再導出されるだけ。
 - `Pane.Leap { Buffer, RootRef, RootCursorName, DirStack }`。バッファ = 辿った道(`mapm/we`)。
+- **AND 検索**: ローカルフィルタをスペースで区切り、すべてのセグメントが名前のどこかに含まれるものだけを残す
+  (順不同。`map tex` は `tex2map` にも `map2tex` にも一致。`\ ` でリテラルの空白、末尾の空白は無視。zrr の
+  `SplitLeapSegments` / `LeapAllSegmentsMatch` と同じ)。前方一致の判定は最初のセグメントで行う。
 - 単一のディレクトリ一致は自動で入る。連鎖は**タイマーではなく `DirectoryLoaded` で**進める。
 - 一致ゼロは mode B(入力を残し `(no match)` を表示)。
 - キーは zrr と同じ: F3 で開始/確定、Esc で取消(開始時の列・カーソルへ)、Enter はその場に着地(入らない)、
   → でディレクトリに入る / ファイルなら確定、← で親へ(ローカルフィルタと `/` を剥がす)、
   Backspace は1文字戻す(`/` を消せば親へ)、Ctrl+U でローカルフィルタ消去、Ctrl+K でルートへ、`/` でカーソル下へ入る。
 - LEAP バーはパスバーと同じ位置。
-- **zrr からの変更**: zrr は Leap 中プレビューを隠す。ここでは**プレビューの更新を止めるだけ**にし、終了時に追いつかせる。
-  GUI でペインが消えて戻るのは視覚的にうるさいため。
+- **プレビュー(ユーザー確認 2026-09-19)**: Leap 中はプレビューを**空にする**(ペイン自体は残し、中身を消す)。
+  終了時にカーソル位置のプレビューを読み込む。zrr の実使用で「Leap でカーソルが動くのに、プレビューが
+  別のファイルのものを出し続ける」状態が非常に紛らわしかったため、古い内容を残す案は採らない。
+  ペインの枠を残すのは、GUI でペインが消えて戻るとレイアウトが揺れるため。
 
-### モード中の再読込の保留(7c/7d)
+### モード中の再読込の保留(7b)
 
 検索・Leap 中は、`ExternalDirectoryChanged` とジョブ完了による再読込は `Pane.NeedsRefresh` を立てるだけにし、
 モード終了時に実行する(zrr の保護規則。再読込が一致インデックスやフィルタを壊すため)。
 
-### ジャンプ一覧(7e)
+### ジャンプ一覧(7c)
 
 - **履歴**: Core に置き、セッション限り、上限 100、新しい順。選んだパスが存在しなければ履歴から消す(zrr)。
 - **ブックマーク = 既存のピン**。概念は1つで、ドライブペインにも引き続き出る。`b` でピンのピッカー、
@@ -239,7 +244,7 @@ wappsw の実測から引き継ぐこと:
   用途は `b`、`h`、分割していないときの `c`/`m` の宛先ピッカー(ピン → 履歴の順)。
 - **アドレスバー**: Ctrl+L(Explorer と同じ)でパスバーを編集可能にし、Enter で `JumpTo`。存在しなければ `Notice`。
 
-### 操作ログ(7f)
+### 操作ログ(7d)
 
 - JobEngine が項目ごとに1行を Runtime のリング(1000件)と `%APPDATA%\zurari_w\operations.log` に書く
   (zrr の TSV 形式、10MB で `.1` へローテート、書き込み失敗は黙って諦める)。
@@ -249,17 +254,17 @@ wappsw の実測から引き継ぐこと:
 
 | キー | 意味 | サブフェーズ |
 |---|---|---|
-| Ctrl+W | 分割の開閉 | 7b |
-| Tab | 他方のペインへフォーカス | 7b |
-| Shift+O | ペインの入れ替え | 7b |
-| `o` | 他方のペインの場所へ合わせる | 7b |
-| `c` / `m` | 他方のペインへコピー / 移動 | 7b(非分割時の宛先ピッカーは 7e) |
-| `/` | インクリメンタル検索 | 7c |
-| F3 | Leap | 7d |
-| `b` / Shift+B | ピン一覧へジャンプ / カーソル下をピン留め | 7e |
-| `h` | 履歴へジャンプ | 7e |
-| Ctrl+L | アドレスバー | 7e |
-| Shift+L | 操作ログ | 7f |
+| Ctrl+W | 分割の開閉 | 7a |
+| Tab | 他方のペインへフォーカス | 7a |
+| Shift+O | ペインの入れ替え | 7a |
+| `o` | 他方のペインの場所へ合わせる | 7a |
+| `c` / `m` | 他方のペインへコピー / 移動 | 7a(非分割時の宛先ピッカーは 7c) |
+| `/` | インクリメンタル検索 | 7b |
+| F3 | Leap | 7b |
+| `b` / Shift+B | ピン一覧へジャンプ / カーソル下をピン留め | 7c |
+| `h` | 履歴へジャンプ | 7c |
+| Ctrl+L | アドレスバー | 7c |
+| Shift+L | 操作ログ | 7d |
 
 キーを足したら、ステータスバーの文脈ヒント(6e.7)も更新する。一覧としてのヘルプ画面は 6e.9 のまま後回し。
 
@@ -267,5 +272,5 @@ wappsw の実測から引き継ぐこと:
 
 - 検索結果を仮想ディレクトリの列として開く(roadmap 既定どおり)。
 - 分割方向の切り替え(上下固定)。
-- 各ペインの最後の場所の復元(7e の履歴と一緒に後で検討)。
+- 各ペインの最後の場所の復元(7c の履歴と一緒に後で検討)。
 - zrr の Shift+Y(列幅の複製)。

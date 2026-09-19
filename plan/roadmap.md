@@ -33,7 +33,7 @@
 | 4 | Windows シェル統合 | `[x]` | [phase4-shell-integration.md](phase4-shell-integration.md) | アイコン、ゴミ箱、IContextMenu、Explorer DnD、複数選択 |
 | 5 | 内製ジョブエンジン + プレビュー | `[x]` | [phase5-jobs-and-preview.md](phase5-jobs-and-preview.md) | JobEngine(進捗/キャンセル/競合確認)、Ctrl+C/X/V、プレビュー(メタ/HEX/動画) |
 | 6 | 基本操作の穴埋め + プレビュー刷新 | `[~]` | [phase6-basic-operations.md](phase6-basic-operations.md) | 6a `Location` 基盤 / 6b 生リスト+派生ビュー / 6c プレビューのキャンセル+サムネイルキャッシュ / 6d ドライブペイン(セクション・お気に入り・ピン・ゴミ箱) / 6e-bis カーソル移動の高速化。詳細は phase6 計画の Status 表 |
-| 7 | 二画面分割 + 検索・ジャンプ系 | `[ ]` | [phase7-dual-pane-and-search.md](phase7-dual-pane-and-search.md) | — |
+| 7 | 二画面分割 + 検索・ジャンプ系 | `[~]` | [phase7-dual-pane-and-search.md](phase7-dual-pane-and-search.md)(要約。サブフェーズごとに別ファイル) | 7a 画面分割 / 7b インクリメンタル検索・Leap / 7c ジャンプ一覧 / 7d 操作ログ。設計は [spec](../docs/superpowers/specs/2026-09-19-phase7-dual-pane-and-search-design.md) |
 | 8 | 仮想ロケーション基盤 | `[x]` | [phase8-virtual-locations.md](phase8-virtual-locations.md) | **Phase 6a として実施済み**(`2b74c1a`)。`Location` 型、`Entry.Target`、包含不変条件の削除 |
 | 9 | アーカイブ操作 | `[ ]` | [phase9-archives.md](phase9-archives.md) | — |
 
