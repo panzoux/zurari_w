@@ -648,26 +648,100 @@ public readonly record struct RememberedCursor(Location Location, string EntryNa
 /// </summary>
 public sealed record AppState
 {
-    /// <summary>The miller columns currently shown, left to right.</summary>
-    public required ImmutableArray<Column> Columns { get; init; }
+    /// <summary>The panes, top first. One, or two when the window is split.</summary>
+    public ImmutableArray<Pane> Panes { get; init; } = [new Pane(new PaneId(0), [], 0)];
 
-    /// <summary>Index into <see cref="Columns"/> of the column that has keyboard focus.</summary>
-    public required int FocusedColumn { get; init; }
+    /// <summary>Index into <see cref="Panes"/> of the pane that has keyboard focus.</summary>
+    public int FocusedPane { get; init; }
+
+    /// <summary>The <see cref="PaneId"/> the next pane created gets.</summary>
+    public int NextPaneId { get; init; } = 1;
+
+    /// <summary>The pane that has keyboard focus.</summary>
+    public Pane Focused => Panes[FocusedPane];
+
+    // ---- 7a compatibility shim: removed in 7a.4. Reads and writes the FOCUSED pane. ----
+    // Do not write new code against these; address panes through Focused, PaneOf, ColumnAt, WithColumn.
+
+    /// <summary>Transitional: the focused pane's columns.</summary>
+    public ImmutableArray<Column> Columns
+    {
+        get => Focused.Columns;
+        init => Panes = Panes.SetItem(FocusedPane, Panes[FocusedPane] with { Columns = value });
+    }
+
+    /// <summary>Transitional: the focused pane's focused column.</summary>
+    public int FocusedColumn
+    {
+        get => Focused.FocusedColumn;
+        init => Panes = Panes.SetItem(FocusedPane, Panes[FocusedPane] with { FocusedColumn = value });
+    }
+
+    /// <summary>Transitional: the focused pane's preview.</summary>
+    public PreviewState Preview
+    {
+        get => Focused.Preview;
+        init => Panes = Panes.SetItem(FocusedPane, Panes[FocusedPane] with { Preview = value });
+    }
+
+    /// <summary>Transitional: the focused pane's view options.</summary>
+    public ViewOptions View
+    {
+        get => Focused.View;
+        init => Panes = Panes.SetItem(FocusedPane, Panes[FocusedPane] with { View = value });
+    }
+
+    // ---- end of shim ----
+
+    /// <summary>Index into <see cref="Panes"/> of <paramref name="id"/>, or -1 when no such pane exists.</summary>
+    public int IndexOfPane(PaneId id)
+    {
+        for (var i = 0; i < Panes.Length; i++)
+        {
+            if (Panes[i].Id == id)
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>The pane <paramref name="id"/>, or <c>null</c> when it no longer exists (closed).</summary>
+    public Pane? PaneOf(PaneId id) => IndexOfPane(id) is var i and >= 0 ? Panes[i] : null;
+
+    /// <summary>The column <paramref name="at"/> names, or <c>null</c> when its pane or index is gone.</summary>
+    public Column? ColumnAt(ColumnRef at) =>
+        PaneOf(at.Pane) is { } pane && at.Column >= 0 && at.Column < pane.Columns.Length
+            ? pane.Columns[at.Column]
+            : null;
+
+    /// <summary>Replaces the pane with <paramref name="pane"/>'s id. Unknown id: returns this state unchanged.</summary>
+    public AppState WithPane(Pane pane)
+    {
+        ArgumentNullException.ThrowIfNull(pane);
+        var index = IndexOfPane(pane.Id);
+        return index < 0 ? this : this with { Panes = Panes.SetItem(index, pane) };
+    }
+
+    /// <summary>Replaces the column <paramref name="at"/> names. Unknown pane or index: returns this state unchanged.</summary>
+    public AppState WithColumn(ColumnRef at, Column column)
+    {
+        ArgumentNullException.ThrowIfNull(column);
+        return ColumnAt(at) is null || PaneOf(at.Pane) is not { } pane
+            ? this
+            : WithPane(pane with { Columns = pane.Columns.SetItem(at.Column, column) });
+    }
+
+    /// <summary>A state with one pane showing <paramref name="columns"/>. For startup and tests.</summary>
+    public static AppState SinglePane(ImmutableArray<Column> columns, int focusedColumn = 0) =>
+        new() { Panes = [new Pane(new PaneId(0), columns, focusedColumn)], FocusedPane = 0, NextPaneId = 1 };
 
     /// <summary>Background copy/move jobs, in submission order.</summary>
     public ImmutableArray<Job> Jobs { get; init; } = [];
 
     /// <summary>The <see cref="Job.JobId"/> to assign to the next job created by <c>PasteRequested</c>.</summary>
     public int NextJobId { get; init; } = 1;
-
-    /// <summary>What the preview pane currently shows - see <see cref="PreviewState"/>.</summary>
-    public PreviewState Preview { get; init; } = PreviewState.Initial;
-
-    /// <summary>
-    /// What turns a listing into what is on screen - order, and whether hidden files show. Applies
-    /// to every column that is derived at all; see <see cref="Column.IsSortable"/>.
-    /// </summary>
-    public ViewOptions View { get; init; } = ViewOptions.Default;
 
     /// <summary>
     /// A short message for the status bar - the result of something the user asked for that has no
@@ -724,12 +798,8 @@ public sealed record AppState
     /// </summary>
     public ImmutableArray<string> CutPending { get; init; } = [];
 
-    /// <summary>Starting state: a single, still-loading virtual root column (the drive list).</summary>
-    public static AppState Initial { get; } = new()
-    {
-        Columns = [new Column(Location.Drives.Instance, Entries: [])],
-        FocusedColumn = 0,
-    };
+    /// <summary>Starting state: one pane with a single, still-loading virtual root column (the drive list).</summary>
+    public static AppState Initial { get; } = SinglePane([new Column(Location.Drives.Instance, Entries: [])]);
 
     /// <summary>
     /// Checks the invariants that every reachable <see cref="AppState"/> must satisfy. Returns an
@@ -788,62 +858,37 @@ public sealed record AppState
     {
         var violations = new List<string>();
 
-        if (Preview.Attempt < 1 || Preview.Attempt > PreviewState.MaxAttempts)
+        if (Panes.IsDefaultOrEmpty || Panes.Length > 2)
         {
-            violations.Add("Preview.Attempt is outside 1.." + PreviewState.MaxAttempts);
-        }
-
-        if (Columns.IsDefaultOrEmpty)
-        {
-            violations.Add("Columns must be non-empty.");
+            violations.Add($"Panes holds {(Panes.IsDefault ? 0 : Panes.Length)} panes; expected 1 or 2 panes.");
             return violations;
         }
 
-        if (FocusedColumn < 0 || FocusedColumn >= Columns.Length)
+        if (FocusedPane < 0 || FocusedPane >= Panes.Length)
         {
-            violations.Add($"FocusedColumn {FocusedColumn} is out of range [0, {Columns.Length}).");
+            violations.Add($"FocusedPane {FocusedPane} is out of range [0, {Panes.Length}).");
         }
 
-        for (var i = 0; i < Columns.Length; i++)
+        var seenPanes = new HashSet<PaneId>();
+        for (var p = 0; p < Panes.Length; p++)
         {
-            var column = Columns[i];
-
-            if (column.Entries.IsEmpty)
+            var pane = Panes[p];
+            if (!seenPanes.Add(pane.Id))
             {
-                if (column.Cursor != -1)
-                {
-                    violations.Add($"Columns[{i}].Cursor is {column.Cursor} but Entries is empty (expected -1).");
-                }
-            }
-            else if (column.Cursor < 0 || column.Cursor >= column.Entries.Length)
-            {
-                violations.Add(
-                    $"Columns[{i}].Cursor {column.Cursor} is out of range [0, {column.Entries.Length}).");
+                violations.Add($"Panes holds {pane.Id} more than once.");
             }
 
-            if (column.Load == LoadState.Error && column.ErrorMessage is null)
+            if (pane.Id.Value < 0 || pane.Id.Value >= NextPaneId)
             {
-                violations.Add($"Columns[{i}].Load is Error but ErrorMessage is null.");
+                violations.Add($"Panes[{p}].Id {pane.Id.Value} is not in [0, NextPaneId {NextPaneId}).");
             }
 
-            // Entries is a view onto AllEntries: the same objects, none invented, none shown twice.
-            //
-            // This used to say "subsequence", which additionally required the visible rows to keep
-            // the order the read produced. Sorting is precisely the act of not doing that, so the
-            // property could not survive 6e.1. What it was actually guarding - a visible row that no
-            // read ever produced, or one row appearing twice - is guarded by the subset check, and
-            // that part still holds.
-            if (!IsSubsetOfAll(column))
+            if (pane.Preview.Attempt < 1 || pane.Preview.Attempt > PreviewState.MaxAttempts)
             {
-                violations.Add($"Columns[{i}].Entries contains rows that are not in AllEntries.");
+                violations.Add($"Panes[{p}].Preview.Attempt is outside 1.." + PreviewState.MaxAttempts);
             }
 
-            // There is deliberately no parent/child relationship checked between adjacent columns.
-            // The old invariant required Columns[i].Path to start with Columns[i-1].Path, which was
-            // only ever true because child locations were built by concatenating onto the parent.
-            // Now a row carries its own Entry.Target, so a column can legitimately point somewhere
-            // unrelated to the one on its left - that is exactly what a favorite, a pinned network
-            // share, or the recycle bin does. String containment would reject all of them.
+            CheckColumns(pane, $"Panes[{p}].", violations);
         }
 
         if (CursorMemory.Length > MaxRememberedCursors)
@@ -877,6 +922,62 @@ public sealed record AppState
         }
 
         return violations;
+    }
+
+    /// <summary>Checks the per-column invariants of one pane, prefixing each violation with <paramref name="prefix"/>.</summary>
+    private static void CheckColumns(Pane pane, string prefix, List<string> violations)
+    {
+        if (pane.Columns.IsDefaultOrEmpty)
+        {
+            violations.Add(prefix + "Columns must be non-empty.");
+            return;
+        }
+
+        if (pane.FocusedColumn < 0 || pane.FocusedColumn >= pane.Columns.Length)
+        {
+            violations.Add($"{prefix}FocusedColumn {pane.FocusedColumn} is out of range [0, {pane.Columns.Length}).");
+        }
+
+        for (var i = 0; i < pane.Columns.Length; i++)
+        {
+            var column = pane.Columns[i];
+
+            if (column.Entries.IsEmpty)
+            {
+                if (column.Cursor != -1)
+                {
+                    violations.Add($"{prefix}Columns[{i}].Cursor is {column.Cursor} but Entries is empty (expected -1).");
+                }
+            }
+            else if (column.Cursor < 0 || column.Cursor >= column.Entries.Length)
+            {
+                violations.Add($"{prefix}Columns[{i}].Cursor {column.Cursor} is out of range [0, {column.Entries.Length}).");
+            }
+
+            if (column.Load == LoadState.Error && column.ErrorMessage is null)
+            {
+                violations.Add($"{prefix}Columns[{i}].Load is Error but ErrorMessage is null.");
+            }
+
+            // Entries is a view onto AllEntries: the same objects, none invented, none shown twice.
+            //
+            // This used to say "subsequence", which additionally required the visible rows to keep
+            // the order the read produced. Sorting is precisely the act of not doing that, so the
+            // property could not survive 6e.1. What it was actually guarding - a visible row that no
+            // read ever produced, or one row appearing twice - is guarded by the subset check, and
+            // that part still holds.
+            if (!IsSubsetOfAll(column))
+            {
+                violations.Add($"{prefix}Columns[{i}].Entries contains rows that are not in AllEntries.");
+            }
+
+            // There is deliberately no parent/child relationship checked between adjacent columns.
+            // The old invariant required Columns[i].Path to start with Columns[i-1].Path, which was
+            // only ever true because child locations were built by concatenating onto the parent.
+            // Now a row carries its own Entry.Target, so a column can legitimately point somewhere
+            // unrelated to the one on its left - that is exactly what a favorite, a pinned network
+            // share, or the recycle bin does. String containment would reject all of them.
+        }
     }
 
     /// <summary>
