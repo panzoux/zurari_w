@@ -9,7 +9,7 @@ namespace Zurari.Core;
 public readonly record struct PaneId(int Value);
 
 /// <summary>A column, named by the pane it is in and its index within that pane.</summary>
-public readonly record struct ColumnRef(PaneId Pane, int Column);
+public readonly record struct ColumnRef(PaneId Pane, int Index);
 
 /// <summary>
 /// One miller-column browser: what it shows and where its cursor is, plus the preview and view
@@ -28,7 +28,7 @@ public sealed record Pane(PaneId Id, ImmutableArray<Column> Columns, int Focused
     public ViewOptions View { get; init; } = ViewOptions.Default;
 
     /// <summary>The column the cursor keys act on, or <c>null</c> when <see cref="FocusedColumn"/> is out of range.</summary>
-    public Column? Focused =>
+    public Column? FocusedColumnOrNull =>
         FocusedColumn >= 0 && FocusedColumn < Columns.Length ? Columns[FocusedColumn] : null;
 
     /// <summary>A reference to <see cref="FocusedColumn"/>.</summary>

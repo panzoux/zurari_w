@@ -662,6 +662,9 @@ public sealed record AppState
 
     // ---- 7a compatibility shim: removed in 7a.4. Reads and writes the FOCUSED pane. ----
     // Do not write new code against these; address panes through Focused, PaneOf, ColumnAt, WithColumn.
+    // Each init reads FocusedPane, so `with { FocusedPane = ..., Columns = ... }` (or FocusedColumn/
+    // Preview/View) depends on initializer order - the shim must never be combined with a FocusedPane
+    // change in the same `with`.
 
     /// <summary>Transitional: the focused pane's columns.</summary>
     public ImmutableArray<Column> Columns
@@ -712,25 +715,36 @@ public sealed record AppState
 
     /// <summary>The column <paramref name="at"/> names, or <c>null</c> when its pane or index is gone.</summary>
     public Column? ColumnAt(ColumnRef at) =>
-        PaneOf(at.Pane) is { } pane && at.Column >= 0 && at.Column < pane.Columns.Length
-            ? pane.Columns[at.Column]
+        PaneOf(at.Pane) is { } pane && at.Index >= 0 && at.Index < pane.Columns.Length
+            ? pane.Columns[at.Index]
             : null;
 
-    /// <summary>Replaces the pane with <paramref name="pane"/>'s id. Unknown id: returns this state unchanged.</summary>
+    /// <summary>
+    /// Replaces the pane with <paramref name="pane"/>'s id. Unknown id: returns this state unchanged.
+    /// Also returns this state unchanged (rather than an equal copy) when <paramref name="pane"/> is
+    /// the very instance already in that slot, so a no-op write keeps state identity.
+    /// </summary>
     public AppState WithPane(Pane pane)
     {
         ArgumentNullException.ThrowIfNull(pane);
         var index = IndexOfPane(pane.Id);
-        return index < 0 ? this : this with { Panes = Panes.SetItem(index, pane) };
+        return index < 0 || ReferenceEquals(Panes[index], pane) ? this : this with { Panes = Panes.SetItem(index, pane) };
     }
 
     /// <summary>Replaces the column <paramref name="at"/> names. Unknown pane or index: returns this state unchanged.</summary>
     public AppState WithColumn(ColumnRef at, Column column)
     {
         ArgumentNullException.ThrowIfNull(column);
-        return ColumnAt(at) is null || PaneOf(at.Pane) is not { } pane
+        var index = IndexOfPane(at.Pane);
+        if (index < 0)
+        {
+            return this;
+        }
+
+        var pane = Panes[index];
+        return at.Index < 0 || at.Index >= pane.Columns.Length
             ? this
-            : WithPane(pane with { Columns = pane.Columns.SetItem(at.Column, column) });
+            : WithPane(pane with { Columns = pane.Columns.SetItem(at.Index, column) });
     }
 
     /// <summary>A state with one pane showing <paramref name="columns"/>. For startup and tests.</summary>
