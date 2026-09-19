@@ -15,3 +15,4 @@
 {"timestamp":"2026-09-19T20:04:41.5819166+09:00","action":"create","task_id":15,"detail":"7b 検索/Leap の計画作成"}
 {"timestamp":"2026-09-19T20:04:41.6864054+09:00","action":"create","task_id":16,"detail":"7c ジャンプ一覧の計画作成"}
 {"timestamp":"2026-09-19T20:04:41.8054495+09:00","action":"create","task_id":17,"detail":"7d 操作ログの計画作成"}
+{"timestamp":"2026-09-19T20:36:18.6919186+09:00","action":"move","task_id":1,"detail":"todo -\u003e in-progress"}

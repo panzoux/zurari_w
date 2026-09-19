@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Two independent miller-column panes stacked top/bottom (Ctrl+W), each with its own preview and view options, with `c`/`m` copy/move between them — built on a Core that addresses every column through `ColumnRef(PaneId, Column)`.
+**Goal:** Two independent miller-column panes stacked top/bottom (Ctrl+W), each with its own preview and view options, with `c`/`m` copy/move between them — built on a Core that addresses every column through `ColumnRef(PaneId, Index)`.
 
 **Architecture:** First half is a behaviour-preserving refactor of Core: `AppState.Columns/FocusedColumn/Preview/View` move into a `Pane` record, and every column-addressed Msg/Effect carries a `ColumnRef` instead of an `int`. It is staged through a temporary compatibility shim so every commit stays green. Second half adds the split Msgs to Core, keys the Runtime's preview slot and the App's coalescing gates by pane, extracts a `PaneView` UserControl, and stacks two of them.
 
@@ -15,7 +15,7 @@
 
 # Status
 
-853 tests, `scripts/check.ps1` green.
+863 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`; do not edit it by hand. Write `(this commit)`
 in a row's commit cell (no backticks) and `status.ps1` fills in the hash after the commit lands.</sub>
@@ -23,7 +23,7 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
 | | Item | Status | Commit |
 |---|---|---|---|
 | **7a-front** | **Pane extraction (no visible change)** | `[ ]` | |
-| 7a.1 | `PaneId` / `ColumnRef` / `Pane`; state moves into `Pane` behind a compatibility shim | `[ ]` | |
+| 7a.1 | `PaneId` / `ColumnRef` / `Pane`; state moves into `Pane` behind a compatibility shim | `[x]` | `55770c0` `05460e3` |
 | 7a.2 | Column-addressed Msgs and Effects carry `ColumnRef` | `[ ]` | |
 | 7a.3 | Preview Msgs/Effects carry `PaneId`; post-steps run per pane; `ViewRestored` per pane | `[ ]` | |
 | 7a.4 | Remove the compatibility shim | `[ ]` | |
@@ -231,7 +231,7 @@ namespace Zurari.Core;
 public readonly record struct PaneId(int Value);
 
 /// <summary>A column, named by the pane it is in and its index within that pane.</summary>
-public readonly record struct ColumnRef(PaneId Pane, int Column);
+public readonly record struct ColumnRef(PaneId Pane, int Index);
 
 /// <summary>
 /// One miller-column browser: what it shows and where its cursor is, plus the preview and view
@@ -250,7 +250,7 @@ public sealed record Pane(PaneId Id, ImmutableArray<Column> Columns, int Focused
     public ViewOptions View { get; init; } = ViewOptions.Default;
 
     /// <summary>The column the cursor keys act on, or <c>null</c> when <see cref="FocusedColumn"/> is out of range.</summary>
-    public Column? Focused =>
+    public Column? FocusedColumnOrNull =>
         FocusedColumn >= 0 && FocusedColumn < Columns.Length ? Columns[FocusedColumn] : null;
 
     /// <summary>A reference to <see cref="FocusedColumn"/>.</summary>
@@ -332,8 +332,8 @@ properties `Preview` and `View`, with the block below. Leave `Jobs`, `NextJobId`
 
     /// <summary>The column <paramref name="at"/> names, or <c>null</c> when its pane or index is gone.</summary>
     public Column? ColumnAt(ColumnRef at) =>
-        PaneOf(at.Pane) is { } pane && at.Column >= 0 && at.Column < pane.Columns.Length
-            ? pane.Columns[at.Column]
+        PaneOf(at.Pane) is { } pane && at.Index >= 0 && at.Index < pane.Columns.Length
+            ? pane.Columns[at.Index]
             : null;
 
     /// <summary>Replaces the pane with <paramref name="pane"/>'s id. Unknown id: returns this state unchanged.</summary>
@@ -350,7 +350,7 @@ properties `Preview` and `View`, with the block below. Leave `Jobs`, `NextJobId`
         ArgumentNullException.ThrowIfNull(column);
         return ColumnAt(at) is null || PaneOf(at.Pane) is not { } pane
             ? this
-            : WithPane(pane with { Columns = pane.Columns.SetItem(at.Column, column) });
+            : WithPane(pane with { Columns = pane.Columns.SetItem(at.Index, column) });
     }
 
     /// <summary>A state with one pane showing <paramref name="columns"/>. For startup and tests.</summary>
@@ -592,9 +592,9 @@ Every handler taking `int columnIndex` takes `ColumnRef at` instead. The rewrite
 | `if (!InRange(state, columnIndex)) return …; var column = state.Columns[columnIndex];` | `if (state.ColumnAt(at) is not { } column) return …;` |
 | `WithColumn(state, columnIndex, c)` | `state.WithColumn(at, c)` |
 | `state with { Columns = X, FocusedColumn = Y }` | `state.WithPane(pane with { Columns = X, FocusedColumn = Y })` where `var pane = state.PaneOf(at.Pane)!;` (after the `ColumnAt` check it exists) |
-| `state.Columns.Take(columnIndex + 1)` | `pane.Columns.Take(at.Column + 1)` |
+| `state.Columns.Take(columnIndex + 1)` | `pane.Columns.Take(at.Index + 1)` |
 | `new Effect.ReadDirectory(newColumnIndex, loc)` | `new Effect.ReadDirectory(pane.Ref(newColumnIndex), loc)` |
-| `columnIndex == 0` (GoToParent) | `at.Column == 0` |
+| `columnIndex == 0` (GoToParent) | `at.Index == 0` |
 
 Worked example — `EnterDirectory` after the rewrite (full method):
 
@@ -615,9 +615,9 @@ Worked example — `EnterDirectory` after the rewrite (full method):
         var entry = column.Entries[entryIndex];
         if (entry.Kind is EntryKind.File or EntryKind.Header)
         {
-            var fileTruncated = pane.Columns.Take(at.Column + 1).ToImmutableArray();
-            fileTruncated = fileTruncated.SetItem(at.Column, column with { Cursor = entryIndex });
-            var fileState = state.WithPane(pane with { Columns = fileTruncated, FocusedColumn = at.Column });
+            var fileTruncated = pane.Columns.Take(at.Index + 1).ToImmutableArray();
+            fileTruncated = fileTruncated.SetItem(at.Index, column with { Cursor = entryIndex });
+            var fileState = state.WithPane(pane with { Columns = fileTruncated, FocusedColumn = at.Index });
 
             if (entry.Kind != EntryKind.File || EntryPath(column, entry) is not { } filePath)
             {
@@ -631,26 +631,26 @@ Worked example — `EnterDirectory` after the rewrite (full method):
         }
 
         var childLocation = ChildLocation(column, entry);
-        var childIndex = at.Column + 1;
+        var childIndex = at.Index + 1;
 
         // (keep the existing "column beside the cursor is usually already showing this" comment)
         if (childIndex < pane.Columns.Length && pane.Columns[childIndex].Location == childLocation)
         {
-            var reused = pane.Columns.SetItem(at.Column, column with { Cursor = entryIndex });
+            var reused = pane.Columns.SetItem(at.Index, column with { Cursor = entryIndex });
             return (
-                state.WithPane(pane with { Columns = reused, FocusedColumn = focusChild ? childIndex : at.Column }),
+                state.WithPane(pane with { Columns = reused, FocusedColumn = focusChild ? childIndex : at.Index }),
                 NoEffects);
         }
 
-        var truncated = pane.Columns.Take(at.Column + 1).ToImmutableArray();
-        truncated = truncated.SetItem(at.Column, column with { Cursor = entryIndex });
+        var truncated = pane.Columns.Take(at.Index + 1).ToImmutableArray();
+        truncated = truncated.SetItem(at.Index, column with { Cursor = entryIndex });
 
         var newColumnIndex = truncated.Length;
         var newColumn = new Column(childLocation, Entries: [], Cursor: -1, Load: LoadState.Loading);
         var newState = state.WithPane(pane with
         {
             Columns = truncated.Add(newColumn),
-            FocusedColumn = focusChild ? newColumnIndex : at.Column,
+            FocusedColumn = focusChild ? newColumnIndex : at.Index,
         });
         return (newState, [new Effect.ReadDirectory(pane.Ref(newColumnIndex), childLocation)]);
     }
@@ -720,7 +720,7 @@ instance — it used to return `state with { Columns = sameArray }`. Both are "u
 asserted reference inequality, it was asserting an accident — change it to `Assert.Same`.
 
 **`DirectoryLoaded`'s reveal**: `var focused = state.WithColumn(at, updated with { Cursor = revealed });`
-then `return focused.WithPane(focused.PaneOf(at.Pane)! with { FocusedColumn = at.Column }) with { RevealTarget = null };`
+then `return focused.WithPane(focused.PaneOf(at.Pane)! with { FocusedColumn = at.Index }) with { RevealTarget = null };`
 (decision 4: moves that pane's focused column, never `FocusedPane`).
 
 **Rename**: `BeginRename` stores `new RenameState(at, entry.Name)`; `SubmitRename` resolves
@@ -732,6 +732,12 @@ the shim in this task; 7a.3 rewrites them. Their `new Effect.ReadDirectory(child
 `new Effect.ReadDirectory(state.Focused.Ref(childIndex), …)`.
 
 The `ApplyCore` switch passes `m.At` wherever it passed `m.ColumnIndex`.
+
+**No-op rule (from the 7a.1 review).** A message that changes nothing must return the original
+`state` instance, never a rebuilt one: about 25 tests assert `Assert.Equal(state, next)` for ignored
+messages, and `ImmutableArray<Pane>` compares by reference. Guard before writing (`ColumnAt` returning
+`null`, unchanged cursor, …) exactly as the handlers do today; `WithPane` already returns `this` when
+handed the very pane instance it holds.
 
 - [ ] **Step 5: Runtime, Shell, App**
 
@@ -752,7 +758,7 @@ The `ApplyCore` switch passes `m.At` wherever it passed `m.ColumnIndex`.
 - `new Msg.X(0, …)` → `new Msg.X(Col(0), …)` with `using static Zurari.TestSupport.TestPanes;`
   at the top of the file.
 - `new Effect.ReadDirectory(1, loc)` in expectations → `new Effect.ReadDirectory(Col(1), loc)`.
-- `effect.ColumnIndex` → `effect.At.Column` (or compare the whole `At` to `Col(n)`).
+- `effect.ColumnIndex` → `effect.At.Index` (or compare the whole `At` to `Col(n)`).
 - In `TransitionProperties`, `GenColumnIndex.Select(i => (Msg)new Msg.CursorUp(i))` →
   `GenColumnRef.Select(r => (Msg)new Msg.CursorUp(r))` with, for now,
   `private static Gen<ColumnRef> GenColumnRef => GenColumnIndex.Select(i => new ColumnRef(TestPanes.First, i));`
@@ -767,7 +773,7 @@ Run: `pwsh scripts/check.ps1` → `ALL CHECKS GREEN`
 
 ```bash
 git add -A src tests
-git commit -m "Address columns by ColumnRef(PaneId, Column) in every Msg and Effect"
+git commit -m "Address columns by ColumnRef(PaneId, Index) in every Msg and Effect"
 ```
 
 ---
@@ -894,7 +900,7 @@ and write back with `state.WithPane(pane with { Preview = … })`. Example:
 - [ ] **Step 4: Transition — post-steps per pane**
 
 Change `ResolveCursorFileTarget(AppState)` to `ResolveCursorFileTarget(Pane pane)` (read
-`pane.Focused` instead of `state.Columns[state.FocusedColumn]`; body otherwise unchanged).
+`pane.FocusedColumnOrNull` instead of `state.Columns[state.FocusedColumn]`; body otherwise unchanged).
 
 `Apply` becomes:
 
@@ -921,12 +927,12 @@ Change `ResolveCursorFileTarget(AppState)` to `ResolveCursorFileTarget(Pane pane
     }
 ```
 
-`RememberFocusedCursor(oldState, state)`: read `state.Focused.Focused` and compare with the old
-state's pane of the same id (`oldState.PaneOf(state.Focused.Id)?.Focused`).
+`RememberFocusedCursor(oldState, state)`: read `state.Focused.FocusedColumnOrNull` and compare with the old
+state's pane of the same id (`oldState.PaneOf(state.Focused.Id)?.FocusedColumnOrNull`).
 
 `ReconcileChildColumn(Pane? before, PaneId id, AppState state, IReadOnlyList<Effect> effects)`: the
 existing body, with `state.Columns`/`FocusedColumn` replaced by `pane = state.PaneOf(id)!`'s, the
-old-side comparison using `before?.Focused`, the write via `state.WithPane(pane with { Columns = … })`,
+old-side comparison using `before?.FocusedColumnOrNull`, the write via `state.WithPane(pane with { Columns = … })`,
 and `new Effect.ReadDirectory(pane.Ref(childIndex), wanted, Speculative: true)`.
 
 `ReconcilePreview(Pane? before, PaneId id, AppState state, IReadOnlyList<Effect> effects)`: the
@@ -994,6 +1000,10 @@ Run: `dotnet build Zurari.sln 2>&1 | Select-String "error CS"`. Rules:
   `AppState.SinglePane([.. columns])`.
 - `AssertStatesEqual` in `TransitionProperties`: compare `FocusedPane`, `NextPaneId`, `Panes.Length`,
   and per pane `Id`, `FocusedColumn`, `Preview`, `View` and `Columns` (element-wise as today).
+
+- Make `AppState.Panes` `required` again (it lost `required` only so the shim's `init` accessors
+  had a pane to write into), so `new AppState()` without panes stops compiling. `Initial` and
+  `SinglePane` set it.
 
 - [ ] **Step 3: Run, check, commit**
 
@@ -1220,7 +1230,7 @@ Run: `dotnet test tests/Zurari.Core.Tests --filter FullyQualifiedName~SplitTests
             return (state with { Panes = [kept], FocusedPane = 0, Rename = null, InputMode = InputMode.Normal }, NoEffects);
         }
 
-        var source = state.Focused.Focused;
+        var source = state.Focused.FocusedColumnOrNull;
         if (source is null)
         {
             return (state, NoEffects);
@@ -1517,7 +1527,7 @@ Find how `PasteRequested`'s handler collects nothing itself (it receives `Source
         }
 
         var mine = state.Focused;
-        if (mine.Focused is not { } column)
+        if (mine.FocusedColumnOrNull is not { } column)
         {
             return (state, NoEffects);
         }
@@ -1575,7 +1585,7 @@ Find how `PasteRequested`'s handler collects nothing itself (it receives `Source
     /// </remarks>
     private static string? DirectoryUnderCursor(Pane pane)
     {
-        if (pane.Focused is not { } column)
+        if (pane.FocusedColumnOrNull is not { } column)
         {
             return null;
         }
@@ -2355,3 +2365,17 @@ git commit -m "Close 7a: record the manual checks"
 
 (Evidence per task goes here: test output excerpts, manual check results, anything the plan did not
 anticipate. Stop and ask rather than deciding unilaterally when something contradicts the design.)
+
+## 7a.1 (2026-09-19)
+
+- Canary for the subagent run. `check.ps1` green, 863 tests (853 + 10 `PaneTests`).
+- Plan Step 6 was a no-op: existing invariant assertions match substrings unaffected by the new
+  `Panes[i].` prefix.
+- Quality review (no critical issues) led to a follow-up commit: `ColumnRef.Column` renamed to
+  `ColumnRef.Index`, `Pane.Focused` renamed to `Pane.FocusedColumnOrNull` (avoids
+  `state.Focused.Focused`), `WithPane` returns the same state for the identical pane instance, and
+  three more tests (shim with `FocusedPane = 1`, `WithPane` unknown id / same instance). The later
+  task texts were updated for the renames; 7a.2 gained the no-op rule, 7a.4 making `Panes` required.
+- Not taken: the reviewer's note that the record's generated `ToString` can throw on an out-of-range
+  `FocusedPane`. Only an invalid state reaches that, and the property tests assert
+  `CheckInvariants()` (which never throws) first.
