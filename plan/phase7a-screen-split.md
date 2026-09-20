@@ -15,7 +15,7 @@
 
 # Status
 
-874 tests, `scripts/check.ps1` green.
+878 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`; do not edit it by hand. Write `(this commit)`
 in a row's commit cell (no backticks) and `status.ps1` fills in the hash after the commit lands.</sub>
@@ -25,7 +25,7 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
 | **7a-front** | **Pane extraction (no visible change)** | `[ ]` | |
 | 7a.1 | `PaneId` / `ColumnRef` / `Pane`; state moves into `Pane` behind a compatibility shim | `[x]` | `55770c0` `05460e3` |
 | 7a.2 | Column-addressed Msgs and Effects carry `ColumnRef` | `[x]` | `267963f` `b022607` |
-| 7a.3 | Preview Msgs/Effects carry `PaneId`; post-steps run per pane; `ViewRestored` per pane | `[ ]` | |
+| 7a.3 | Preview Msgs/Effects carry `PaneId`; post-steps run per pane; `ViewRestored` per pane | `[x]` | `6afba7f` `e4c72bc` |
 | 7a.4 | Remove the compatibility shim | `[ ]` | |
 | 7a.5 | Property tests: refs to panes that do not exist; per-pane invariants | `[ ]` | |
 | **7a-back** | **Split UI** | `[ ]` | |
@@ -1002,6 +1002,11 @@ Run: `dotnet build Zurari.sln 2>&1 | Select-String "error CS"`. Rules:
 - `AssertStatesEqual` in `TransitionProperties`: compare `FocusedPane`, `NextPaneId`, `Panes.Length`,
   and per pane `Id`, `FocusedColumn`, `Preview`, `View` and `Columns` (element-wise as today).
 
+- Add `AppState.ViewAt(ColumnRef at)` (the view of the pane `at` names) next to `ColumnAt`, and use
+  it for the six `state.PaneOf(at.Pane)!.View` sites in Transition, dropping those `!`s.
+- In `Apply`'s per-pane loop, skip both reconcile steps for a pane whose instance is reference-equal
+  to its `before` snapshot: a message that did not touch a pane needs no reconciling, and this makes
+  the unfocused pane free on every keystroke instead of costing several `PaneOf` scans.
 - Make `AppState.Panes` `required` again (it lost `required` only so the shim's `init` accessors
   had a pane to write into), so `new AppState()` without panes stops compiling. `Initial` and
   `SinglePane` set it.
@@ -1051,12 +1056,61 @@ In `Any_msg_sequence_yields_valid_state_and_effects`, replace the single generat
                 }
 ```
 
-- [ ] **Step 3: Run, check, commit**
+- [ ] **Step 3: Three example tests the 7a.3 review asked for** (in `PaneTests.cs`)
+
+```csharp
+    [Fact]
+    public void A_preview_result_for_one_pane_is_ignored_by_the_other_at_the_same_generation()
+    {
+        // Both panes count generations from their own start, so the same number means two different
+        // files. An implementation that checked only the generation would pass the earlier tests.
+        var state = TwoPanes(Files(@"C:\a", "x.txt"), Files(@"C:\b", "p.txt"));
+        var (loadedA, _) = Transition.Apply(state, new Msg.CursorTo(new ColumnRef(new PaneId(0), 0), 0));
+        var (both, _) = Transition.Apply(loadedA, new Msg.CursorTo(new ColumnRef(new PaneId(1), 0), 0));
+        Assert.Equal(both.Panes[0].Preview.Generation, both.Panes[1].Preview.Generation);
+
+        var (next, _) = Transition.Apply(
+            both, new Msg.PreviewLoaded(new PaneId(1), both.Panes[1].Preview.Generation, PreviewKind.Text, "hello", [], null));
+
+        Assert.Equal("hello", next.Panes[1].Preview.Text);
+        Assert.Null(next.Panes[0].Preview.Text);
+    }
+
+    [Fact]
+    public void Leaving_a_file_cancels_that_panes_preview_and_names_the_pane()
+    {
+        var state = TwoPanes(Files(@"C:\a", "x.txt"), Files(@"C:\b", "p.txt", "q"));
+        var (loading, _) = Transition.Apply(state, new Msg.CursorTo(new ColumnRef(new PaneId(1), 0), 0));
+        var generation = loading.Panes[1].Preview.Generation;
+
+        var (_, effects) = Transition.Apply(loading, new Msg.CursorTo(new ColumnRef(new PaneId(1), 0), 1));
+
+        var cancelled = Assert.Single(effects.OfType<Effect.CancelPreview>());
+        Assert.Equal(new PaneId(1), cancelled.Pane);
+        Assert.Equal(generation, cancelled.Generation);
+    }
+
+    [Fact]
+    public void Refreshing_both_panes_leaves_both_previews_alone()
+    {
+        var state = TwoPanes(Files(@"C:\a", "x.txt"), Files(@"C:\b", "p.txt"));
+
+        var (next, effects) = Transition.Apply(state, new Msg.Refresh());
+
+        Assert.Equal(2, effects.OfType<Effect.ReadDirectory>().Count());
+        Assert.Empty(effects.OfType<Effect.LoadPreview>());
+        Assert.Empty(effects.OfType<Effect.CancelPreview>());
+        Assert.Equal(state.Panes[0].Preview, next.Panes[0].Preview);
+        Assert.Equal(state.Panes[1].Preview, next.Panes[1].Preview);
+    }
+```
+
+- [ ] **Step 4: Run, check, commit**
 
 Run: `dotnet test tests/Zurari.Core.Tests` → PASS. `pwsh scripts/check.ps1` → green.
 
 ```bash
-git add tests/Zurari.Core.Tests/TransitionTests.cs
+git add tests/Zurari.Core.Tests
 git commit -m "Generate messages for other panes, including ones that do not exist"
 ```
 
@@ -1853,6 +1907,20 @@ with one class and a dictionary, all guarded by the existing `_previewGate`:
     /// </summary>
     private readonly Dictionary<PaneId, PreviewSlot> _previewSlots = [];
 
+    /// <summary>Forgets <paramref name="pane"/>'s slot once its work has unwound.</summary>
+    /// <remarks>
+    /// Closing and reopening the split hands out a fresh <see cref="PaneId"/> each time, so without
+    /// this the dictionary grows by one entry - each holding a finished <see cref="Task"/> - for
+    /// every toggle in the process's life.
+    /// </remarks>
+    private void ForgetSlotUnderLock(PaneId pane)
+    {
+        if (_previewSlots.TryGetValue(pane, out var slot) && slot.Cts is null)
+        {
+            _previewSlots.Remove(pane);
+        }
+    }
+
     private PreviewSlot SlotFor(PaneId pane)
     {
         if (!_previewSlots.TryGetValue(pane, out var slot))
@@ -2320,9 +2388,19 @@ and these members on the record:
     }
 ```
 
+**The restore must name the top pane, not whichever read won (7a.3 review).** `ViewRestored` and
+`CollapsedGroupsRestored` are posted from a once-per-process gate, fired by the first
+`ReadDirectory(Drives)` to finish. With the split restored at startup, the *bottom* pane's read can
+win, which would apply the stored top-pane view to the bottom pane and leave the top on defaults.
+Post the restore for the pane of the drive read only when it is the first pane (`effect.At.Pane`
+equals the id the App started with, which the Runtime is told once at construction), or - simpler -
+have the App dispatch `ViewRestored` itself for each pane from the settings it already reads in
+Step 4, and drop the Runtime's `ViewRestored` post entirely. Decide when implementing; the second
+is preferred, because the App is where the split is restored and it already holds the settings.
+
 `WorkerRuntime`: handle `Effect.SetPaneViews` by mapping each `ViewOptions` to `PaneViewSettings`
 (`Mode.ToString()`, etc.) and `_settings.Update(s => s.WithPaneViews(mapped))`. `ReadViewOptions`
-takes a `PaneViewSettings` and the restore posts `ViewRestored(effect.At.Pane, ReadViewOptions(views[0]))`.
+takes a `PaneViewSettings`.
 Add `public static ViewOptions ReadViewOptions(PaneViewSettings stored)` as **public** so the App can
 convert the stored bottom view (next step).
 
@@ -2530,3 +2608,22 @@ anticipate. Stop and ask rather than deciding unilaterally when something contra
   helpers and the rename editor addressed by pane rather than focus (7a.10/7a.11); swap and sync end
   a rename (7a.7). Already covered by 7a.3: `state.View` used while deriving another pane's column,
   and the post-steps reading only the focused pane.
+
+## 7a.3 (2026-09-20)
+
+- Preview Msgs/Effects and `ViewRestored` carry a `PaneId`; `Apply` runs `ReconcileChildColumn` and
+  `ReconcilePreview` once per pane against that pane's own pre-message snapshot, looked up by id.
+  Transition no longer reads the shim at all, so 7a.4 is a deletion rather than an investigation.
+  `check.ps1` green, 878 tests.
+- Addressing `before` by pane id also fixes a latent bug: the old post-steps compared
+  `oldState.Focused` with `state.Focused`, which would have compared two *different* panes once
+  `FocusPane` (7a.6) exists, rebuilding a column chain for nothing.
+- Review follow-up (`e4c72bc`): `Rederive`'s `remember` flag was dead after `RestoreView` split off;
+  the two `PaneOf(id)!` uses in the post-steps became guards (7a.6/7a.7 add handlers that add and
+  remove panes); one preview test strengthened to `Assert.Same` on the untouched pane.
+- Deferred to later tasks (plan updated): `AppState.ViewAt` plus skipping reconciliation for a pane
+  the message did not touch (7a.4); three example tests - same generation in both panes, the pane on
+  `CancelPreview`, and `Refresh` not churning previews (7a.5); releasing a closed pane's preview slot
+  (7a.9); and, in 7a.12, restoring each pane's view from the App rather than from whichever drive
+  read finishes first - with the split restored at startup the bottom pane's read can win, which
+  would apply the top pane's stored view to the bottom one.

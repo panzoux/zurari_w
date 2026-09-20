@@ -22,3 +22,5 @@
 {"timestamp":"2026-09-19T21:24:26.7396342+09:00","action":"edit","task_id":9,"detail":"7a.9 Runtime: ペインごとのプレビュー枠"}
 {"timestamp":"2026-09-19T21:33:16.2905579+09:00","action":"move","task_id":2,"detail":"in-progress -\u003e done"}
 {"timestamp":"2026-09-19T21:33:16.4070692+09:00","action":"move","task_id":3,"detail":"todo -\u003e in-progress"}
+{"timestamp":"2026-09-20T11:17:44.850652+09:00","action":"move","task_id":3,"detail":"in-progress -\u003e done"}
+{"timestamp":"2026-09-20T11:17:44.9792425+09:00","action":"move","task_id":4,"detail":"todo -\u003e in-progress"}
