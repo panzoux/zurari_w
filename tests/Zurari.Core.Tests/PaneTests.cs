@@ -271,7 +271,7 @@ public class PaneTests
         var load = Assert.Single(effects.OfType<Effect.LoadPreview>());
         Assert.Equal(new PaneId(1), load.Pane);
         Assert.Equal(@"C:\b\q.txt", load.Path);
-        Assert.Equal(state.Panes[0].Preview, next.Panes[0].Preview);
+        Assert.Same(state.Panes[0], next.Panes[0]);
     }
 
     [Fact]

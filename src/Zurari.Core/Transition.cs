@@ -95,7 +95,11 @@ public static class Transition
     private static (AppState, IReadOnlyList<Effect>) ReconcileChildColumn(
         Pane? before, PaneId id, AppState state, IReadOnlyList<Effect> effects)
     {
-        var pane = state.PaneOf(id)!;
+        if (state.PaneOf(id) is not { } pane)
+        {
+            return (state, effects);
+        }
+
         if (pane.FocusedColumnOrNull is not { } focusedColumn)
         {
             return (state, effects);
@@ -204,16 +208,15 @@ public static class Transition
             Msg.FolderCreated m => RereadColumn(state, m.At, m.Location, reveal: m.Name),
             // Each choice sort mode offers also ends it: the mode is one decision long.
             Msg.SetSortMode m => Rederive(
-                LeaveSortMode(state), state.Focused.View with { Sort = state.Focused.View.Sort.Select(m.Mode) }, remember: true),
+                LeaveSortMode(state), state.Focused.View with { Sort = state.Focused.View.Sort.Select(m.Mode) }),
             Msg.ToggleDirectoriesFirst => Rederive(
                 LeaveSortMode(state),
                 state.Focused.View with
                 {
                     Sort = state.Focused.View.Sort with { DirectoriesFirst = !state.Focused.View.Sort.DirectoriesFirst },
-                },
-                remember: true),
+                }),
             Msg.ToggleHiddenFiles => Rederive(
-                state, state.Focused.View with { ShowHidden = !state.Focused.View.ShowHidden }, remember: true),
+                state, state.Focused.View with { ShowHidden = !state.Focused.View.ShowHidden }),
 
             // A rename being typed owns the keyboard: a letter meant for the new name must not open a
             // mode whose next keys would re-sort the listing out from under it. Returning the same
@@ -226,8 +229,7 @@ public static class Transition
             Msg.ExitSortMode => (LeaveSortMode(state), NoEffects),
             Msg.SetSortDescending m => Rederive(
                 LeaveSortMode(state),
-                state.Focused.View with { Sort = state.Focused.View.Sort with { Mode = m.Mode, Descending = true } },
-                remember: true),
+                state.Focused.View with { Sort = state.Focused.View.Sort with { Mode = m.Mode, Descending = true } }),
             Msg.ViewRestored m => (RestoreView(state, m.Pane, m.View), NoEffects),
             Msg.ToggleSection m => ToggleSection(state, m.At, m.EntryIndex),
             Msg.RetryPreview m => RetryPreview(state, m.Pane),
@@ -373,21 +375,19 @@ public static class Transition
         name.EndsWith(".iso", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Re-derives every column under <paramref name="view"/>, keeping each cursor on the entry it
-    /// was on rather than the position.
+    /// Re-derives the focused pane's columns under <paramref name="view"/>, keeping each cursor on
+    /// the entry it was on rather than the position, and persists the new view.
     /// </summary>
     /// <remarks>
     /// Nothing is read again. The full listing is already in <see cref="Column.AllEntries"/>, which
     /// is what that field is for: changing the order is a rearrangement of data in hand, instant
     /// even on a network share or a directory with a hundred thousand files in it.
     /// </remarks>
-    private static (AppState, IReadOnlyList<Effect>) Rederive(AppState state, ViewOptions view, bool remember)
+    private static (AppState, IReadOnlyList<Effect>) Rederive(AppState state, ViewOptions view)
     {
         var pane = state.Focused;
         var next = state.WithPane(pane with { Columns = RederiveColumns(pane.Columns, view), View = view });
-        return remember
-            ? (next, new Effect[] { new Effect.SetViewOptions(view) })
-            : (next, NoEffects);
+        return (next, new Effect[] { new Effect.SetViewOptions(view) });
     }
 
     /// <summary>
@@ -1465,8 +1465,12 @@ public static class Transition
     private static (AppState, IReadOnlyList<Effect>) ReconcilePreview(
         Pane? before, PaneId id, AppState state, IReadOnlyList<Effect> effects)
     {
+        if (state.PaneOf(id) is not { } pane)
+        {
+            return (state, effects);
+        }
+
         var oldTarget = (before is null ? default : ResolveCursorFileTarget(before)).Path;
-        var pane = state.PaneOf(id)!;
         var (newTarget, originalPath, targetKind) = ResolveCursorFileTarget(pane);
         if (string.Equals(oldTarget, newTarget, StringComparison.Ordinal))
         {
