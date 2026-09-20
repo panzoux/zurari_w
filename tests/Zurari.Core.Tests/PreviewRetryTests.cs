@@ -32,14 +32,14 @@ public class PreviewRetryTests
     [Fact]
     public void A_timed_out_preview_is_retried_as_the_next_attempt()
     {
-        var (next, effects) = Transition.Apply(TimedOut(1), new Msg.RetryPreview());
+        var (next, effects) = Transition.Apply(TimedOut(1), new Msg.RetryPreview(First));
 
         Assert.Equal(PreviewKind.Loading, next.Preview.Kind);
         Assert.Equal(6, next.Preview.Generation);
         Assert.Equal(2, next.Preview.Attempt);
         Assert.False(next.Preview.TimedOut);
         Assert.Equal(
-            new Effect.LoadPreview(6, Clip, PreviewTarget.File, Attempt: 2),
+            new Effect.LoadPreview(First, 6, Clip, PreviewTarget.File, Attempt: 2),
             Assert.Single(effects.OfType<Effect.LoadPreview>()));
     }
 
@@ -48,7 +48,7 @@ public class PreviewRetryTests
     {
         var state = TimedOut(PreviewState.MaxAttempts);
 
-        var (next, effects) = Transition.Apply(state, new Msg.RetryPreview());
+        var (next, effects) = Transition.Apply(state, new Msg.RetryPreview(First));
 
         Assert.Equal(state.Preview, next.Preview);
         Assert.Empty(effects);
@@ -59,7 +59,7 @@ public class PreviewRetryTests
     {
         var state = TimedOut(1) with { Preview = TimedOut(1).Preview with { TimedOut = false } };
 
-        var (next, effects) = Transition.Apply(state, new Msg.RetryPreview());
+        var (next, effects) = Transition.Apply(state, new Msg.RetryPreview(First));
 
         Assert.Equal(state.Preview, next.Preview);
         Assert.Empty(effects);
@@ -71,7 +71,7 @@ public class PreviewRetryTests
         var loading = TimedOut(1) with { Preview = new PreviewState(5, Clip, PreviewKind.Loading, null, [], null) };
 
         var (next, _) = Transition.Apply(
-            loading, new Msg.PreviewLoaded(5, PreviewKind.Binary, null, [], "label", null, TimedOut: true));
+            loading, new Msg.PreviewLoaded(First, 5, PreviewKind.Binary, null, [], "label", null, TimedOut: true));
 
         Assert.True(next.Preview.TimedOut);
         Assert.True(next.Preview.CanRetry);

@@ -1963,7 +1963,7 @@ public class TransitionTests
 
         var capacity = new PreviewCapacity("Windows (C:)", "NTFS · 固定ドライブ", UsedBytes: 750, TotalBytes: 1000);
         var (next, effects) = Transition.Apply(
-            loading, new Msg.PreviewCapacityLoaded(loading.Preview.Generation, capacity));
+            loading, new Msg.PreviewCapacityLoaded(First, loading.Preview.Generation, capacity));
 
         Assert.Equal(PreviewKind.Capacity, next.Preview.Kind);
         Assert.Equal(capacity, next.Preview.Capacity);
@@ -1988,7 +1988,7 @@ public class TransitionTests
         var (next, _) = Transition.Apply(
             loading,
             new Msg.PreviewCapacityLoaded(
-                loading.Preview.Generation - 1, new PreviewCapacity("stale", "stale", 1, 2)));
+                First, loading.Preview.Generation - 1, new PreviewCapacity("stale", "stale", 1, 2)));
 
         Assert.Equal(PreviewKind.Loading, next.Preview.Kind);
         Assert.Null(next.Preview.Capacity);
@@ -2385,7 +2385,7 @@ public class TransitionTests
         ImmutableArray<byte> bytes = [1, 2, 3, 4];
 
         var (next, effects) = Transition.Apply(
-            afterCursor, new Msg.PreviewLoaded(generation, PreviewKind.Image, null, bytes, null));
+            afterCursor, new Msg.PreviewLoaded(First, generation, PreviewKind.Image, null, bytes, null));
 
         Assert.Equal(PreviewKind.Image, next.Preview.Kind);
         Assert.Equal(bytes, next.Preview.ImageBytes);
@@ -2400,7 +2400,7 @@ public class TransitionTests
         var generation = afterCursor.Preview.Generation;
 
         var (next, _) = Transition.Apply(
-            afterCursor, new Msg.PreviewLoaded(generation, PreviewKind.Binary, null, [], "PE Executable"));
+            afterCursor, new Msg.PreviewLoaded(First, generation, PreviewKind.Binary, null, [], "PE Executable"));
 
         Assert.Equal(PreviewKind.Binary, next.Preview.Kind);
         Assert.Equal("PE Executable", next.Preview.Text);
@@ -2419,7 +2419,7 @@ public class TransitionTests
         ImmutableArray<byte> head = [0x4D, 0x5A, 0x90, 0x00];
 
         var (next, _) = Transition.Apply(
-            afterCursor, new Msg.PreviewLoaded(generation, PreviewKind.Binary, null, head, "PE Executable"));
+            afterCursor, new Msg.PreviewLoaded(First, generation, PreviewKind.Binary, null, head, "PE Executable"));
 
         Assert.Equal(PreviewKind.Binary, next.Preview.Kind);
         Assert.Equal(head, next.Preview.ImageBytes);
@@ -2431,7 +2431,7 @@ public class TransitionTests
         var afterCursor = StateWithLoadingPreview();
 
         var (next, effects) = Transition.Apply(
-            afterCursor, new Msg.PreviewLoaded(afterCursor.Preview.Generation - 1, PreviewKind.Text, "stale", [], null));
+            afterCursor, new Msg.PreviewLoaded(First, afterCursor.Preview.Generation - 1, PreviewKind.Text, "stale", [], null));
 
         Assert.Equal(afterCursor.Preview, next.Preview);
         Assert.Empty(effects);
@@ -2446,7 +2446,7 @@ public class TransitionTests
             "file1", 1234, new DateTime(2024, 1, 1), new DateTime(2024, 1, 2), PixelWidth: 640, PixelHeight: 480, BitsPerPixel: 24);
 
         var (next, _) = Transition.Apply(
-            afterCursor, new Msg.PreviewLoaded(generation, PreviewKind.Image, null, [1, 2], null, metadata));
+            afterCursor, new Msg.PreviewLoaded(First, generation, PreviewKind.Image, null, [1, 2], null, metadata));
 
         Assert.Equal(metadata, next.Preview.Metadata);
     }
@@ -2458,7 +2458,7 @@ public class TransitionTests
         var generation = afterCursor.Preview.Generation;
 
         var (next, _) = Transition.Apply(
-            afterCursor, new Msg.PreviewLoaded(generation, PreviewKind.Text, "hi", [], null));
+            afterCursor, new Msg.PreviewLoaded(First, generation, PreviewKind.Text, "hi", [], null));
 
         Assert.Null(next.Preview.Metadata);
     }
@@ -2469,7 +2469,7 @@ public class TransitionTests
         var afterCursor = StateWithLoadingPreview();
 
         var (next, effects) = Transition.Apply(
-            afterCursor, new Msg.PreviewFailed(afterCursor.Preview.Generation, "denied"));
+            afterCursor, new Msg.PreviewFailed(First, afterCursor.Preview.Generation, "denied"));
 
         Assert.Equal(PreviewKind.None, next.Preview.Kind);
         Assert.Equal("denied", next.Preview.Error);
@@ -2482,7 +2482,7 @@ public class TransitionTests
         var afterCursor = StateWithLoadingPreview();
 
         var (next, effects) = Transition.Apply(
-            afterCursor, new Msg.PreviewFailed(afterCursor.Preview.Generation - 1, "denied"));
+            afterCursor, new Msg.PreviewFailed(First, afterCursor.Preview.Generation - 1, "denied"));
 
         Assert.Equal(afterCursor.Preview, next.Preview);
         Assert.Empty(effects);
@@ -2846,10 +2846,10 @@ public class TransitionProperties
         GenJobId.Select(i => (Msg)new Msg.JobCancelRequested(i)),
         GenJobId.Select(i => (Msg)new Msg.JobDismissed(i)),
         Gen.Select(Gen.Select(GenJobId, GenPreviewKind), Gen.Select(GenImageBytes, GenPreviewMetadata))
-            .Select(t => (Msg)new Msg.PreviewLoaded(t.Item1.Item1, t.Item1.Item2, "text", t.Item2.Item1, "label", t.Item2.Item2)),
-        GenJobId.Select(i => (Msg)new Msg.PreviewFailed(i, "error")),
-        GenJobId.Select(i => (Msg)new Msg.PreviewLoaded(i, PreviewKind.Binary, null, [], "timed out", null, TimedOut: true)),
-        Gen.Const<Msg>(new Msg.RetryPreview()),
+            .Select(t => (Msg)new Msg.PreviewLoaded(First, t.Item1.Item1, t.Item1.Item2, "text", t.Item2.Item1, "label", t.Item2.Item2)),
+        GenJobId.Select(i => (Msg)new Msg.PreviewFailed(First, i, "error")),
+        GenJobId.Select(i => (Msg)new Msg.PreviewLoaded(First, i, PreviewKind.Binary, null, [], "timed out", null, TimedOut: true)),
+        Gen.Const<Msg>(new Msg.RetryPreview(First)),
         GenPaths.Select(paths => (Msg)new Msg.SetCutPending(paths)),
         Gen.Select(GenJobId, Gen.Int[0, 5]).Select(t => (Msg)new Msg.JobConflictsFound(t.Item1, t.Item2)),
         Gen.Select(GenJobId, GenConflictDecision).Select(t => (Msg)new Msg.JobConflictResolved(t.Item1, t.Item2)),
@@ -2880,9 +2880,9 @@ public class TransitionProperties
                 Gen.OneOfConst(SortMode.Name, SortMode.Size),
                 Gen.OneOfConst(true, false),
                 Gen.OneOfConst(true, false))
-            .Select(t => (Msg)new Msg.ViewRestored(new ViewOptions(new SortOrder(t.Item1, t.Item2, t.Item3)))),
+            .Select(t => (Msg)new Msg.ViewRestored(First, new ViewOptions(new SortOrder(t.Item1, t.Item2, t.Item3)))),
         GenJobId.Select(g => (Msg)new Msg.PreviewCapacityLoaded(
-            g, new PreviewCapacity("vol", "kind", UsedBytes: 1, TotalBytes: 2))),
+            First, g, new PreviewCapacity("vol", "kind", UsedBytes: 1, TotalBytes: 2))),
         Gen.Const<Msg>(new Msg.PlacesChanged()));
 
     [Fact]

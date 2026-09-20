@@ -18,8 +18,18 @@ public static class Transition
 
         var (applied, effects) = ApplyCore(state, msg);
         var remembered = RememberFocusedCursor(state, applied);
-        var (withChild, withChildEffects) = ReconcileChildColumn(state, remembered, effects);
-        return ReconcilePreview(state, withChild, withChildEffects);
+        var result = (State: remembered, Effects: effects);
+        foreach (var pane in remembered.Panes)
+        {
+            // Per pane, compared against the same pane before the message. A pane that did not
+            // exist before (just opened) compares against nothing, so its child column and preview
+            // are set up by the same code that keeps them current.
+            var before = state.PaneOf(pane.Id);
+            result = ReconcileChildColumn(before, pane.Id, result.State, result.Effects);
+            result = ReconcilePreview(before, pane.Id, result.State, result.Effects);
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -45,7 +55,7 @@ public static class Transition
         // Only on an actual move. Recording unconditionally would mean a message that changed
         // nothing still returned a different state, which is the difference between "ignored" and
         // "ignored except for the bookkeeping" - and every test asserting the former would fail.
-        var previous = oldState.Focused.FocusedColumnOrNull;
+        var previous = oldState.PaneOf(state.Focused.Id)?.FocusedColumnOrNull;
         if (previous is not null && previous.Location == column.Location && previous.CursorName == name)
         {
             return state;
@@ -83,42 +93,43 @@ public static class Transition
     /// </para>
     /// </remarks>
     private static (AppState, IReadOnlyList<Effect>) ReconcileChildColumn(
-        AppState oldState, AppState state, IReadOnlyList<Effect> effects)
+        Pane? before, PaneId id, AppState state, IReadOnlyList<Effect> effects)
     {
-        if (state.Focused.FocusedColumnOrNull is not { } focusedColumn)
+        var pane = state.PaneOf(id)!;
+        if (pane.FocusedColumnOrNull is not { } focusedColumn)
         {
             return (state, effects);
         }
 
-        var focusedIndex = state.FocusedColumn;
+        var focusedIndex = pane.FocusedColumn;
         var wanted = ChildOfCursor(focusedColumn);
 
         // Nothing the message did changed where the cursor points, so leave the columns alone. This
         // is what keeps a message that was ignored actually ignored, rather than every Apply
         // rebuilding the pane underneath it.
-        if (Equals(wanted, ChildOfCursor(oldState.Focused.FocusedColumnOrNull)))
+        if (Equals(wanted, ChildOfCursor(before?.FocusedColumnOrNull)))
         {
             return (state, effects);
         }
 
         var childIndex = focusedIndex + 1;
-        var existing = childIndex < state.Columns.Length ? state.Columns[childIndex].Location : null;
+        var existing = childIndex < pane.Columns.Length ? pane.Columns[childIndex].Location : null;
 
         if (Equals(wanted, existing))
         {
             return (state, effects);
         }
 
-        var truncated = state.Columns.Take(childIndex).ToImmutableArray();
+        var truncated = pane.Columns.Take(childIndex).ToImmutableArray();
         if (wanted is null)
         {
-            return (state with { Columns = truncated }, effects);
+            return (state.WithPane(pane with { Columns = truncated }), effects);
         }
 
         var withChild = truncated.Add(new Column(wanted, Entries: [], Cursor: -1, Load: LoadState.Loading));
         return (
-            state with { Columns = withChild },
-            Append(effects, new Effect.ReadDirectory(state.Focused.Ref(childIndex), wanted, Speculative: true)));
+            state.WithPane(pane with { Columns = withChild }),
+            Append(effects, new Effect.ReadDirectory(pane.Ref(childIndex), wanted, Speculative: true)));
     }
 
     private static Location? ChildOfCursor(Column? column)
@@ -170,9 +181,9 @@ public static class Transition
             Msg.JobCancelRequested m => JobCancelRequested(state, m.JobId),
             Msg.JobDismissed m => (JobDismissed(state, m.JobId), NoEffects),
             Msg.PreviewLoaded m =>
-                (PreviewLoaded(state, m.Generation, m.Kind, m.Text, m.ImageBytes, m.BinaryLabel, m.Metadata, m.TimedOut), NoEffects),
-            Msg.PreviewFailed m => (PreviewFailed(state, m.Generation, m.Error), NoEffects),
-            Msg.PreviewCapacityLoaded m => (PreviewCapacityLoaded(state, m.Generation, m.Capacity), NoEffects),
+                (PreviewLoaded(state, m.Pane, m.Generation, m.Kind, m.Text, m.ImageBytes, m.BinaryLabel, m.Metadata, m.TimedOut), NoEffects),
+            Msg.PreviewFailed m => (PreviewFailed(state, m.Pane, m.Generation, m.Error), NoEffects),
+            Msg.PreviewCapacityLoaded m => (PreviewCapacityLoaded(state, m.Pane, m.Generation, m.Capacity), NoEffects),
             Msg.SetCutPending m => (state with { CutPending = m.Paths }, NoEffects),
             Msg.JobConflictsFound m => (JobConflictsFound(state, m.JobId, m.ConflictCount), NoEffects),
             Msg.JobConflictResolved m => JobConflictResolved(state, m.JobId, m.Decision),
@@ -193,13 +204,16 @@ public static class Transition
             Msg.FolderCreated m => RereadColumn(state, m.At, m.Location, reveal: m.Name),
             // Each choice sort mode offers also ends it: the mode is one decision long.
             Msg.SetSortMode m => Rederive(
-                LeaveSortMode(state), state.View with { Sort = state.View.Sort.Select(m.Mode) }, remember: true),
+                LeaveSortMode(state), state.Focused.View with { Sort = state.Focused.View.Sort.Select(m.Mode) }, remember: true),
             Msg.ToggleDirectoriesFirst => Rederive(
                 LeaveSortMode(state),
-                state.View with { Sort = state.View.Sort with { DirectoriesFirst = !state.View.Sort.DirectoriesFirst } },
+                state.Focused.View with
+                {
+                    Sort = state.Focused.View.Sort with { DirectoriesFirst = !state.Focused.View.Sort.DirectoriesFirst },
+                },
                 remember: true),
             Msg.ToggleHiddenFiles => Rederive(
-                state, state.View with { ShowHidden = !state.View.ShowHidden }, remember: true),
+                state, state.Focused.View with { ShowHidden = !state.Focused.View.ShowHidden }, remember: true),
 
             // A rename being typed owns the keyboard: a letter meant for the new name must not open a
             // mode whose next keys would re-sort the listing out from under it. Returning the same
@@ -211,10 +225,12 @@ public static class Transition
                 NoEffects),
             Msg.ExitSortMode => (LeaveSortMode(state), NoEffects),
             Msg.SetSortDescending m => Rederive(
-                LeaveSortMode(state), state.View with { Sort = state.View.Sort with { Mode = m.Mode, Descending = true } }, remember: true),
-            Msg.ViewRestored m => Rederive(state, m.View, remember: false),
+                LeaveSortMode(state),
+                state.Focused.View with { Sort = state.Focused.View.Sort with { Mode = m.Mode, Descending = true } },
+                remember: true),
+            Msg.ViewRestored m => (RestoreView(state, m.Pane, m.View), NoEffects),
             Msg.ToggleSection m => ToggleSection(state, m.At, m.EntryIndex),
-            Msg.RetryPreview => RetryPreview(state),
+            Msg.RetryPreview m => RetryPreview(state, m.Pane),
             Msg.CollapsedGroupsRestored m => (RestoreCollapsedGroups(state, m.At, m.Groups), NoEffects),
             _ => (state, NoEffects),
         };
@@ -367,17 +383,38 @@ public static class Transition
     /// </remarks>
     private static (AppState, IReadOnlyList<Effect>) Rederive(AppState state, ViewOptions view, bool remember)
     {
-        var columns = state.Columns;
+        var pane = state.Focused;
+        var next = state.WithPane(pane with { Columns = RederiveColumns(pane.Columns, view), View = view });
+        return remember
+            ? (next, new Effect[] { new Effect.SetViewOptions(view) })
+            : (next, NoEffects);
+    }
+
+    /// <summary>
+    /// Applies the view options the user had when the app last ran (<see cref="Msg.ViewRestored"/>)
+    /// to <paramref name="paneId"/> alone, without persisting it back - unlike <see cref="Rederive"/>,
+    /// this view came <em>from</em> storage. Unknown pane: returns <paramref name="state"/> unchanged.
+    /// </summary>
+    private static AppState RestoreView(AppState state, PaneId paneId, ViewOptions view)
+    {
+        if (state.PaneOf(paneId) is not { } pane)
+        {
+            return state;
+        }
+
+        return state.WithPane(pane with { Columns = RederiveColumns(pane.Columns, view), View = view });
+    }
+
+    /// <summary>Re-derives every column under <paramref name="view"/>. Shared by <see cref="Rederive"/> and <see cref="RestoreView"/>.</summary>
+    private static ImmutableArray<Column> RederiveColumns(ImmutableArray<Column> columns, ViewOptions view)
+    {
         var rederived = ImmutableArray.CreateBuilder<Column>(columns.Length);
         foreach (var column in columns)
         {
             rederived.Add(column.WithView(view));
         }
 
-        var next = state with { Columns = rederived.MoveToImmutable(), View = view };
-        return remember
-            ? (next, new Effect[] { new Effect.SetViewOptions(view) })
-            : (next, NoEffects);
+        return rederived.MoveToImmutable();
     }
 
     /// <summary>
@@ -517,7 +554,7 @@ public static class Transition
         // Marks carry from everything the column knew, not just what was on screen, so a refresh
         // does not quietly drop the marks of rows the view happened to be hiding.
         var carried = CarryMarks(column.AllEntries, entries);
-        var updated = column.WithAllEntries(carried, state.View) with
+        var updated = column.WithAllEntries(carried, pane.View) with
         {
             Load = LoadState.Loaded,
             ErrorMessage = null,
@@ -754,7 +791,7 @@ public static class Transition
     private static (AppState, IReadOnlyList<Effect>) Collapse(
         AppState state, ColumnRef at, Column column, string group)
     {
-        var toggled = column.ToggleGroup(group, state.View);
+        var toggled = column.ToggleGroup(group, state.PaneOf(at.Pane)!.View);
         var next = state.WithColumn(at, toggled);
         return column.Location is Location.Drives
             ? (next, new Effect[] { new Effect.SetCollapsedGroups([.. toggled.CollapsedGroups]) })
@@ -779,7 +816,7 @@ public static class Transition
         }
 
         return column.Location is Location.Drives
-            ? state.WithColumn(at, column.WithCollapsedGroups([.. groups], state.View))
+            ? state.WithColumn(at, column.WithCollapsedGroups([.. groups], state.PaneOf(at.Pane)!.View))
             : state;
     }
 
@@ -808,7 +845,7 @@ public static class Transition
         }
 
         var updated = WithMarkChange(
-            column, state.View, e => ReferenceEquals(e, target) ? e with { IsMarked = !e.IsMarked } : e);
+            column, state.PaneOf(at.Pane)!.View, e => ReferenceEquals(e, target) ? e with { IsMarked = !e.IsMarked } : e);
         return state.WithColumn(at, updated with { Cursor = entryIndex });
     }
 
@@ -847,7 +884,7 @@ public static class Transition
         }
 
         var updated = WithMarkChange(
-            column, state.View, e => ReferenceEquals(e, target) ? e with { IsMarked = !e.IsMarked } : e);
+            column, state.PaneOf(at.Pane)!.View, e => ReferenceEquals(e, target) ? e with { IsMarked = !e.IsMarked } : e);
 
         // Advancing past the row you just marked is what makes marking a run of files one keypress
         // each. Skips a header, which is never a mark target.
@@ -883,7 +920,7 @@ public static class Transition
             return state;
         }
 
-        var updated = WithMarkChange(column, state.View, e => e.IsMarked ? e with { IsMarked = false } : e);
+        var updated = WithMarkChange(column, state.PaneOf(at.Pane)!.View, e => e.IsMarked ? e with { IsMarked = false } : e);
         return state.WithColumn(at, updated);
     }
 
@@ -953,7 +990,7 @@ public static class Transition
             }
         }
 
-        var updated = WithMarkChange(column, state.View, e =>
+        var updated = WithMarkChange(column, state.PaneOf(at.Pane)!.View, e =>
         {
             if (inRange.Contains(e))
             {
@@ -1413,11 +1450,11 @@ public static class Transition
     }
 
     /// <summary>
-    /// Common post-step run after every <see cref="Msg"/> (see <see cref="Apply"/>): compares the
-    /// focused column's cursor target (the full path of a File-kind entry, or <c>null</c> for
-    /// none/directory/drive/out-of-range) between <paramref name="oldState"/> and
-    /// <paramref name="newState"/>. Unchanged - including both sides being <c>null</c> - leaves
-    /// <see cref="AppState.Preview"/> untouched, which is what keeps
+    /// Common post-step run after every <see cref="Msg"/> for every pane (see <see cref="Apply"/>):
+    /// compares <paramref name="id"/>'s focused column's cursor target (the full path of a File-kind
+    /// entry, or <c>null</c> for none/directory/drive/out-of-range) between <paramref name="before"/>
+    /// and the pane currently in <paramref name="state"/>. Unchanged - including both sides being
+    /// <c>null</c> - leaves <see cref="Pane.Preview"/> untouched, which is what keeps
     /// <see cref="Msg.PreviewLoaded"/>/<see cref="Msg.PreviewFailed"/> (results, not cursor moves)
     /// from re-triggering themselves. A change to a file bumps <see cref="PreviewState.Generation"/>,
     /// sets <see cref="PreviewKind.Loading"/>, and appends <see cref="Effect.LoadPreview"/>; a
@@ -1426,43 +1463,45 @@ public static class Transition
     /// to arrive and be discarded by the generation mismatch).
     /// </summary>
     private static (AppState, IReadOnlyList<Effect>) ReconcilePreview(
-        AppState oldState, AppState newState, IReadOnlyList<Effect> effects)
+        Pane? before, PaneId id, AppState state, IReadOnlyList<Effect> effects)
     {
-        var oldTarget = ResolveCursorFileTarget(oldState).Path;
-        var (newTarget, originalPath, targetKind) = ResolveCursorFileTarget(newState);
+        var oldTarget = (before is null ? default : ResolveCursorFileTarget(before)).Path;
+        var pane = state.PaneOf(id)!;
+        var (newTarget, originalPath, targetKind) = ResolveCursorFileTarget(pane);
         if (string.Equals(oldTarget, newTarget, StringComparison.Ordinal))
         {
-            return (newState, effects);
+            return (state, effects);
         }
 
-        var nextGeneration = newState.Preview.Generation + 1;
+        var oldPreview = before?.Preview ?? PreviewState.Initial;
+        var nextGeneration = pane.Preview.Generation + 1;
 
         // The cursor moved, so whatever the last notice was replying to is over.
-        newState = newState with { Notice = null };
+        state = state with { Notice = null };
 
         // The target moved, so whatever was loading for the previous generation is now destined to
         // be discarded on arrival. Say so, rather than letting it run to completion unnoticed.
-        var abandoned = oldState.Preview.Kind == PreviewKind.Loading
-            ? new Effect.CancelPreview(oldState.Preview.Generation)
+        var abandoned = oldPreview.Kind == PreviewKind.Loading
+            ? new Effect.CancelPreview(id, oldPreview.Generation)
             : null;
 
         if (newTarget is null)
         {
-            var cleared = newState with { Preview = PreviewState.Initial with { Generation = nextGeneration } };
+            var cleared = state.WithPane(pane with { Preview = PreviewState.Initial with { Generation = nextGeneration } });
             return (cleared, Append(effects, abandoned));
         }
 
-        var loading = newState with
+        var loading = state.WithPane(pane with
         {
             Preview = new PreviewState(
                 nextGeneration, newTarget, PreviewKind.Loading, Text: null, ImageBytes: [], Error: null)
             {
                 OriginalPath = originalPath,
             },
-        };
+        });
 
         var withPreviewEffect = Append(
-            effects, abandoned, new Effect.LoadPreview(nextGeneration, newTarget, targetKind));
+            effects, abandoned, new Effect.LoadPreview(id, nextGeneration, newTarget, targetKind));
         return (loading, withPreviewEffect);
     }
 
@@ -1487,14 +1526,14 @@ public static class Transition
     }
 
     /// <summary>
-    /// The File-kind entry under <paramref name="state"/>'s focused column's cursor: the full path
+    /// The File-kind entry under <paramref name="pane"/>'s focused column's cursor: the full path
     /// to read, and <see cref="Entry.OriginalPath"/> when the row carries one. Both <c>null</c> when
     /// the focused column is out of range, empty, its cursor is on a Directory/Drive/Header, or its
     /// cursor is -1.
     /// </summary>
-    private static CursorTarget ResolveCursorFileTarget(AppState state)
+    private static CursorTarget ResolveCursorFileTarget(Pane pane)
     {
-        if (state.Focused.FocusedColumnOrNull is not { } column)
+        if (pane.FocusedColumnOrNull is not { } column)
         {
             return default;
         }
@@ -1562,15 +1601,20 @@ public static class Transition
     /// Only while the cursor is still on the file that timed out: a retry is an answer to what is
     /// on screen, and anything else would load a preview for a file nobody is looking at.
     /// </remarks>
-    private static (AppState, IReadOnlyList<Effect>) RetryPreview(AppState state)
+    private static (AppState, IReadOnlyList<Effect>) RetryPreview(AppState state, PaneId paneId)
     {
-        var preview = state.Preview;
+        if (state.PaneOf(paneId) is not { } pane)
+        {
+            return (state, NoEffects);
+        }
+
+        var preview = pane.Preview;
         if (!preview.CanRetry || preview.Path is null)
         {
             return (state, NoEffects);
         }
 
-        var target = ResolveCursorFileTarget(state);
+        var target = ResolveCursorFileTarget(pane);
         if (!string.Equals(target.Path, preview.Path, StringComparison.Ordinal))
         {
             return (state, NoEffects);
@@ -1578,20 +1622,21 @@ public static class Transition
 
         var generation = preview.Generation + 1;
         var attempt = preview.Attempt + 1;
-        var loading = state with
+        var loading = state.WithPane(pane with
         {
             Preview = new PreviewState(generation, preview.Path, PreviewKind.Loading, Text: null, ImageBytes: [], Error: null)
             {
                 OriginalPath = preview.OriginalPath,
                 Attempt = attempt,
             },
-        };
+        });
 
-        return (loading, [new Effect.LoadPreview(generation, preview.Path, target.Kind, attempt)]);
+        return (loading, [new Effect.LoadPreview(pane.Id, generation, preview.Path, target.Kind, attempt)]);
     }
 
     private static AppState PreviewLoaded(
         AppState state,
+        PaneId paneId,
         int generation,
         PreviewKind kind,
         string? text,
@@ -1600,7 +1645,7 @@ public static class Transition
         PreviewMetadata? metadata,
         bool timedOut)
     {
-        if (generation != state.Preview.Generation)
+        if (state.PaneOf(paneId) is not { } pane || generation != pane.Preview.Generation)
         {
             return state;
         }
@@ -1608,9 +1653,9 @@ public static class Transition
         // Binary results have no body to show, so the label doubles as PreviewState.Text - see its
         // remarks.
         var displayText = kind == PreviewKind.Binary ? binaryLabel : text;
-        return state with
+        return state.WithPane(pane with
         {
-            Preview = state.Preview with
+            Preview = pane.Preview with
             {
                 Kind = kind,
                 Text = displayText,
@@ -1619,19 +1664,19 @@ public static class Transition
                 Metadata = metadata,
                 TimedOut = timedOut,
             },
-        };
+        });
     }
 
-    private static AppState PreviewCapacityLoaded(AppState state, int generation, PreviewCapacity capacity)
+    private static AppState PreviewCapacityLoaded(AppState state, PaneId paneId, int generation, PreviewCapacity capacity)
     {
-        if (generation != state.Preview.Generation)
+        if (state.PaneOf(paneId) is not { } pane || generation != pane.Preview.Generation)
         {
             return state;
         }
 
-        return state with
+        return state.WithPane(pane with
         {
-            Preview = state.Preview with
+            Preview = pane.Preview with
             {
                 Kind = PreviewKind.Capacity,
                 Text = null,
@@ -1640,16 +1685,16 @@ public static class Transition
                 Metadata = null,
                 Capacity = capacity,
             },
-        };
+        });
     }
 
-    private static AppState PreviewFailed(AppState state, int generation, string error)
+    private static AppState PreviewFailed(AppState state, PaneId paneId, int generation, string error)
     {
-        if (generation != state.Preview.Generation)
+        if (state.PaneOf(paneId) is not { } pane || generation != pane.Preview.Generation)
         {
             return state;
         }
 
-        return state with { Preview = state.Preview with { Kind = PreviewKind.None, Error = error } };
+        return state.WithPane(pane with { Preview = pane.Preview with { Kind = PreviewKind.None, Error = error } });
     }
 }

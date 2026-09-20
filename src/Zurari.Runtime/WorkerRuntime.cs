@@ -587,7 +587,7 @@ public sealed class WorkerRuntime : IDisposable
                 var settings = _settings.Load();
                 _post(new Msg.CollapsedGroupsRestored(
                     effect.At, [.. settings.CollapsedGroups ?? []]));
-                _post(new Msg.ViewRestored(ReadViewOptions(settings)));
+                _post(new Msg.ViewRestored(effect.At.Pane, ReadViewOptions(settings)));
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -980,8 +980,9 @@ public sealed class WorkerRuntime : IDisposable
         {
             var trash = _trash?.Invoke();
             _post(trash is null
-                ? new Msg.PreviewFailed(effect.Generation, "ゴミ箱の情報を取得できません")
+                ? new Msg.PreviewFailed(effect.Pane, effect.Generation, "ゴミ箱の情報を取得できません")
                 : new Msg.PreviewCapacityLoaded(
+                    effect.Pane,
                     effect.Generation,
                     new PreviewCapacity(
                         "ゴミ箱",
@@ -996,13 +997,13 @@ public sealed class WorkerRuntime : IDisposable
         {
             var (capacity, unavailable) = ReadVolume(effect.Path);
             _post(capacity is null
-                ? new Msg.PreviewFailed(effect.Generation, unavailable ?? "利用できません")
-                : new Msg.PreviewCapacityLoaded(effect.Generation, capacity));
+                ? new Msg.PreviewFailed(effect.Pane, effect.Generation, unavailable ?? "利用できません")
+                : new Msg.PreviewCapacityLoaded(effect.Pane, effect.Generation, capacity));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
             or ArgumentException or SecurityException)
         {
-            _post(new Msg.PreviewFailed(effect.Generation, ex.Message));
+            _post(new Msg.PreviewFailed(effect.Pane, effect.Generation, ex.Message));
         }
     }
 
@@ -1116,12 +1117,12 @@ public sealed class WorkerRuntime : IDisposable
             if (TryDecodeAsText(head, out var text))
             {
                 _post(new Msg.PreviewLoaded(
-                    effect.Generation, PreviewKind.Text, text, ImmutableArray<byte>.Empty, null, baseMetadata));
+                    effect.Pane, effect.Generation, PreviewKind.Text, text, ImmutableArray<byte>.Empty, null, baseMetadata));
                 return;
             }
 
             _post(new Msg.PreviewLoaded(
-                effect.Generation, PreviewKind.Binary, null, HexHead(head), detected.Label, baseMetadata));
+                effect.Pane, effect.Generation, PreviewKind.Binary, null, HexHead(head), detected.Label, baseMetadata));
         }
         catch (OperationCanceledException)
         {
@@ -1130,7 +1131,7 @@ public sealed class WorkerRuntime : IDisposable
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _post(new Msg.PreviewFailed(effect.Generation, ex.Message));
+            _post(new Msg.PreviewFailed(effect.Pane, effect.Generation, ex.Message));
         }
     }
 
@@ -1369,7 +1370,7 @@ public sealed class WorkerRuntime : IDisposable
     /// this was written - is worse than showing none.
     /// </remarks>
     private void PostThumbnail(Effect.LoadPreview effect, byte[] png, string label, PreviewMetadata baseMetadata) =>
-        _post(new Msg.PreviewLoaded(effect.Generation, PreviewKind.Image, label, [.. png], null, baseMetadata));
+        _post(new Msg.PreviewLoaded(effect.Pane, effect.Generation, PreviewKind.Image, label, [.. png], null, baseMetadata));
 
     /// <summary>
     /// The type of a PDF or Microsoft Office document, by extension - or <c>null</c> for anything
@@ -1407,7 +1408,7 @@ public sealed class WorkerRuntime : IDisposable
     {
         var label = $"{VideoLabel(detected, path)} ({failureDetail})";
         _post(new Msg.PreviewLoaded(
-            effect.Generation, PreviewKind.Binary, null, HexHead(head), label, baseMetadata, TimedOut: timedOut));
+            effect.Pane, effect.Generation, PreviewKind.Binary, null, HexHead(head), label, baseMetadata, TimedOut: timedOut));
     }
 
     /// <summary>
@@ -1428,14 +1429,14 @@ public sealed class WorkerRuntime : IDisposable
         if (stream.Length > _previewImageSizeLimitBytes)
         {
             _post(new Msg.PreviewLoaded(
-                effect.Generation, PreviewKind.Binary, null, HexHead(head), $"{detected.Label} (サイズ超過)", metadata));
+                effect.Pane, effect.Generation, PreviewKind.Binary, null, HexHead(head), $"{detected.Label} (サイズ超過)", metadata));
             return;
         }
 
         stream.Position = 0;
         var allBytes = new byte[stream.Length];
         stream.ReadExactly(allBytes);
-        _post(new Msg.PreviewLoaded(effect.Generation, PreviewKind.Image, null, [.. allBytes], null, metadata));
+        _post(new Msg.PreviewLoaded(effect.Pane, effect.Generation, PreviewKind.Image, null, [.. allBytes], null, metadata));
     }
 
     /// <summary>Attaches pixel width/height/bit-depth to <paramref name="baseMetadata"/> when

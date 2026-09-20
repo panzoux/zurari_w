@@ -223,9 +223,10 @@ public abstract record Msg
     public sealed record JobDismissed(int JobId) : Msg;
 
     /// <summary>
-    /// An <see cref="Effect.LoadPreview"/> succeeded. Ignored unless <paramref name="Generation"/>
-    /// still matches <see cref="AppState.Preview"/>'s current generation (otherwise this is a
-    /// stale result from a target the cursor has since moved past). <paramref name="BinaryLabel"/>
+    /// An <see cref="Effect.LoadPreview"/> succeeded. Ignored unless <paramref name="Pane"/> still
+    /// exists and <paramref name="Generation"/> matches that pane's <see cref="Pane.Preview"/>
+    /// generation (otherwise this is a stale result from a target the cursor has since moved past).
+    /// <paramref name="BinaryLabel"/>
     /// is only meaningful when <paramref name="Kind"/> is <see cref="PreviewKind.Binary"/> - see
     /// <see cref="PreviewState.Text"/>'s remarks for why it lands in that same field rather than a
     /// dedicated one. <paramref name="ImageBytes"/> is likewise reused for <see cref="PreviewKind.Binary"/>:
@@ -238,6 +239,7 @@ public abstract record Msg
     /// kind, not just images; see <see cref="PreviewState.Metadata"/>.
     /// </summary>
     public sealed record PreviewLoaded(
+        PaneId Pane,
         int Generation,
         PreviewKind Kind,
         string? Text,
@@ -250,13 +252,13 @@ public abstract record Msg
     /// An <see cref="Effect.LoadPreview"/> failed. Subject to the same staleness check as
     /// <see cref="PreviewLoaded"/>.
     /// </summary>
-    public sealed record PreviewFailed(int Generation, string Error) : Msg;
+    public sealed record PreviewFailed(PaneId Pane, int Generation, string Error) : Msg;
 
     /// <summary>
-    /// Tries the current preview again, waiting longer, when its last attempt timed out and
-    /// attempts remain (<see cref="PreviewState.CanRetry"/>). Ignored otherwise.
+    /// Tries <paramref name="Pane"/>'s current preview again, waiting longer, when its last attempt
+    /// timed out and attempts remain (<see cref="PreviewState.CanRetry"/>). Ignored otherwise.
     /// </summary>
-    public sealed record RetryPreview : Msg;
+    public sealed record RetryPreview(PaneId Pane) : Msg;
 
     /// <summary>
     /// An <see cref="Effect.LoadPreview"/> for a volume or the recycle bin succeeded. Subject to the
@@ -267,7 +269,7 @@ public abstract record Msg
     /// record already carries three fields that only apply to some kinds, and a capacity shares none
     /// of them - no bytes, no text, no file metadata.
     /// </remarks>
-    public sealed record PreviewCapacityLoaded(int Generation, PreviewCapacity Capacity) : Msg;
+    public sealed record PreviewCapacityLoaded(PaneId Pane, int Generation, PreviewCapacity Capacity) : Msg;
 
     /// <summary>
     /// Replaces <see cref="AppState.CutPending"/> with <paramref name="Paths"/> (an empty array
@@ -395,9 +397,10 @@ public abstract record Msg
     public sealed record SetSortDescending(SortMode Mode) : Msg;
 
     /// <summary>
-    /// The view options the user had when the app last ran, applied at startup.
+    /// The view options the user had when the app last ran, applied to <paramref name="Pane"/> at
+    /// startup.
     /// </summary>
-    public sealed record ViewRestored(ViewOptions View) : Msg;
+    public sealed record ViewRestored(PaneId Pane, ViewOptions View) : Msg;
 
     /// <summary>
     /// Start renaming the row under the cursor. Ignored where a rename means nothing - a header, a

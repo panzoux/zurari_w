@@ -480,7 +480,7 @@ public sealed partial class MainWindow : Window, IDisposable
     }
 
     /// <summary>The link under a timed-out preview: try again, waiting longer.</summary>
-    private void OnPreviewRetryClick(object sender, RoutedEventArgs e) => Dispatch(new Msg.RetryPreview());
+    private void OnPreviewRetryClick(object sender, RoutedEventArgs e) => Dispatch(new Msg.RetryPreview(loop.State.Focused.Id));
 
     private static Msg ToCursorMsg(CursorMoveRequestedEventArgs e, ColumnRef at)
     {

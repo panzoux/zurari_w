@@ -86,17 +86,19 @@ public abstract record Effect
     /// file: image bytes (whole file, capped),
     /// decoded text (head only), or a <see cref="FileTypeDetector"/> label for anything else.
     /// Reports back as <see cref="Msg.PreviewLoaded"/> or <see cref="Msg.PreviewFailed"/>, both
-    /// carrying <paramref name="Generation"/> unchanged so a superseded request's result can be
-    /// told apart from the current one and discarded.
+    /// carrying <paramref name="Pane"/> and <paramref name="Generation"/> unchanged so a superseded
+    /// request's result can be told apart from the current one and discarded. Ignored unless
+    /// <paramref name="Pane"/> still exists and <paramref name="Generation"/> matches that pane's
+    /// <see cref="Pane.Preview"/> generation.
     /// </summary>
     /// <param name="Attempt">Which attempt at this file, from 1; later attempts may wait longer.</param>
     public sealed record LoadPreview(
-        int Generation, string Path, PreviewTarget Target = PreviewTarget.File, int Attempt = 1) : Effect;
+        PaneId Pane, int Generation, string Path, PreviewTarget Target = PreviewTarget.File, int Attempt = 1) : Effect;
 
     /// <summary>
-    /// Abandons the in-flight <see cref="LoadPreview"/> for <paramref name="Generation"/>: the
-    /// cursor has moved off that file, so its result is already destined to be discarded by the
-    /// generation check.
+    /// Abandons the in-flight <see cref="LoadPreview"/> for <paramref name="Pane"/>'s
+    /// <paramref name="Generation"/>: the cursor has moved off that file, so its result is already
+    /// destined to be discarded by the generation check.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -111,7 +113,7 @@ public abstract record Effect
     /// load simply stops, and the request that superseded it reports normally.
     /// </para>
     /// </remarks>
-    public sealed record CancelPreview(int Generation) : Effect;
+    public sealed record CancelPreview(PaneId Pane, int Generation) : Effect;
 
     /// <summary>
     /// Adds <paramref name="Path"/> to the drive pane's pinned places, or removes it when

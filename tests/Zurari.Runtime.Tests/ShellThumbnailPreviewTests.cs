@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Zurari.Core;
 using Zurari.Runtime;
+using static Zurari.TestSupport.TestPanes;
 
 namespace Zurari.Runtime.Tests;
 
@@ -58,7 +59,7 @@ public class ShellThumbnailPreviewTests
                     return OnePixelPng;
                 }, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-            runtime.Submit(new Effect.LoadPreview(1, video));
+            runtime.Submit(new Effect.LoadPreview(First, 1, video));
             var loaded = WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
 
             Assert.Equal(PreviewKind.Image, loaded.Kind);
@@ -98,9 +99,9 @@ public class ShellThumbnailPreviewTests
                     return OnePixelPng;
                 }, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-            runtime.Submit(new Effect.LoadPreview(1, video));
+            runtime.Submit(new Effect.LoadPreview(First, 1, video));
             WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
-            runtime.Submit(new Effect.LoadPreview(2, video));
+            runtime.Submit(new Effect.LoadPreview(First, 2, video));
             var second = WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
 
             Assert.Equal(OnePixelPng, second.ImageBytes);
@@ -131,7 +132,7 @@ public class ShellThumbnailPreviewTests
                     return null;
                 }, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-            runtime.Submit(new Effect.LoadPreview(1, video));
+            runtime.Submit(new Effect.LoadPreview(First, 1, video));
             var loaded = WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(60));
 
             Assert.Equal(1, asked);
@@ -172,7 +173,7 @@ public class ShellThumbnailPreviewTests
                     return OnePixelPng;
                 }, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-            runtime.Submit(new Effect.LoadPreview(1, Path.Combine(viaShare, "clip.mp4")));
+            runtime.Submit(new Effect.LoadPreview(First, 1, Path.Combine(viaShare, "clip.mp4")));
             var loaded = WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(60));
 
             Assert.Equal(0, asked);
@@ -202,7 +203,7 @@ public class ShellThumbnailPreviewTests
             thumbnailCache: new ThumbnailCache(Path.Combine(dir, "cache")),
             shellThumbnail: shellThumbnail, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-        runtime.Submit(new Effect.LoadPreview(1, file));
+        runtime.Submit(new Effect.LoadPreview(First, 1, file));
         return WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
     }
 
@@ -325,9 +326,9 @@ public class ShellThumbnailPreviewTests
                     return null;
                 }, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-            runtime.Submit(new Effect.LoadPreview(1, docx));
+            runtime.Submit(new Effect.LoadPreview(First, 1, docx));
             var first = WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
-            runtime.Submit(new Effect.LoadPreview(2, docx));
+            runtime.Submit(new Effect.LoadPreview(First, 2, docx));
             var second = WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
 
             Assert.Equal(1, asked);
@@ -359,9 +360,9 @@ public class ShellThumbnailPreviewTests
                     return OnePixelPng;
                 }, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-            runtime.Submit(new Effect.LoadPreview(1, pdf));
+            runtime.Submit(new Effect.LoadPreview(First, 1, pdf));
             WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
-            runtime.Submit(new Effect.LoadPreview(2, pdf));
+            runtime.Submit(new Effect.LoadPreview(First, 2, pdf));
             var second = WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
 
             Assert.Equal(PreviewKind.Image, second.Kind);
@@ -594,7 +595,7 @@ public class ShellThumbnailPreviewTests
                     return OnePixelPng;
                 }, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-            runtime.Submit(new Effect.LoadPreview(1, video));
+            runtime.Submit(new Effect.LoadPreview(First, 1, video));
             var loaded = WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(60));
 
             Assert.Equal(PreviewKind.Image, loaded.Kind);

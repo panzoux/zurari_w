@@ -260,4 +260,54 @@ public class PaneTests
         Assert.True(next.Panes[1].Columns[0].Entries[0].IsMarked);
         Assert.Same(state.Panes[0], next.Panes[0]);
     }
+
+    [Fact]
+    public void Moving_the_cursor_in_the_unfocused_pane_loads_that_panes_preview_only()
+    {
+        var state = TwoPanes(Dir(@"C:\a", "x.txt", "y.txt"), Dir(@"C:\b", "p.txt", "q.txt"));
+
+        var (next, effects) = Transition.Apply(state, new Msg.CursorDown(new ColumnRef(new PaneId(1), 0)));
+
+        var load = Assert.Single(effects.OfType<Effect.LoadPreview>());
+        Assert.Equal(new PaneId(1), load.Pane);
+        Assert.Equal(@"C:\b\q.txt", load.Path);
+        Assert.Equal(state.Panes[0].Preview, next.Panes[0].Preview);
+    }
+
+    [Fact]
+    public void A_preview_result_lands_in_the_pane_it_was_for()
+    {
+        var state = TwoPanes(Dir(@"C:\a", "x.txt"), Dir(@"C:\b", "p.txt"));
+        var (loading, _) = Transition.Apply(state, new Msg.CursorTo(new ColumnRef(new PaneId(1), 0), 0));
+        var generation = loading.Panes[1].Preview.Generation;
+
+        var (next, _) = Transition.Apply(
+            loading, new Msg.PreviewLoaded(new PaneId(1), generation, PreviewKind.Text, "hello", [], null));
+
+        Assert.Equal("hello", next.Panes[1].Preview.Text);
+        Assert.Equal(loading.Panes[0].Preview, next.Panes[0].Preview);
+    }
+
+    [Fact]
+    public void Sorting_changes_the_focused_panes_view_only()
+    {
+        var state = TwoPanes(Dir(@"C:\a", "x"), Dir(@"C:\b", "p"));
+
+        var (next, _) = Transition.Apply(state, new Msg.SetSortMode(SortMode.Size));
+
+        Assert.Equal(SortMode.Size, next.Panes[0].View.Sort.Mode);
+        Assert.Equal(state.Panes[1].View, next.Panes[1].View);
+    }
+
+    [Fact]
+    public void ViewRestored_applies_to_the_named_pane()
+    {
+        var state = TwoPanes(Dir(@"C:\a", "x"), Dir(@"C:\b", "p"));
+        var view = ViewOptions.Default with { ShowHidden = true };
+
+        var (next, _) = Transition.Apply(state, new Msg.ViewRestored(new PaneId(1), view));
+
+        Assert.True(next.Panes[1].View.ShowHidden);
+        Assert.False(next.Panes[0].View.ShowHidden);
+    }
 }

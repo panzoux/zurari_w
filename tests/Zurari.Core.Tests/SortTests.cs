@@ -239,7 +239,7 @@ public class SortTests
         var state = new AppState { Columns = [column], FocusedColumn = 0 };
 
         var (next, effects) = Transition.Apply(
-            state, new Msg.ViewRestored(new ViewOptions(new SortOrder(SortMode.Size))));
+            state, new Msg.ViewRestored(First, new ViewOptions(new SortOrder(SortMode.Size))));
 
         Assert.Equal(["b.txt", "a.txt"], next.Columns[0].Entries.Select(e => e.Name));
         Assert.Equal(new SortOrder(SortMode.Size), next.View.Sort);
@@ -336,7 +336,7 @@ public class SortTests
             Load: LoadState.Loaded);
         var state = new AppState { Columns = [pane], FocusedColumn = 0 };
 
-        var (next, _) = Transition.Apply(state, new Msg.ViewRestored(ViewOptions.Default));
+        var (next, _) = Transition.Apply(state, new Msg.ViewRestored(First, ViewOptions.Default));
 
         Assert.Equal("ドライブ", next.Columns[0].Entries[0].Name);
     }

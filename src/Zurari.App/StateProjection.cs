@@ -350,14 +350,14 @@ public static class StateProjection
     }
 
     /// <summary>
-    /// Projects <see cref="AppState.Preview"/> into a <see cref="PreviewVm"/>. Pure - no I/O, no
-    /// decisions beyond display formatting (the file name, the metadata block).
+    /// Projects the focused pane's <see cref="Pane.Preview"/> into a <see cref="PreviewVm"/>. Pure -
+    /// no I/O, no decisions beyond display formatting (the file name, the metadata block).
     /// </summary>
     public static PreviewVm ProjectPreview(AppState state)
     {
         ArgumentNullException.ThrowIfNull(state);
 
-        var preview = state.Preview;
+        var preview = state.Focused.Preview;
 
         // A deleted file is named and placed by where it came from, not by where the bin keeps it.
         var displayPath = preview.OriginalPath ?? preview.Path;

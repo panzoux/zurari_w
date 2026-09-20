@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Zurari.Core;
 using Zurari.Runtime;
+using static Zurari.TestSupport.TestPanes;
 
 namespace Zurari.Runtime.Tests;
 
@@ -33,7 +34,7 @@ public class CapacityPreviewTests
         var queue = new ConcurrentQueue<Msg>();
         using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-        runtime.Submit(new Effect.LoadPreview(1, SystemDrive(), PreviewTarget.Volume));
+        runtime.Submit(new Effect.LoadPreview(First, 1, SystemDrive(), PreviewTarget.Volume));
         var loaded = WaitFor<Msg.PreviewCapacityLoaded>(queue, TimeSpan.FromSeconds(10));
 
         var capacity = loaded.Capacity;
@@ -57,7 +58,7 @@ public class CapacityPreviewTests
         using var runtime = new WorkerRuntime(
             queue.Enqueue, trash: () => new TrashPlace("ゴミ箱 (413)", ItemCount: 413, TotalBytes: 12345), settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-        runtime.Submit(new Effect.LoadPreview(7, "::whatever", PreviewTarget.RecycleBin));
+        runtime.Submit(new Effect.LoadPreview(First, 7, "::whatever", PreviewTarget.RecycleBin));
         var loaded = WaitFor<Msg.PreviewCapacityLoaded>(queue, TimeSpan.FromSeconds(10));
 
         Assert.Equal(7, loaded.Generation);
@@ -85,7 +86,7 @@ public class CapacityPreviewTests
         var queue = new ConcurrentQueue<Msg>();
         using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-        runtime.Submit(new Effect.LoadPreview(5, notReady.Name, PreviewTarget.Volume));
+        runtime.Submit(new Effect.LoadPreview(First, 5, notReady.Name, PreviewTarget.Volume));
         var loaded = WaitFor<Msg.PreviewCapacityLoaded>(queue, TimeSpan.FromSeconds(10));
 
         Assert.NotEmpty(loaded.Capacity.TypeName);
@@ -105,7 +106,7 @@ public class CapacityPreviewTests
         var queue = new ConcurrentQueue<Msg>();
         using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-        runtime.Submit(new Effect.LoadPreview(3, MissingDriveLetter(), PreviewTarget.Volume));
+        runtime.Submit(new Effect.LoadPreview(First, 3, MissingDriveLetter(), PreviewTarget.Volume));
         var loaded = WaitFor<Msg.PreviewCapacityLoaded>(queue, TimeSpan.FromSeconds(10));
 
         Assert.Equal(3, loaded.Generation);
@@ -120,7 +121,7 @@ public class CapacityPreviewTests
         var queue = new ConcurrentQueue<Msg>();
         using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-        runtime.Submit(new Effect.LoadPreview(1, SystemDrive(), PreviewTarget.Volume));
+        runtime.Submit(new Effect.LoadPreview(First, 1, SystemDrive(), PreviewTarget.Volume));
         WaitFor<Msg.PreviewCapacityLoaded>(queue, TimeSpan.FromSeconds(10));
 
         Assert.DoesNotContain(queue, m => m is Msg.PreviewLoaded);

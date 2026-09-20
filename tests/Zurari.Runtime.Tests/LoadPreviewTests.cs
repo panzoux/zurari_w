@@ -40,7 +40,7 @@ public class LoadPreviewTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
-            runtime.Submit(new Effect.LoadPreview(7, path));
+            runtime.Submit(new Effect.LoadPreview(First, 7, path));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
             Assert.Equal(7, loaded.Generation);
@@ -68,7 +68,7 @@ public class LoadPreviewTests
             // A tiny override limit lets this test exercise the "too big" branch without writing
             // an actual 50MB fixture.
             using var runtime = new WorkerRuntime(queue.Enqueue, previewImageSizeLimitBytes: 4, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
-            runtime.Submit(new Effect.LoadPreview(1, path));
+            runtime.Submit(new Effect.LoadPreview(First, 1, path));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
             Assert.Equal(PreviewKind.Binary, loaded.Kind);
@@ -95,7 +95,7 @@ public class LoadPreviewTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
-            runtime.Submit(new Effect.LoadPreview(2, path));
+            runtime.Submit(new Effect.LoadPreview(First, 2, path));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
             Assert.Equal(PreviewKind.Text, loaded.Kind);
@@ -119,7 +119,7 @@ public class LoadPreviewTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
-            runtime.Submit(new Effect.LoadPreview(3, path));
+            runtime.Submit(new Effect.LoadPreview(First, 3, path));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
             Assert.Equal(PreviewKind.Text, loaded.Kind);
@@ -143,7 +143,7 @@ public class LoadPreviewTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
-            runtime.Submit(new Effect.LoadPreview(4, path));
+            runtime.Submit(new Effect.LoadPreview(First, 4, path));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
             Assert.Equal(PreviewKind.Binary, loaded.Kind);
@@ -168,7 +168,7 @@ public class LoadPreviewTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
-            runtime.Submit(new Effect.LoadPreview(5, path));
+            runtime.Submit(new Effect.LoadPreview(First, 5, path));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
             Assert.Equal(PreviewKind.Binary, loaded.Kind);
@@ -195,7 +195,7 @@ public class LoadPreviewTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
-            runtime.Submit(new Effect.LoadPreview(9, path));
+            runtime.Submit(new Effect.LoadPreview(First, 9, path));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
             Assert.Equal(PreviewKind.Binary, loaded.Kind);
@@ -215,7 +215,7 @@ public class LoadPreviewTests
 
         var queue = new ConcurrentQueue<Msg>();
         using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
-        runtime.Submit(new Effect.LoadPreview(6, path));
+        runtime.Submit(new Effect.LoadPreview(First, 6, path));
 
         var failed = Assert.IsType<Msg.PreviewFailed>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
         Assert.Equal(6, failed.Generation);
@@ -233,7 +233,7 @@ public class LoadPreviewTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
-            runtime.Submit(new Effect.LoadPreview(8, path));
+            runtime.Submit(new Effect.LoadPreview(First, 8, path));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
             Assert.Equal(PreviewKind.Text, loaded.Kind);
@@ -256,7 +256,7 @@ public class LoadPreviewTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
-            runtime.Submit(new Effect.LoadPreview(10, path));
+            runtime.Submit(new Effect.LoadPreview(First, 10, path));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
             Assert.NotNull(loaded.Metadata);
@@ -281,7 +281,7 @@ public class LoadPreviewTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
-            runtime.Submit(new Effect.LoadPreview(11, path));
+            runtime.Submit(new Effect.LoadPreview(First, 11, path));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
             Assert.NotNull(loaded.Metadata);
@@ -315,7 +315,7 @@ public class LoadPreviewTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
-            runtime.Submit(new Effect.LoadPreview(12, path));
+            runtime.Submit(new Effect.LoadPreview(First, 12, path));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
             Assert.Equal(PreviewKind.Image, loaded.Kind);
@@ -352,7 +352,7 @@ public class LoadPreviewTests
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(
                 queue.Enqueue, thumbnailCache: new ThumbnailCache(Path.Combine(dir, "cache")), settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
-            runtime.Submit(new Effect.LoadPreview(13, path));
+            runtime.Submit(new Effect.LoadPreview(First, 13, path));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(20)));
             Assert.NotNull(loaded.Metadata);
@@ -377,7 +377,7 @@ public class LoadPreviewTests
         var queue = new ConcurrentQueue<Msg>();
         using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-        runtime.Submit(new Effect.CancelPreview(42));
+        runtime.Submit(new Effect.CancelPreview(First, 42));
 
         // Cancelling produces no Msg of its own (see Effect.CancelPreview), and cancelling when
         // nothing is running must not throw or wedge the slot for later previews.
@@ -399,8 +399,8 @@ public class LoadPreviewTests
 
             // The cancel slot must be reusable: a cancelled preview leaves no state behind that
             // would stop the next one from running.
-            runtime.Submit(new Effect.CancelPreview(1));
-            runtime.Submit(new Effect.LoadPreview(2, path));
+            runtime.Submit(new Effect.CancelPreview(First, 1));
+            runtime.Submit(new Effect.LoadPreview(First, 2, path));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
             Assert.Equal(2, loaded.Generation);
@@ -439,7 +439,7 @@ public class LoadPreviewTests
 
             for (var i = 0; i < paths.Count; i++)
             {
-                runtime.Submit(new Effect.LoadPreview(i + 1, paths[i]));
+                runtime.Submit(new Effect.LoadPreview(First, i + 1, paths[i]));
             }
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
@@ -482,8 +482,8 @@ public class LoadPreviewTests
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, workerCount: 1, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-            runtime.Submit(new Effect.LoadPreview(9, newer));
-            runtime.Submit(new Effect.LoadPreview(4, older));
+            runtime.Submit(new Effect.LoadPreview(First, 9, newer));
+            runtime.Submit(new Effect.LoadPreview(First, 4, older));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
             Assert.Equal(9, loaded.Generation);
@@ -521,8 +521,8 @@ public class LoadPreviewTests
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
             // Deliberately inverted relative to the order Transition emits them.
-            runtime.Submit(new Effect.LoadPreview(2, path));
-            runtime.Submit(new Effect.CancelPreview(1));
+            runtime.Submit(new Effect.LoadPreview(First, 2, path));
+            runtime.Submit(new Effect.CancelPreview(First, 1));
 
             var loaded = Assert.IsType<Msg.PreviewLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
             Assert.Equal(2, loaded.Generation);
@@ -556,7 +556,7 @@ public class LoadPreviewTests
 
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, workerCount: 1, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
-            runtime.Submit(new Effect.LoadPreview(1, Path.Combine(dir, "a.txt")));
+            runtime.Submit(new Effect.LoadPreview(First, 1, Path.Combine(dir, "a.txt")));
             runtime.Submit(new Effect.ReadDirectory(Col(0), new Location.RealDirectory(dir)));
 
             var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);

@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Zurari.Core;
 using Zurari.Runtime;
+using static Zurari.TestSupport.TestPanes;
 
 namespace Zurari.Runtime.Tests;
 
@@ -65,7 +66,7 @@ public class ShellThumbnailThreadTests
                     return OnePixelPng;
                 }, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-            runtime.Submit(new Effect.LoadPreview(1, document));
+            runtime.Submit(new Effect.LoadPreview(First, 1, document));
             WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
 
             Assert.Equal(ApartmentState.STA, apartment);
@@ -108,8 +109,8 @@ public class ShellThumbnailThreadTests
                     return OnePixelPng;
                 }, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-            runtime.Submit(new Effect.LoadPreview(1, first));
-            runtime.Submit(new Effect.LoadPreview(2, second));
+            runtime.Submit(new Effect.LoadPreview(First, 1, first));
+            runtime.Submit(new Effect.LoadPreview(First, 2, second));
             WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(20));
             Thread.Sleep(500);
 
@@ -143,9 +144,9 @@ public class ShellThumbnailThreadTests
                     return OnePixelPng;
                 }, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-            runtime.Submit(new Effect.LoadPreview(1, first));
+            runtime.Submit(new Effect.LoadPreview(First, 1, first));
             WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
-            runtime.Submit(new Effect.LoadPreview(2, second));
+            runtime.Submit(new Effect.LoadPreview(First, 2, second));
             WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
 
             Assert.Equal(2, threads.Count);
@@ -230,7 +231,7 @@ public class ShellThumbnailThreadTests
                     return OnePixelPng;
                 }, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-            runtime.Submit(new Effect.LoadPreview(1, pdf));
+            runtime.Submit(new Effect.LoadPreview(First, 1, pdf));
 
             var first = WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
             Assert.Equal(PreviewKind.Text, first.Kind);
@@ -271,13 +272,13 @@ public class ShellThumbnailThreadTests
                     return null;
                 }, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-            runtime.Submit(new Effect.LoadPreview(1, pdf));
+            runtime.Submit(new Effect.LoadPreview(First, 1, pdf));
             WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
 
             // Let the extraction outrun its budget and record what it found.
             Thread.Sleep(TimeSpan.FromSeconds(1.5));
 
-            runtime.Submit(new Effect.LoadPreview(2, pdf));
+            runtime.Submit(new Effect.LoadPreview(First, 2, pdf));
             WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
 
             Assert.Equal(1, asked);

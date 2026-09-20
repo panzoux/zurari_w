@@ -40,7 +40,7 @@ public class PendingPreviewGateTests
     public void Take_returns_the_single_held_effect()
     {
         var gate = new PendingEffectGate<Effect.LoadPreview>();
-        var effect = new Effect.LoadPreview(1, @"C:\a.txt");
+        var effect = new Effect.LoadPreview(First, 1, @"C:\a.txt");
 
         gate.Hold(effect);
 
@@ -51,8 +51,8 @@ public class PendingPreviewGateTests
     public void A_second_Hold_replaces_the_first_so_only_the_latest_is_ever_taken()
     {
         var gate = new PendingEffectGate<Effect.LoadPreview>();
-        var first = new Effect.LoadPreview(1, @"C:\a.txt");
-        var second = new Effect.LoadPreview(2, @"C:\b.txt");
+        var first = new Effect.LoadPreview(First, 1, @"C:\a.txt");
+        var second = new Effect.LoadPreview(First, 2, @"C:\b.txt");
 
         gate.Hold(first);
         gate.Hold(second);
@@ -64,7 +64,7 @@ public class PendingPreviewGateTests
     public void Take_clears_the_held_effect_so_a_second_Take_returns_null()
     {
         var gate = new PendingEffectGate<Effect.LoadPreview>();
-        gate.Hold(new Effect.LoadPreview(1, @"C:\a.txt"));
+        gate.Hold(new Effect.LoadPreview(First, 1, @"C:\a.txt"));
 
         gate.Take();
 

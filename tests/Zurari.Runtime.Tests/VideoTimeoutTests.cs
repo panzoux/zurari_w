@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Zurari.Core;
 using Zurari.Runtime;
+using static Zurari.TestSupport.TestPanes;
 
 namespace Zurari.Runtime.Tests;
 
@@ -61,7 +62,7 @@ public class VideoTimeoutTests
                 },
             };
 
-            runtime.Submit(new Effect.LoadPreview(1, video, PreviewTarget.File, Attempt: 2));
+            runtime.Submit(new Effect.LoadPreview(First, 1, video, PreviewTarget.File, Attempt: 2));
             WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
 
             Assert.Equal([TimeSpan.FromSeconds(20)], given);
@@ -85,7 +86,7 @@ public class VideoTimeoutTests
                 CreateVideoThumbnail = (_, _, _) => ThumbnailOutcome.TimedOut("ffmpeg: タイムアウト"),
             };
 
-            runtime.Submit(new Effect.LoadPreview(1, video));
+            runtime.Submit(new Effect.LoadPreview(First, 1, video));
             var loaded = WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
 
             Assert.Equal(PreviewKind.Binary, loaded.Kind);
@@ -111,7 +112,7 @@ public class VideoTimeoutTests
                 CreateVideoThumbnail = (_, _, _) => ThumbnailOutcome.FileRejected("ffmpeg: exit 1"),
             };
 
-            runtime.Submit(new Effect.LoadPreview(1, video));
+            runtime.Submit(new Effect.LoadPreview(First, 1, video));
             var loaded = WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
 
             Assert.False(loaded.TimedOut);
