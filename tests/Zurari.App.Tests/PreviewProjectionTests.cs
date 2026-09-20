@@ -6,13 +6,11 @@ namespace Zurari.App.Tests;
 
 public class PreviewProjectionTests
 {
-    private static AppState StateWithPreview(PreviewState preview) =>
-        new()
-        {
-            Columns = [new Column(Location.Drives.Instance, [], Load: LoadState.Loaded)],
-            FocusedColumn = 0,
-            Preview = preview,
-        };
+    private static AppState StateWithPreview(PreviewState preview)
+    {
+        var state = AppState.SinglePane([new Column(Location.Drives.Instance, [], Load: LoadState.Loaded)]);
+        return state.WithPane(state.Focused with { Preview = preview });
+    }
 
     [Fact]
     public void ProjectPreview_rejects_null_state()

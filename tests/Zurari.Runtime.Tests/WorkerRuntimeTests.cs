@@ -159,13 +159,13 @@ public class WorkerRuntimeTests
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
             var loop = new MessageLoop(
-                initial: new AppState { Columns = [new Column(new Location.RealDirectory(dir), Entries: [])], FocusedColumn = 0 },
+                initial: AppState.SinglePane([new Column(new Location.RealDirectory(dir), Entries: [])]),
                 runEffect: runtime.Submit);
 
             loop.Dispatch(new Msg.Refresh());
 
             var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
-            while (DateTime.UtcNow < deadline && loop.State.Columns[0].Load == LoadState.Loading)
+            while (DateTime.UtcNow < deadline && loop.State.Focused.Columns[0].Load == LoadState.Loading)
             {
                 if (queue.TryDequeue(out var msg))
                 {
@@ -177,10 +177,10 @@ public class WorkerRuntimeTests
                 }
             }
 
-            Assert.Equal(LoadState.Loaded, loop.State.Columns[0].Load);
-            Assert.Equal(2, loop.State.Columns[0].Entries.Length);
-            Assert.Equal("sub", loop.State.Columns[0].Entries[0].Name);
-            Assert.Equal("file.txt", loop.State.Columns[0].Entries[1].Name);
+            Assert.Equal(LoadState.Loaded, loop.State.Focused.Columns[0].Load);
+            Assert.Equal(2, loop.State.Focused.Columns[0].Entries.Length);
+            Assert.Equal("sub", loop.State.Focused.Columns[0].Entries[0].Name);
+            Assert.Equal("file.txt", loop.State.Focused.Columns[0].Entries[1].Name);
         }
         finally
         {

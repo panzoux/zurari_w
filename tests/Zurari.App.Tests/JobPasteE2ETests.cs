@@ -70,11 +70,7 @@ public class JobPasteE2ETests
             var sourceFile = Path.Combine(sourceDir, "hello.txt");
             File.WriteAllText(sourceFile, "hello");
 
-            var initial = new AppState
-            {
-                Columns = [new Column(new Location.RealDirectory(destDir), Entries: [])],
-                FocusedColumn = 0,
-            };
+            var initial = AppState.SinglePane([new Column(new Location.RealDirectory(destDir), Entries: [])]);
             var (loop, queue, runtime, jobEngine) = BuildLoop(initial);
             try
             {
@@ -89,11 +85,11 @@ public class JobPasteE2ETests
                 DrainUntil(loop, queue, () => loop.State.Jobs.Length == 0, TimeSpan.FromSeconds(10));
 
                 var destFile = Path.Combine(destDir, "hello.txt");
-                DrainUntil(loop, queue, () => loop.State.Columns[0].Load == LoadState.Loaded, TimeSpan.FromSeconds(10));
+                DrainUntil(loop, queue, () => loop.State.Focused.Columns[0].Load == LoadState.Loaded, TimeSpan.FromSeconds(10));
 
                 Assert.True(File.Exists(destFile));
                 Assert.True(File.Exists(sourceFile), "Copy must leave the source file in place.");
-                Assert.Contains(loop.State.Columns[0].Entries, e => e.Name == "hello.txt");
+                Assert.Contains(loop.State.Focused.Columns[0].Entries, e => e.Name == "hello.txt");
             }
             finally
             {
@@ -118,15 +114,12 @@ public class JobPasteE2ETests
             var sourceFile = Path.Combine(sourceDir, "movable.txt");
             File.WriteAllText(sourceFile, "move me");
 
-            var initial = new AppState
-            {
-                Columns =
+            var initial = AppState.SinglePane(
                 [
                     new Column(new Location.RealDirectory(sourceDir), Entries: []),
                     new Column(new Location.RealDirectory(destDir), Entries: []),
                 ],
-                FocusedColumn = 1,
-            };
+                focusedColumn: 1);
             var (loop, queue, runtime, jobEngine) = BuildLoop(initial);
             try
             {
@@ -141,15 +134,15 @@ public class JobPasteE2ETests
                 DrainUntil(
                     loop,
                     queue,
-                    () => loop.State.Columns[0].Load == LoadState.Loaded
-                        && loop.State.Columns[1].Load == LoadState.Loaded,
+                    () => loop.State.Focused.Columns[0].Load == LoadState.Loaded
+                        && loop.State.Focused.Columns[1].Load == LoadState.Loaded,
                     TimeSpan.FromSeconds(10));
 
                 var destFile = Path.Combine(destDir, "movable.txt");
                 Assert.True(File.Exists(destFile));
                 Assert.False(File.Exists(sourceFile), "Move must remove the source file.");
-                Assert.DoesNotContain(loop.State.Columns[0].Entries, e => e.Name == "movable.txt");
-                Assert.Contains(loop.State.Columns[1].Entries, e => e.Name == "movable.txt");
+                Assert.DoesNotContain(loop.State.Focused.Columns[0].Entries, e => e.Name == "movable.txt");
+                Assert.Contains(loop.State.Focused.Columns[1].Entries, e => e.Name == "movable.txt");
             }
             finally
             {

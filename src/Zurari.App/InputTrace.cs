@@ -54,16 +54,16 @@ internal static class InputTrace
     {
         ArgumentNullException.ThrowIfNull(state);
 
-        var sort = state.View.Sort;
+        var sort = state.Focused.View.Sort;
         var direction = sort.Descending ? "desc" : "asc";
         var folders = sort.DirectoriesFirst ? "/dirsFirst" : string.Empty;
         var line = string.Create(
             CultureInfo.InvariantCulture,
-            $"[app] state mode={state.InputMode} sort={sort.Mode}/{direction}{folders} hidden={state.View.ShowHidden} focused={state.FocusedColumn}");
+            $"[app] state mode={state.InputMode} sort={sort.Mode}/{direction}{folders} hidden={state.Focused.View.ShowHidden} focused={state.Focused.FocusedColumn}");
 
-        if (state.FocusedColumn >= 0 && state.FocusedColumn < state.Columns.Length)
+        if (state.Focused.FocusedColumn >= 0 && state.Focused.FocusedColumn < state.Focused.Columns.Length)
         {
-            var column = state.Columns[state.FocusedColumn];
+            var column = state.Focused.Columns[state.Focused.FocusedColumn];
             line += string.Create(
                 CultureInfo.InvariantCulture,
                 $" loc={Describe(column.Location)} sortable={column.IsSortable} first=[{FirstNames(column.Entries.Select(e => e.Name))}]");

@@ -649,7 +649,7 @@ public readonly record struct RememberedCursor(Location Location, string EntryNa
 public sealed record AppState
 {
     /// <summary>The panes, top first. One, or two when the window is split.</summary>
-    public ImmutableArray<Pane> Panes { get; init; } = [new Pane(new PaneId(0), [], 0)];
+    public required ImmutableArray<Pane> Panes { get; init; }
 
     /// <summary>Index into <see cref="Panes"/> of the pane that has keyboard focus.</summary>
     public int FocusedPane { get; init; }
@@ -659,42 +659,6 @@ public sealed record AppState
 
     /// <summary>The pane that has keyboard focus.</summary>
     public Pane Focused => Panes[FocusedPane];
-
-    // ---- 7a compatibility shim: removed in 7a.4. Reads and writes the FOCUSED pane. ----
-    // Do not write new code against these; address panes through Focused, PaneOf, ColumnAt, WithColumn.
-    // Each init reads FocusedPane, so `with { FocusedPane = ..., Columns = ... }` (or FocusedColumn/
-    // Preview/View) depends on initializer order - the shim must never be combined with a FocusedPane
-    // change in the same `with`.
-
-    /// <summary>Transitional: the focused pane's columns.</summary>
-    public ImmutableArray<Column> Columns
-    {
-        get => Focused.Columns;
-        init => Panes = Panes.SetItem(FocusedPane, Panes[FocusedPane] with { Columns = value });
-    }
-
-    /// <summary>Transitional: the focused pane's focused column.</summary>
-    public int FocusedColumn
-    {
-        get => Focused.FocusedColumn;
-        init => Panes = Panes.SetItem(FocusedPane, Panes[FocusedPane] with { FocusedColumn = value });
-    }
-
-    /// <summary>Transitional: the focused pane's preview.</summary>
-    public PreviewState Preview
-    {
-        get => Focused.Preview;
-        init => Panes = Panes.SetItem(FocusedPane, Panes[FocusedPane] with { Preview = value });
-    }
-
-    /// <summary>Transitional: the focused pane's view options.</summary>
-    public ViewOptions View
-    {
-        get => Focused.View;
-        init => Panes = Panes.SetItem(FocusedPane, Panes[FocusedPane] with { View = value });
-    }
-
-    // ---- end of shim ----
 
     /// <summary>Index into <see cref="Panes"/> of <paramref name="id"/>, or -1 when no such pane exists.</summary>
     public int IndexOfPane(PaneId id)
@@ -718,6 +682,9 @@ public sealed record AppState
         PaneOf(at.Pane) is { } pane && at.Index >= 0 && at.Index < pane.Columns.Length
             ? pane.Columns[at.Index]
             : null;
+
+    /// <summary>The view options of the pane <paramref name="at"/> names.</summary>
+    public ViewOptions ViewAt(ColumnRef at) => PaneOf(at.Pane)!.View;
 
     /// <summary>
     /// Replaces the pane with <paramref name="pane"/>'s id. Unknown id: returns this state unchanged.

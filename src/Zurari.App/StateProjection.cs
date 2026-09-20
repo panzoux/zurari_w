@@ -33,14 +33,14 @@ public static class StateProjection
             ? null
             : state.CutPending.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        var result = new Controls.ColumnVm[state.Columns.Length];
-        for (var i = 0; i < state.Columns.Length; i++)
+        var result = new Controls.ColumnVm[state.Focused.Columns.Length];
+        for (var i = 0; i < state.Focused.Columns.Length; i++)
         {
             result[i] = ProjectColumn(
-                state.Columns[i], isFocused: i == state.FocusedColumn, iconResolver, cutPending, cache, i, state.CutPending);
+                state.Focused.Columns[i], isFocused: i == state.Focused.FocusedColumn, iconResolver, cutPending, cache, i, state.CutPending);
         }
 
-        cache?.Trim(state.Columns.Length);
+        cache?.Trim(state.Focused.Columns.Length);
 
         return result;
     }
@@ -272,7 +272,7 @@ public static class StateProjection
 
     /// <summary>
     /// View model for the preview pane (see <see cref="ProjectPreview"/>). Carries the raw
-    /// <see cref="AppState.Preview"/> data straight through - <see cref="Zurari.App.MainWindow"/>
+    /// <see cref="Pane.Preview"/> data straight through - <see cref="Zurari.App.MainWindow"/>
     /// is the one that decides how to render each <see cref="Kind"/> (Image bytes -&gt;
     /// <c>BitmapImage</c> is wiring, not projection logic).
     /// </summary>
@@ -543,12 +543,12 @@ public static class StateProjection
     {
         ArgumentNullException.ThrowIfNull(state);
 
-        if (state.FocusedColumn < 0 || state.FocusedColumn >= state.Columns.Length)
+        if (state.Focused.FocusedColumn < 0 || state.Focused.FocusedColumn >= state.Focused.Columns.Length)
         {
             return new StatusBarVm(string.Empty, string.Empty, string.Empty);
         }
 
-        var column = state.Columns[state.FocusedColumn];
+        var column = state.Focused.Columns[state.Focused.FocusedColumn];
         return new StatusBarVm(PathBarText(column), HintsFor(state), Summarize(state, column));
     }
 
@@ -613,14 +613,14 @@ public static class StateProjection
 
         if (state.InputMode == Core.InputMode.Sort)
         {
-            var sort = state.View.Sort;
+            var sort = state.Focused.View.Sort;
             var arrow = sort.Descending ? "↓" : "↑";
             var folders = sort.DirectoriesFirst ? "・フォルダ優先" : string.Empty;
             return $"並べ替え: {FieldLabel(sort.Mode)} {arrow}{folders}    "
                 + "N 名前  E 拡張子  S サイズ  M 更新日時  D フォルダ優先  Shift+キー 降順  Esc 閉じる";
         }
 
-        var hidden = state.View.ShowHidden ? "隠しファイル: 表示中" : "隠しファイル";
+        var hidden = state.Focused.View.ShowHidden ? "隠しファイル: 表示中" : "隠しファイル";
         return $"S 並べ替え    Ctrl+Shift+. {hidden}    Ctrl+D ピン留め";
     }
 

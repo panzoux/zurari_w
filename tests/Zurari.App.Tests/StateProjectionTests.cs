@@ -6,7 +6,7 @@ namespace Zurari.App.Tests;
 public class StateProjectionTests
 {
     private static AppState StateWithColumns(params Column[] columns) =>
-        new() { Columns = [.. columns], FocusedColumn = 0 };
+        AppState.SinglePane([.. columns]);
 
     [Fact]
     public void Project_rejects_null_state()
@@ -171,15 +171,12 @@ public class StateProjectionTests
     [Fact]
     public void Focused_column_is_flagged_and_others_are_not()
     {
-        var state = new AppState
-        {
-            Columns =
+        var state = AppState.SinglePane(
             [
                 new Column(new Location.RealDirectory(@"C:\"), [], Load: LoadState.Loaded),
                 new Column(new Location.RealDirectory(@"C:\sub"), [], Load: LoadState.Loaded),
             ],
-            FocusedColumn = 1,
-        };
+            focusedColumn: 1);
 
         var vms = StateProjection.Project(state);
 
@@ -241,14 +238,12 @@ public class StateProjectionTests
     {
         var entryA = new Entry("same-name.txt", EntryKind.File);
         var entryB = new Entry("same-name.txt", EntryKind.File);
-        var state = new AppState
-        {
-            Columns =
+        var state = AppState.SinglePane(
             [
                 new Column(new Location.RealDirectory(@"C:\a"), [entryA], Cursor: 0, Load: LoadState.Loaded),
                 new Column(new Location.RealDirectory(@"C:\b"), [entryB], Cursor: 0, Load: LoadState.Loaded),
-            ],
-            FocusedColumn = 0,
+            ]) with
+        {
             CutPending = [@"C:\a\same-name.txt"],
         };
 

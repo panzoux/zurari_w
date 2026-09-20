@@ -9,11 +9,7 @@ public class RenameTests
     private static readonly Location Here = new Location.RealDirectory(@"C:\here");
 
     private static AppState With(Location location, int cursor, params Entry[] entries) =>
-        new()
-        {
-            Columns = [new Column(location, [.. entries], Cursor: cursor, Load: LoadState.Loaded)],
-            FocusedColumn = 0,
-        };
+        AppState.SinglePane([new Column(location, [.. entries], Cursor: cursor, Load: LoadState.Loaded)]);
 
     private static AppState Editing(out Entry target)
     {
@@ -160,7 +156,7 @@ public class RenameTests
         var (loaded, _) = Transition.Apply(
             done, new Msg.DirectoryLoaded(Col(0), Here, [new Entry("readme.txt", EntryKind.File)]));
 
-        Assert.Equal("readme.txt", loaded.Columns[0].Entries[loaded.Columns[0].Cursor].Name);
+        Assert.Equal("readme.txt", loaded.Focused.Columns[0].Entries[loaded.Focused.Columns[0].Cursor].Name);
     }
 
     [Fact]

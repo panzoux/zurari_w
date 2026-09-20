@@ -48,7 +48,7 @@ public sealed partial class MainWindow : Window, IDisposable
     private readonly ObservableCollection<JobRowVm> jobRows = new();
 
     /// <summary>
-    /// The <see cref="AppState.Columns"/> most recently pushed into <see cref="Browser"/>.
+    /// The focused pane's <see cref="Pane.Columns"/> most recently pushed into <see cref="Browser"/>.
     /// <see cref="Render"/> only reassigns <see cref="Controls.ColumnBrowser.Columns"/> when this
     /// differs (by the underlying array reference - see its remarks) from the incoming state's,
     /// so unrelated renders (job progress, preview loads, ...) do not force
@@ -58,11 +58,12 @@ public sealed partial class MainWindow : Window, IDisposable
     private ImmutableArray<Column> lastRenderedColumns;
 
     /// <summary>
-    /// The <see cref="AppState.FocusedColumn"/> most recently pushed into <see cref="Browser"/>.
-    /// Focus-only changes (<see cref="Msg.GoToParent"/>, <see cref="Msg.FocusColumn"/>) leave
-    /// <see cref="AppState.Columns"/>'s array reference untouched, so the guard above alone would
-    /// never re-project them - the strong-cursor highlight silently stopped following focus (Left/
-    /// Backspace looked like a no-op) until this was tracked alongside it.
+    /// The focused pane's <see cref="Pane.FocusedColumn"/> most recently pushed into
+    /// <see cref="Browser"/>. Focus-only changes (<see cref="Msg.GoToParent"/>,
+    /// <see cref="Msg.FocusColumn"/>) leave <see cref="Pane.Columns"/>'s array reference untouched, so
+    /// the guard above alone would never re-project them - the strong-cursor highlight silently
+    /// stopped following focus (Left/Backspace looked like a no-op) until this was tracked alongside
+    /// it.
     /// </summary>
     private int lastRenderedFocusedColumn = -1;
 
@@ -471,7 +472,7 @@ public sealed partial class MainWindow : Window, IDisposable
         // effect in Core or did not.
         var after = loop.State;
         if (after.InputMode != before.InputMode
-            || after.View != before.View
+            || after.Focused.View != before.Focused.View
             || msg is Msg.EnterSortMode or Msg.ExitSortMode or Msg.SetSortMode or Msg.SetSortDescending
                 or Msg.ToggleDirectoriesFirst or Msg.ToggleHiddenFiles or Msg.ViewRestored)
         {
@@ -634,12 +635,12 @@ public sealed partial class MainWindow : Window, IDisposable
     private void OnEntryDragRequested(object? sender, EntryDragRequestedEventArgs e)
     {
         var state = loop.State;
-        if (e.ColumnIndex < 0 || e.ColumnIndex >= state.Columns.Length)
+        if (e.ColumnIndex < 0 || e.ColumnIndex >= state.Focused.Columns.Length)
         {
             return;
         }
 
-        if (state.Columns[e.ColumnIndex].Location.FilesystemPath is null)
+        if (state.Focused.Columns[e.ColumnIndex].Location.FilesystemPath is null)
         {
             return;
         }
@@ -674,12 +675,12 @@ public sealed partial class MainWindow : Window, IDisposable
     private string? ResolveFullPath(int columnIndex, int entryIndex)
     {
         var state = loop.State;
-        if (columnIndex < 0 || columnIndex >= state.Columns.Length)
+        if (columnIndex < 0 || columnIndex >= state.Focused.Columns.Length)
         {
             return null;
         }
 
-        var column = state.Columns[columnIndex];
+        var column = state.Focused.Columns[columnIndex];
         if (entryIndex < 0 || entryIndex >= column.Entries.Length)
         {
             return null;
@@ -697,12 +698,12 @@ public sealed partial class MainWindow : Window, IDisposable
     private string? ResolveShellName(int columnIndex, int entryIndex)
     {
         var state = loop.State;
-        if (columnIndex < 0 || columnIndex >= state.Columns.Length)
+        if (columnIndex < 0 || columnIndex >= state.Focused.Columns.Length)
         {
             return null;
         }
 
-        var column = state.Columns[columnIndex];
+        var column = state.Focused.Columns[columnIndex];
         if (entryIndex < 0 || entryIndex >= column.Entries.Length)
         {
             return null;
@@ -720,12 +721,12 @@ public sealed partial class MainWindow : Window, IDisposable
     private bool IsEntryMarked(int columnIndex, int entryIndex)
     {
         var state = loop.State;
-        if (columnIndex < 0 || columnIndex >= state.Columns.Length)
+        if (columnIndex < 0 || columnIndex >= state.Focused.Columns.Length)
         {
             return false;
         }
 
-        var column = state.Columns[columnIndex];
+        var column = state.Focused.Columns[columnIndex];
         return entryIndex >= 0 && entryIndex < column.Entries.Length && column.Entries[entryIndex].IsMarked;
     }
 
@@ -733,12 +734,12 @@ public sealed partial class MainWindow : Window, IDisposable
     private List<string> ResolveMarkedFullPaths(int columnIndex)
     {
         var state = loop.State;
-        if (columnIndex < 0 || columnIndex >= state.Columns.Length)
+        if (columnIndex < 0 || columnIndex >= state.Focused.Columns.Length)
         {
             return [];
         }
 
-        var column = state.Columns[columnIndex];
+        var column = state.Focused.Columns[columnIndex];
         var result = new List<string>();
         foreach (var entry in column.Entries)
         {
@@ -768,13 +769,13 @@ public sealed partial class MainWindow : Window, IDisposable
     private void ShowContextMenuAtCursor()
     {
         var state = loop.State;
-        var columnIndex = state.FocusedColumn;
-        if (columnIndex < 0 || columnIndex >= state.Columns.Length)
+        var columnIndex = state.Focused.FocusedColumn;
+        if (columnIndex < 0 || columnIndex >= state.Focused.Columns.Length)
         {
             return;
         }
 
-        var cursor = state.Columns[columnIndex].Cursor;
+        var cursor = state.Focused.Columns[columnIndex].Cursor;
         if (cursor < 0 || Browser.TryGetRowScreenRect(columnIndex, cursor) is not { } rowRect)
         {
             return;
@@ -967,13 +968,13 @@ public sealed partial class MainWindow : Window, IDisposable
     private void TryCopyToClipboard(bool isMove)
     {
         var state = loop.State;
-        var columnIndex = state.FocusedColumn;
-        if (columnIndex < 0 || columnIndex >= state.Columns.Length)
+        var columnIndex = state.Focused.FocusedColumn;
+        if (columnIndex < 0 || columnIndex >= state.Focused.Columns.Length)
         {
             return;
         }
 
-        var column = state.Columns[columnIndex];
+        var column = state.Focused.Columns[columnIndex];
         if (column.Location.FilesystemPath is null)
         {
             return;
@@ -1045,8 +1046,8 @@ public sealed partial class MainWindow : Window, IDisposable
     private void TryDelete(bool permanent)
     {
         var state = loop.State;
-        var columnIndex = state.FocusedColumn;
-        var column = state.Columns[columnIndex];
+        var columnIndex = state.Focused.FocusedColumn;
+        var column = state.Focused.Columns[columnIndex];
 
         var markedCount = 0;
         foreach (var entry in column.Entries)
@@ -1081,8 +1082,8 @@ public sealed partial class MainWindow : Window, IDisposable
     private void TryDeleteFocusedEntry(bool permanent)
     {
         var state = loop.State;
-        var columnIndex = state.FocusedColumn;
-        var column = state.Columns[columnIndex];
+        var columnIndex = state.Focused.FocusedColumn;
+        var column = state.Focused.Columns[columnIndex];
         if (column.Cursor < 0 || column.Cursor >= column.Entries.Length)
         {
             return;
@@ -1149,27 +1150,27 @@ public sealed partial class MainWindow : Window, IDisposable
     private void Render(AppState state)
     {
         // Reference comparison, not value comparison: Transition returns the very same
-        // ImmutableArray<Column> instance (same underlying array) whenever a Msg does not touch
-        // AppState.Columns at all (JobProgress/JobFailed/JobCancelRequested/JobDismissed, and the
-        // untouched columns inside ShellOpCompleted/JobFinished's per-column loop). Skipping the
+        // ImmutableArray<Column> instance (same underlying array) whenever a Msg does not touch the
+        // focused pane's Columns at all (JobProgress/JobFailed/JobCancelRequested/JobDismissed, and
+        // the untouched columns inside ShellOpCompleted/JobFinished's per-column loop). Skipping the
         // reassignment in that case is what stops Controls.ColumnBrowser.RebuildColumns and
         // ColumnView.SyncFromColumn from running - and yanking back user scroll/hover state - on
         // renders that have nothing to do with the browsed columns (Phase 5 bug B3).
-        if (state.Columns != lastRenderedColumns || state.FocusedColumn != lastRenderedFocusedColumn)
+        if (state.Focused.Columns != lastRenderedColumns || state.Focused.FocusedColumn != lastRenderedFocusedColumn)
         {
             var projected = StateProjection.Project(state, ResolveIcon, projectionCache);
             Browser.Columns = projected;
 
             // What the screen was handed, as opposed to what Core holds. The two can only disagree
             // through the projection cache, and this is the line that would show it.
-            if (ColumnBrowser.InputTraceEnabled && state.FocusedColumn >= 0 && state.FocusedColumn < projected.Count)
+            if (ColumnBrowser.InputTraceEnabled && state.Focused.FocusedColumn >= 0 && state.Focused.FocusedColumn < projected.Count)
             {
                 Trace.WriteLine(
-                    $"[app] render focused={state.FocusedColumn} "
-                    + $"shown=[{InputTrace.FirstNames(projected[state.FocusedColumn].Entries.Select(vm => vm.Name))}]");
+                    $"[app] render focused={state.Focused.FocusedColumn} "
+                    + $"shown=[{InputTrace.FirstNames(projected[state.Focused.FocusedColumn].Entries.Select(vm => vm.Name))}]");
             }
-            lastRenderedColumns = state.Columns;
-            lastRenderedFocusedColumn = state.FocusedColumn;
+            lastRenderedColumns = state.Focused.Columns;
+            lastRenderedFocusedColumn = state.Focused.FocusedColumn;
 
             // Cheap reconcile (see DirectoryWatcher.SetWatchedPaths' remarks) - only worth doing
             // when the columns actually changed, same guard as the Browser.Columns reassignment
@@ -1179,7 +1180,7 @@ public sealed partial class MainWindow : Window, IDisposable
             // the recycle bin or the inside of an archive) has no path for FileSystemWatcher to
             // point at, so it is filtered out here rather than relying on the watcher to reject it.
             directoryWatcher.SetWatchedPaths(
-                state.Columns
+                state.Focused.Columns
                     .Select(c => c.Location)
                     .OfType<Location.RealDirectory>()
                     .Select(d => d.Path)

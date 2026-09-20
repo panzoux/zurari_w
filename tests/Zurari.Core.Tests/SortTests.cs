@@ -12,13 +12,11 @@ public class SortTests
 
     private static Entry Dir(string name) => new(name, EntryKind.Directory, SizeBytes: -1);
 
-    private static AppState With(SortOrder sort, params Entry[] entries) =>
-        new()
-        {
-            Columns = [new Column(new Location.RealDirectory(@"C:\"), [], Cursor: -1, Load: LoadState.Loaded)],
-            FocusedColumn = 0,
-            View = new ViewOptions(sort),
-        };
+    private static AppState With(SortOrder sort, params Entry[] entries)
+    {
+        var state = AppState.SinglePane([new Column(new Location.RealDirectory(@"C:\"), [], Cursor: -1, Load: LoadState.Loaded)]);
+        return state.WithPane(state.Focused with { View = new ViewOptions(sort) });
+    }
 
     /// <summary>Runs a listing through the real path a listing takes: a load, then the derived view.</summary>
     private static IReadOnlyList<string> Order(SortOrder sort, params Entry[] entries)
@@ -26,7 +24,7 @@ public class SortTests
         var state = With(sort, entries);
         var (loaded, _) = Transition.Apply(
             state, new Msg.DirectoryLoaded(Col(0), new Location.RealDirectory(@"C:\"), [.. entries]));
-        return [.. loaded.Columns[0].Entries.Select(e => e.Name)];
+        return [.. loaded.Focused.Columns[0].Entries.Select(e => e.Name)];
     }
 
     /// <summary>
@@ -145,8 +143,8 @@ public class SortTests
         var (loaded, _) = Transition.Apply(
             state, new Msg.DirectoryLoaded(Col(0), new Location.RealDirectory(@"C:\"), [first, second]));
 
-        Assert.Same(first, loaded.Columns[0].Entries[0]);
-        Assert.Same(second, loaded.Columns[0].Entries[1]);
+        Assert.Same(first, loaded.Focused.Columns[0].Entries[0]);
+        Assert.Same(second, loaded.Focused.Columns[0].Entries[1]);
     }
 
     [Fact]
@@ -170,11 +168,11 @@ public class SortTests
             ],
             Cursor: 0,
             Load: LoadState.Loaded);
-        var state = new AppState { Columns = [pane], FocusedColumn = 0 };
+        var state = AppState.SinglePane([pane]);
 
         var (next, _) = Transition.Apply(state, new Msg.SetSortMode(SortMode.Name));
 
-        Assert.Equal(["ドライブ", @"Z:\", @"C:\"], next.Columns[0].Entries.Select(e => e.Name));
+        Assert.Equal(["ドライブ", @"Z:\", @"C:\"], next.Focused.Columns[0].Entries.Select(e => e.Name));
     }
 
     [Fact]
@@ -200,12 +198,12 @@ public class SortTests
             new Location.RealDirectory(@"C:\"), [File("b.txt", 1), File("a.txt", 9)], Cursor: 0, Load: LoadState.Loaded);
         var right = new Column(
             new Location.RealDirectory(@"C:\x"), [File("d.txt", 1), File("c.txt", 9)], Cursor: 0, Load: LoadState.Loaded);
-        var state = new AppState { Columns = [left, right], FocusedColumn = 0 };
+        var state = AppState.SinglePane([left, right]);
 
         var (next, effects) = Transition.Apply(state, new Msg.SetSortMode(SortMode.Size));
 
-        Assert.Equal(["b.txt", "a.txt"], next.Columns[0].Entries.Select(e => e.Name));
-        Assert.Equal(["d.txt", "c.txt"], next.Columns[1].Entries.Select(e => e.Name));
+        Assert.Equal(["b.txt", "a.txt"], next.Focused.Columns[0].Entries.Select(e => e.Name));
+        Assert.Equal(["d.txt", "c.txt"], next.Focused.Columns[1].Entries.Select(e => e.Name));
         Assert.Equal(
             new Effect.SetViewOptions(new ViewOptions(new SortOrder(SortMode.Size))),
             Assert.Single(effects.OfType<Effect.SetViewOptions>()));
@@ -223,12 +221,12 @@ public class SortTests
             [File("a.txt", 100), File("b.txt", 10), File("c.txt", 1)],
             Cursor: 0,
             Load: LoadState.Loaded);
-        var state = new AppState { Columns = [column], FocusedColumn = 0 };
+        var state = AppState.SinglePane([column]);
 
         var (next, _) = Transition.Apply(state, new Msg.SetSortMode(SortMode.Size));
 
-        Assert.Equal(["c.txt", "b.txt", "a.txt"], next.Columns[0].Entries.Select(e => e.Name));
-        Assert.Equal("a.txt", next.Columns[0].Entries[next.Columns[0].Cursor].Name);
+        Assert.Equal(["c.txt", "b.txt", "a.txt"], next.Focused.Columns[0].Entries.Select(e => e.Name));
+        Assert.Equal("a.txt", next.Focused.Columns[0].Entries[next.Focused.Columns[0].Cursor].Name);
     }
 
     [Fact]
@@ -236,13 +234,13 @@ public class SortTests
     {
         var column = new Column(
             new Location.RealDirectory(@"C:\"), [File("a.txt", 9), File("b.txt", 1)], Cursor: 0, Load: LoadState.Loaded);
-        var state = new AppState { Columns = [column], FocusedColumn = 0 };
+        var state = AppState.SinglePane([column]);
 
         var (next, effects) = Transition.Apply(
             state, new Msg.ViewRestored(First, new ViewOptions(new SortOrder(SortMode.Size))));
 
-        Assert.Equal(["b.txt", "a.txt"], next.Columns[0].Entries.Select(e => e.Name));
-        Assert.Equal(new SortOrder(SortMode.Size), next.View.Sort);
+        Assert.Equal(["b.txt", "a.txt"], next.Focused.Columns[0].Entries.Select(e => e.Name));
+        Assert.Equal(new SortOrder(SortMode.Size), next.Focused.View.Sort);
         Assert.Empty(effects.OfType<Effect.SetViewOptions>());
     }
 
@@ -254,11 +252,11 @@ public class SortTests
             [File("a.txt", 100) with { IsMarked = true }, File("b.txt", 1)],
             Cursor: 0,
             Load: LoadState.Loaded);
-        var state = new AppState { Columns = [column], FocusedColumn = 0 };
+        var state = AppState.SinglePane([column]);
 
         var (next, _) = Transition.Apply(state, new Msg.SetSortMode(SortMode.Size));
 
-        var moved = next.Columns[0].Entries.Single(e => e.Name == "a.txt");
+        var moved = next.Focused.Columns[0].Entries.Single(e => e.Name == "a.txt");
         Assert.True(moved.IsMarked);
         Assert.Empty(next.CheckInvariants());
     }
@@ -266,18 +264,13 @@ public class SortTests
     [Fact]
     public void Toggling_folders_first_keeps_the_mode()
     {
-        var state = new AppState
-        {
-            Columns = [new Column(new Location.RealDirectory(@"C:\"), [], Cursor: -1, Load: LoadState.Loaded)],
-            FocusedColumn = 0,
-            View = new ViewOptions(new SortOrder(SortMode.Size, Descending: true)),
-        };
+        var state = With(new SortOrder(SortMode.Size, Descending: true));
 
         var (next, _) = Transition.Apply(state, new Msg.ToggleDirectoriesFirst());
 
-        Assert.Equal(SortMode.Size, next.View.Sort.Mode);
-        Assert.True(next.View.Sort.Descending);
-        Assert.False(next.View.Sort.DirectoriesFirst);
+        Assert.Equal(SortMode.Size, next.Focused.View.Sort.Mode);
+        Assert.True(next.Focused.View.Sort.Descending);
+        Assert.False(next.Focused.View.Sort.DirectoriesFirst);
     }
 
     private static Entry Hidden(string name) =>
@@ -292,8 +285,8 @@ public class SortTests
             state,
             new Msg.DirectoryLoaded(Col(0), new Location.RealDirectory(@"C:\"), [File("a.txt"), Hidden("desktop.ini"), File("b.txt")]));
 
-        Assert.Equal(["a.txt", "b.txt"], loaded.Columns[0].Entries.Select(e => e.Name));
-        Assert.Equal(3, loaded.Columns[0].AllEntries.Length);
+        Assert.Equal(["a.txt", "b.txt"], loaded.Focused.Columns[0].Entries.Select(e => e.Name));
+        Assert.Equal(3, loaded.Focused.Columns[0].AllEntries.Length);
     }
 
     /// <summary>
@@ -310,13 +303,13 @@ public class SortTests
 
         var (shown, effects) = Transition.Apply(loaded, new Msg.ToggleHiddenFiles());
 
-        Assert.Equal(["a.txt", "desktop.ini"], shown.Columns[0].Entries.Select(e => e.Name));
-        Assert.True(shown.View.ShowHidden);
+        Assert.Equal(["a.txt", "desktop.ini"], shown.Focused.Columns[0].Entries.Select(e => e.Name));
+        Assert.True(shown.Focused.View.ShowHidden);
         Assert.Empty(effects.OfType<Effect.ReadDirectory>());
         Assert.Single(effects.OfType<Effect.SetViewOptions>());
 
         var (hiddenAgain, _) = Transition.Apply(shown, new Msg.ToggleHiddenFiles());
-        Assert.Equal(["a.txt"], hiddenAgain.Columns[0].Entries.Select(e => e.Name));
+        Assert.Equal(["a.txt"], hiddenAgain.Focused.Columns[0].Entries.Select(e => e.Name));
     }
 
     /// <summary>
@@ -334,11 +327,11 @@ public class SortTests
             ],
             Cursor: 0,
             Load: LoadState.Loaded);
-        var state = new AppState { Columns = [pane], FocusedColumn = 0 };
+        var state = AppState.SinglePane([pane]);
 
         var (next, _) = Transition.Apply(state, new Msg.ViewRestored(First, ViewOptions.Default));
 
-        Assert.Equal("ドライブ", next.Columns[0].Entries[0].Name);
+        Assert.Equal("ドライブ", next.Focused.Columns[0].Entries[0].Name);
     }
 
     /// <summary>
@@ -359,17 +352,18 @@ public class SortTests
     [Fact]
     public void Cursor_on_a_hidden_row_moves_somewhere_visible_when_it_disappears()
     {
-        var state = With(SortOrder.Default) with { View = ViewOptions.Default with { ShowHidden = true } };
+        var withHidden = With(SortOrder.Default);
+        var state = withHidden.WithPane(withHidden.Focused with { View = ViewOptions.Default with { ShowHidden = true } });
         var (loaded, _) = Transition.Apply(
             state,
             new Msg.DirectoryLoaded(Col(0), new Location.RealDirectory(@"C:\"), [File("a.txt"), Hidden("hidden.txt")]));
         var (onHidden, _) = Transition.Apply(loaded, new Msg.CursorTo(Col(0), 1));
-        Assert.Equal("hidden.txt", onHidden.Columns[0].Entries[onHidden.Columns[0].Cursor].Name);
+        Assert.Equal("hidden.txt", onHidden.Focused.Columns[0].Entries[onHidden.Focused.Columns[0].Cursor].Name);
 
         var (concealed, _) = Transition.Apply(onHidden, new Msg.ToggleHiddenFiles());
 
-        Assert.Equal(["a.txt"], concealed.Columns[0].Entries.Select(e => e.Name));
-        Assert.Equal(0, concealed.Columns[0].Cursor);
+        Assert.Equal(["a.txt"], concealed.Focused.Columns[0].Entries.Select(e => e.Name));
+        Assert.Equal(0, concealed.Focused.Columns[0].Cursor);
         Assert.Empty(concealed.CheckInvariants());
     }
 
@@ -380,7 +374,7 @@ public class SortTests
     [Fact]
     public void Sort_mode_can_be_entered_and_left()
     {
-        var state = new AppState { Columns = [Listing()], FocusedColumn = 0 };
+        var state = AppState.SinglePane([Listing()]);
 
         var (entered, _) = Transition.Apply(state, new Msg.EnterSortMode());
         Assert.Equal(InputMode.Sort, entered.InputMode);
@@ -397,7 +391,7 @@ public class SortTests
     [MemberData(nameof(SortModeChoices))]
     public void Choosing_in_sort_mode_closes_it(Msg choice)
     {
-        var state = new AppState { Columns = [Listing()], FocusedColumn = 0 };
+        var state = AppState.SinglePane([Listing()]);
 
         var (open, _) = Transition.Apply(state, new Msg.EnterSortMode());
         var (next, _) = Transition.Apply(open, choice);
@@ -420,15 +414,15 @@ public class SortTests
     [Fact]
     public void Choosing_the_same_field_again_after_reopening_flips_it()
     {
-        var state = new AppState { Columns = [Listing()], FocusedColumn = 0 };
+        var state = AppState.SinglePane([Listing()]);
 
         var (next, _) = Transition.Apply(state, new Msg.EnterSortMode());
         (next, _) = Transition.Apply(next, new Msg.SetSortMode(SortMode.Size));
-        Assert.False(next.View.Sort.Descending);
+        Assert.False(next.Focused.View.Sort.Descending);
         (next, _) = Transition.Apply(next, new Msg.EnterSortMode());
         (next, _) = Transition.Apply(next, new Msg.SetSortMode(SortMode.Size));
 
-        Assert.Equal(new SortOrder(SortMode.Size, Descending: true), next.View.Sort);
+        Assert.Equal(new SortOrder(SortMode.Size, Descending: true), next.Focused.View.Sort);
     }
 
     /// <summary>
@@ -440,24 +434,24 @@ public class SortTests
     [Fact]
     public void From_the_default_order_choosing_name_flips_it()
     {
-        var state = new AppState { Columns = [Listing()], FocusedColumn = 0 };
+        var state = AppState.SinglePane([Listing()]);
 
         var (next, _) = Transition.Apply(state, new Msg.SetSortMode(SortMode.Name));
 
-        Assert.Equal(new SortOrder(SortMode.Name, Descending: true), next.View.Sort);
+        Assert.Equal(new SortOrder(SortMode.Name, Descending: true), next.Focused.View.Sort);
     }
 
     /// <summary>Shift reaches descending in one press, and asking again does not flip it back.</summary>
     [Fact]
     public void Descending_can_be_chosen_directly()
     {
-        var state = new AppState { Columns = [Listing()], FocusedColumn = 0 };
+        var state = AppState.SinglePane([Listing()]);
 
         var (once, _) = Transition.Apply(state, new Msg.SetSortDescending(SortMode.Size));
         var (twice, _) = Transition.Apply(once, new Msg.SetSortDescending(SortMode.Size));
 
-        Assert.Equal(new SortOrder(SortMode.Size, Descending: true), once.View.Sort);
-        Assert.Equal(once.View.Sort, twice.View.Sort);
+        Assert.Equal(new SortOrder(SortMode.Size, Descending: true), once.Focused.View.Sort);
+        Assert.Equal(once.Focused.View.Sort, twice.Focused.View.Sort);
     }
 
     /// <summary>
@@ -467,7 +461,7 @@ public class SortTests
     [Fact]
     public void Sort_mode_does_not_open_while_renaming()
     {
-        var state = new AppState { Columns = [Listing()], FocusedColumn = 0 };
+        var state = AppState.SinglePane([Listing()]);
         var (renaming, _) = Transition.Apply(state, new Msg.RenameRequested(Col(0)));
         Assert.NotNull(renaming.Rename);
 

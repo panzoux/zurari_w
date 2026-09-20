@@ -11,7 +11,7 @@ namespace Zurari.Core.Tests;
 public class MountImageTests
 {
     private static AppState With(params Column[] columns) =>
-        new() { Columns = [.. columns], FocusedColumn = 0 };
+        AppState.SinglePane([.. columns]);
 
     private static Column DrivePane(int cursor, params Entry[] rows) =>
         new(Location.Drives.Instance, [.. rows], Cursor: cursor, Load: LoadState.Loaded);
@@ -85,7 +85,7 @@ public class MountImageTests
         var (next, effects) = Transition.Apply(state, new Msg.ImageMounted(@"E:\"));
 
         Assert.Equal(@"E:\", next.RevealTarget);
-        Assert.Equal(LoadState.Loading, next.Columns[0].Load);
+        Assert.Equal(LoadState.Loading, next.Focused.Columns[0].Load);
         Assert.Equal(
             new Effect.ReadDirectory(Col(0), Location.Drives.Instance),
             Assert.Single(effects.OfType<Effect.ReadDirectory>()));
@@ -100,8 +100,8 @@ public class MountImageTests
             waiting,
             new Msg.DirectoryLoaded(Col(0), Location.Drives.Instance, [Fixed, Optical]));
 
-        Assert.Equal(1, loaded.Columns[0].Cursor);
-        Assert.Equal(@"E:\", loaded.Columns[0].Entries[loaded.Columns[0].Cursor].Name);
+        Assert.Equal(1, loaded.Focused.Columns[0].Cursor);
+        Assert.Equal(@"E:\", loaded.Focused.Columns[0].Entries[loaded.Focused.Columns[0].Cursor].Name);
 
         // Consumed, so an unrelated listing arriving later does not move the cursor again.
         Assert.Null(loaded.RevealTarget);
@@ -117,7 +117,7 @@ public class MountImageTests
             waiting,
             new Msg.DirectoryLoaded(Col(0), Location.Drives.Instance, [Fixed, Optical]));
 
-        Assert.Equal(0, loaded.FocusedColumn);
+        Assert.Equal(0, loaded.Focused.FocusedColumn);
     }
 
     [Fact]

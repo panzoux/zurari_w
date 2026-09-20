@@ -42,9 +42,9 @@ public class DrivePaneE2ETests
 
         // Exactly what MainWindow's constructor does last.
         loop.Dispatch(new Msg.Refresh());
-        DrainUntil(loop, queue, () => loop.State.Columns[0].Load == LoadState.Loaded, TimeSpan.FromSeconds(10));
+        DrainUntil(loop, queue, () => loop.State.Focused.Columns[0].Load == LoadState.Loaded, TimeSpan.FromSeconds(10));
 
-        var column = loop.State.Columns[0];
+        var column = loop.State.Focused.Columns[0];
         Assert.Equal(0, column.Cursor);
         Assert.Equal(EntryKind.Header, column.Entries[0].Kind);
 
@@ -58,7 +58,7 @@ public class DrivePaneE2ETests
         // Space, as OnWindowKeyDown sends it.
         loop.Dispatch(new Msg.ToggleMarkAtCursor(loop.State.Focused.FocusedRef));
 
-        var after = loop.State.Columns[0];
+        var after = loop.State.Focused.Columns[0];
         Assert.True(after.Entries.Length < before, "the section should have collapsed");
         Assert.Equal(EntryKind.Header, after.Entries[0].Kind);
         Assert.Equal(before, after.AllEntries.Length);
@@ -72,9 +72,9 @@ public class DrivePaneE2ETests
         var loop = new MessageLoop(initial: AppState.Initial, runEffect: runtime.Submit);
 
         loop.Dispatch(new Msg.Refresh());
-        DrainUntil(loop, queue, () => loop.State.Columns[0].Load == LoadState.Loaded, TimeSpan.FromSeconds(10));
+        DrainUntil(loop, queue, () => loop.State.Focused.Columns[0].Load == LoadState.Loaded, TimeSpan.FromSeconds(10));
 
-        var entries = loop.State.Columns[0].Entries;
+        var entries = loop.State.Focused.Columns[0].Entries;
         var laterHeader = -1;
         for (var i = 1; i < entries.Length; i++)
         {
@@ -95,8 +95,8 @@ public class DrivePaneE2ETests
             loop.Dispatch(new Msg.CursorDown(Col(0)));
         }
 
-        Assert.Equal(laterHeader, loop.State.Columns[0].Cursor);
-        Assert.Equal(EntryKind.Header, loop.State.Columns[0].Entries[laterHeader].Kind);
+        Assert.Equal(laterHeader, loop.State.Focused.Columns[0].Cursor);
+        Assert.Equal(EntryKind.Header, loop.State.Focused.Columns[0].Entries[laterHeader].Kind);
     }
 
     /// <summary>
@@ -121,11 +121,7 @@ public class DrivePaneE2ETests
 
             // The real routing decision, not a direct submit.
             var loop = new MessageLoop(
-                initial: new AppState
-                {
-                    Columns = [new Column(new Location.RealDirectory(dir), Entries: [])],
-                    FocusedColumn = 0,
-                },
+                initial: AppState.SinglePane([new Column(new Location.RealDirectory(dir), Entries: [])]),
                 runEffect: e =>
                 {
                     Assert.Equal(EffectTarget.Runtime, EffectRouting.For(e));
@@ -133,8 +129,8 @@ public class DrivePaneE2ETests
                 });
 
             loop.Dispatch(new Msg.Refresh());
-            DrainUntil(loop, queue, () => loop.State.Columns[0].Load == LoadState.Loaded, TimeSpan.FromSeconds(10));
-            Assert.Equal(0, loop.State.Columns[0].Cursor);
+            DrainUntil(loop, queue, () => loop.State.Focused.Columns[0].Load == LoadState.Loaded, TimeSpan.FromSeconds(10));
+            Assert.Equal(0, loop.State.Focused.Columns[0].Cursor);
 
             loop.Dispatch(new Msg.PinEntryAtCursor(Col(0)));
             DrainUntil(loop, queue, () => store.Load().PinnedPaths?.Count > 0, TimeSpan.FromSeconds(10));
@@ -174,7 +170,7 @@ public class DrivePaneE2ETests
                 var loop = NewLoop(runtime, new Location.RealDirectory(dir));
 
                 loop.Dispatch(new Msg.Refresh());
-                DrainUntil(loop, queue, () => loop.State.Columns[0].Load == LoadState.Loaded, TimeSpan.FromSeconds(10));
+                DrainUntil(loop, queue, () => loop.State.Focused.Columns[0].Load == LoadState.Loaded, TimeSpan.FromSeconds(10));
 
                 loop.Dispatch(new Msg.PinEntryAtCursor(Col(0)));
                 DrainUntil(loop, queue, () => store.Load().PinnedPaths?.Count > 0, TimeSpan.FromSeconds(10));
@@ -193,17 +189,17 @@ public class DrivePaneE2ETests
                 DrainUntil(
                     loop,
                     queue,
-                    () => loop.State.Columns[0].Load == LoadState.Loaded
-                        && loop.State.Columns[0].Entries.Any(e => e.Name == target),
+                    () => loop.State.Focused.Columns[0].Load == LoadState.Loaded
+                        && loop.State.Focused.Columns[0].Entries.Any(e => e.Name == target),
                     TimeSpan.FromSeconds(10));
 
-                var pinned = loop.State.Columns[0].Entries.Single(e => e.Name == target);
+                var pinned = loop.State.Focused.Columns[0].Entries.Single(e => e.Name == target);
                 Assert.True(pinned.IsRemovable);
                 Assert.Equal("panzoux", pinned.Label);
 
                 // Collapse ドライブ specifically, not just the first header - the pinned row lives
                 // under お気に入り, and collapsing that would hide the very thing session three checks.
-                var header = loop.State.Columns[0].Entries.ToList()
+                var header = loop.State.Focused.Columns[0].Entries.ToList()
                     .FindIndex(e => e.Kind == EntryKind.Header && e.Group == EntryGroups.Drives);
                 loop.Dispatch(new Msg.ToggleSection(Col(0), header));
                 DrainUntil(loop, queue, () => store.Load().CollapsedGroups?.Count > 0, TimeSpan.FromSeconds(10));
@@ -222,10 +218,10 @@ public class DrivePaneE2ETests
                 DrainUntil(
                     loop,
                     queue,
-                    () => !loop.State.Columns[0].CollapsedGroups.IsEmpty,
+                    () => !loop.State.Focused.Columns[0].CollapsedGroups.IsEmpty,
                     TimeSpan.FromSeconds(10));
 
-                var column = loop.State.Columns[0];
+                var column = loop.State.Focused.Columns[0];
                 Assert.Equal([EntryGroups.Drives], column.CollapsedGroups);
                 Assert.DoesNotContain(column.Entries, e => e.Kind == EntryKind.Drive);
                 Assert.Contains(column.AllEntries, e => e.Kind == EntryKind.Drive);
@@ -243,11 +239,7 @@ public class DrivePaneE2ETests
     /// <summary>A loop wired exactly as <c>MainWindow</c> wires it - routing included.</summary>
     private static MessageLoop NewLoop(WorkerRuntime runtime, Location start) =>
         new(
-            initial: new AppState
-            {
-                Columns = [new Column(start, Entries: [])],
-                FocusedColumn = 0,
-            },
+            initial: AppState.SinglePane([new Column(start, Entries: [])]),
             runEffect: e =>
             {
                 Assert.Equal(EffectTarget.Runtime, EffectRouting.For(e));

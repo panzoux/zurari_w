@@ -15,7 +15,7 @@ public class ChildColumnTests
     private static readonly Entry Doc = new("a.txt", EntryKind.File);
 
     private static AppState With(params Column[] columns) =>
-        new() { Columns = [.. columns], FocusedColumn = columns.Length - 1 };
+        AppState.SinglePane([.. columns], columns.Length - 1);
 
     private static Column Root(int cursor, params Entry[] entries) =>
         new(new Location.RealDirectory(@"C:\"), [.. entries], Cursor: cursor, Load: LoadState.Loaded);
@@ -27,10 +27,10 @@ public class ChildColumnTests
 
         var (next, effects) = Transition.Apply(state, new Msg.CursorUp(Col(0)));
 
-        Assert.Equal(2, next.Columns.Length);
-        Assert.Equal(new Location.RealDirectory(@"C:\other"), next.Columns[1].Location);
-        Assert.Equal(LoadState.Loading, next.Columns[1].Load);
-        Assert.Equal(0, next.FocusedColumn);
+        Assert.Equal(2, next.Focused.Columns.Length);
+        Assert.Equal(new Location.RealDirectory(@"C:\other"), next.Focused.Columns[1].Location);
+        Assert.Equal(LoadState.Loading, next.Focused.Columns[1].Load);
+        Assert.Equal(0, next.Focused.FocusedColumn);
 
         var read = Assert.Single(effects.OfType<Effect.ReadDirectory>());
         Assert.Equal(1, read.At.Index);
@@ -42,11 +42,11 @@ public class ChildColumnTests
     {
         var state = With(Root(0, Doc, Sub));
         var (opened, _) = Transition.Apply(state, new Msg.CursorTo(Col(0), 1));
-        Assert.Equal(2, opened.Columns.Length);
+        Assert.Equal(2, opened.Focused.Columns.Length);
 
         var (closed, _) = Transition.Apply(opened, new Msg.CursorTo(Col(0), 0));
 
-        Assert.Single(closed.Columns);
+        Assert.Single(closed.Focused.Columns);
     }
 
     [Fact]
@@ -60,7 +60,7 @@ public class ChildColumnTests
 
         var (next, _) = Transition.Apply(With(column), new Msg.CursorUp(Col(0)));
 
-        Assert.Single(next.Columns);
+        Assert.Single(next.Focused.Columns);
     }
 
     [Fact]
@@ -74,8 +74,8 @@ public class ChildColumnTests
 
         var (next, _) = Transition.Apply(With(column), new Msg.CursorDown(Col(0)));
 
-        Assert.Equal(2, next.Columns.Length);
-        Assert.Equal(new Location.RealDirectory(@"C:\"), next.Columns[1].Location);
+        Assert.Equal(2, next.Focused.Columns.Length);
+        Assert.Equal(new Location.RealDirectory(@"C:\"), next.Focused.Columns[1].Location);
     }
 
     /// <summary>
@@ -89,14 +89,14 @@ public class ChildColumnTests
     {
         var empty = With(new Column(new Location.RealDirectory(@"C:\"), [], Cursor: -1));
         var (opened, _) = Transition.Apply(empty, new Msg.DirectoryLoaded(Col(0), new Location.RealDirectory(@"C:\"), [Sub]));
-        Assert.Equal(2, opened.Columns.Length);
+        Assert.Equal(2, opened.Focused.Columns.Length);
 
         // The child's listing arrives, and its own cursor lands on a folder.
         var (loaded, effects) = Transition.Apply(
             opened,
             new Msg.DirectoryLoaded(Col(1), new Location.RealDirectory(@"C:\sub"), [new Entry("deep", EntryKind.Directory)]));
 
-        Assert.Equal(2, loaded.Columns.Length);
+        Assert.Equal(2, loaded.Focused.Columns.Length);
         Assert.Empty(effects.OfType<Effect.ReadDirectory>());
     }
 
@@ -107,21 +107,18 @@ public class ChildColumnTests
     [Fact]
     public void Going_back_to_the_parent_keeps_the_columns_that_are_already_open()
     {
-        var state = new AppState
-        {
-            Columns =
+        var state = AppState.SinglePane(
             [
                 Root(0, Sub),
                 new Column(new Location.RealDirectory(@"C:\sub"), [Other], Cursor: 0, Load: LoadState.Loaded),
                 new Column(new Location.RealDirectory(@"C:\sub\other"), [], Cursor: -1, Load: LoadState.Loaded),
             ],
-            FocusedColumn = 1,
-        };
+            focusedColumn: 1);
 
         var (next, effects) = Transition.Apply(state, new Msg.GoToParent(Col(1)));
 
-        Assert.Equal(0, next.FocusedColumn);
-        Assert.Equal(3, next.Columns.Length);
+        Assert.Equal(0, next.Focused.FocusedColumn);
+        Assert.Equal(3, next.Focused.Columns.Length);
         Assert.Empty(effects.OfType<Effect.ReadDirectory>());
     }
 
@@ -136,7 +133,7 @@ public class ChildColumnTests
 
         var (next, effects) = Transition.Apply(state, new Msg.Noop());
 
-        Assert.Single(next.Columns);
+        Assert.Single(next.Focused.Columns);
         Assert.Empty(effects);
     }
 
@@ -147,26 +144,23 @@ public class ChildColumnTests
 
         var (next, _) = Transition.Apply(state, new Msg.EnterDirectory(Col(0), 0));
 
-        Assert.Equal(2, next.Columns.Length);
-        Assert.Equal(1, next.FocusedColumn);
+        Assert.Equal(2, next.Focused.Columns.Length);
+        Assert.Equal(1, next.Focused.FocusedColumn);
     }
 
     [Fact]
     public void Refreshing_leaves_the_open_columns_where_they_are()
     {
-        var state = new AppState
-        {
-            Columns =
+        var state = AppState.SinglePane(
             [
                 Root(0, Sub),
                 new Column(new Location.RealDirectory(@"C:\sub"), [Other], Cursor: 0, Load: LoadState.Loaded),
             ],
-            FocusedColumn = 0,
-        };
+            focusedColumn: 0);
 
         var (next, effects) = Transition.Apply(state, new Msg.Refresh());
 
-        Assert.Equal(2, next.Columns.Length);
+        Assert.Equal(2, next.Focused.Columns.Length);
         Assert.Equal(2, effects.OfType<Effect.ReadDirectory>().Count());
         Assert.DoesNotContain(effects.OfType<Effect.ReadDirectory>(), e => e.Speculative);
     }

@@ -18,26 +18,26 @@ public class PreviewRetryTests
             Cursor: 0,
             Load: LoadState.Loaded);
 
-    private static AppState TimedOut(int attempt) => new()
+    private static AppState TimedOut(int attempt)
     {
-        Columns = [Folder()],
-        FocusedColumn = 0,
-        Preview = new PreviewState(5, Clip, PreviewKind.Binary, "MP4 Video (ffmpeg: タイムアウト)", [], null)
+        var state = AppState.SinglePane([Folder()]);
+        var preview = new PreviewState(5, Clip, PreviewKind.Binary, "MP4 Video (ffmpeg: タイムアウト)", [], null)
         {
             Attempt = attempt,
             TimedOut = true,
-        },
-    };
+        };
+        return state.WithPane(state.Focused with { Preview = preview });
+    }
 
     [Fact]
     public void A_timed_out_preview_is_retried_as_the_next_attempt()
     {
         var (next, effects) = Transition.Apply(TimedOut(1), new Msg.RetryPreview(First));
 
-        Assert.Equal(PreviewKind.Loading, next.Preview.Kind);
-        Assert.Equal(6, next.Preview.Generation);
-        Assert.Equal(2, next.Preview.Attempt);
-        Assert.False(next.Preview.TimedOut);
+        Assert.Equal(PreviewKind.Loading, next.Focused.Preview.Kind);
+        Assert.Equal(6, next.Focused.Preview.Generation);
+        Assert.Equal(2, next.Focused.Preview.Attempt);
+        Assert.False(next.Focused.Preview.TimedOut);
         Assert.Equal(
             new Effect.LoadPreview(First, 6, Clip, PreviewTarget.File, Attempt: 2),
             Assert.Single(effects.OfType<Effect.LoadPreview>()));
@@ -50,31 +50,34 @@ public class PreviewRetryTests
 
         var (next, effects) = Transition.Apply(state, new Msg.RetryPreview(First));
 
-        Assert.Equal(state.Preview, next.Preview);
+        Assert.Equal(state.Focused.Preview, next.Focused.Preview);
         Assert.Empty(effects);
     }
 
     [Fact]
     public void A_preview_that_did_not_time_out_is_not_retried()
     {
-        var state = TimedOut(1) with { Preview = TimedOut(1).Preview with { TimedOut = false } };
+        var timedOut = TimedOut(1);
+        var state = timedOut.WithPane(timedOut.Focused with { Preview = timedOut.Focused.Preview with { TimedOut = false } });
 
         var (next, effects) = Transition.Apply(state, new Msg.RetryPreview(First));
 
-        Assert.Equal(state.Preview, next.Preview);
+        Assert.Equal(state.Focused.Preview, next.Focused.Preview);
         Assert.Empty(effects);
     }
 
     [Fact]
     public void A_timeout_reported_by_the_runtime_is_kept_on_the_preview()
     {
-        var loading = TimedOut(1) with { Preview = new PreviewState(5, Clip, PreviewKind.Loading, null, [], null) };
+        var timedOut = TimedOut(1);
+        var loading = timedOut.WithPane(
+            timedOut.Focused with { Preview = new PreviewState(5, Clip, PreviewKind.Loading, null, [], null) });
 
         var (next, _) = Transition.Apply(
             loading, new Msg.PreviewLoaded(First, 5, PreviewKind.Binary, null, [], "label", null, TimedOut: true));
 
-        Assert.True(next.Preview.TimedOut);
-        Assert.True(next.Preview.CanRetry);
+        Assert.True(next.Focused.Preview.TimedOut);
+        Assert.True(next.Focused.Preview.CanRetry);
     }
 
     /// <summary>The attempt count belongs to one file; the next file gets the short wait again.</summary>
@@ -83,8 +86,8 @@ public class PreviewRetryTests
     {
         var (next, effects) = Transition.Apply(TimedOut(2), new Msg.CursorDown(Col(0)));
 
-        Assert.Equal(1, next.Preview.Attempt);
-        Assert.False(next.Preview.TimedOut);
+        Assert.Equal(1, next.Focused.Preview.Attempt);
+        Assert.False(next.Focused.Preview.TimedOut);
         Assert.Equal(1, Assert.Single(effects.OfType<Effect.LoadPreview>()).Attempt);
     }
 }

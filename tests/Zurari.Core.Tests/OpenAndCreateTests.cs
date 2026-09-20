@@ -9,11 +9,7 @@ public class OpenAndCreateTests
     private static readonly Location Here = new Location.RealDirectory(@"C:\here");
 
     private static AppState With(Location location, params Entry[] entries) =>
-        new()
-        {
-            Columns = [new Column(location, [.. entries], Cursor: 0, Load: LoadState.Loaded)],
-            FocusedColumn = 0,
-        };
+        AppState.SinglePane([new Column(location, [.. entries], Cursor: 0, Load: LoadState.Loaded)]);
 
     [Fact]
     public void Opening_a_file_hands_it_to_whatever_windows_opens_it_with()
@@ -47,7 +43,7 @@ public class OpenAndCreateTests
         var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(Col(0), 0));
 
         Assert.Empty(effects.OfType<Effect.OpenWithDefaultApp>());
-        Assert.Equal(2, next.Columns.Length);
+        Assert.Equal(2, next.Focused.Columns.Length);
     }
 
     [Fact]
@@ -95,14 +91,14 @@ public class OpenAndCreateTests
         var (asked, effects) = Transition.Apply(state, new Msg.FolderCreated(Col(0), Here, "新しいフォルダー"));
 
         Assert.Equal("新しいフォルダー", asked.RevealTarget);
-        Assert.Equal(LoadState.Loading, asked.Columns[0].Load);
+        Assert.Equal(LoadState.Loading, asked.Focused.Columns[0].Load);
         Assert.Equal(new Effect.ReadDirectory(Col(0), Here), Assert.Single(effects.OfType<Effect.ReadDirectory>()));
 
         var (loaded, _) = Transition.Apply(
             asked,
             new Msg.DirectoryLoaded(Col(0), Here, [new Entry("新しいフォルダー", EntryKind.Directory), new Entry("a.txt", EntryKind.File)]));
 
-        Assert.Equal("新しいフォルダー", loaded.Columns[0].Entries[loaded.Columns[0].Cursor].Name);
+        Assert.Equal("新しいフォルダー", loaded.Focused.Columns[0].Entries[loaded.Focused.Columns[0].Cursor].Name);
         Assert.Null(loaded.RevealTarget);
     }
 

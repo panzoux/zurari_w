@@ -13,7 +13,7 @@ public class TransitionTests
     private static readonly Entry Drive = new(@"C:\", EntryKind.Drive);
 
     private static AppState StateWithColumns(params Column[] columns) =>
-        AppState.Initial with { Columns = [.. columns], FocusedColumn = 0 };
+        AppState.SinglePane([.. columns]);
 
     [Fact]
     public void Noop_returns_same_state_and_no_effects()
@@ -39,7 +39,7 @@ public class TransitionTests
 
         var (next, effects) = Transition.Apply(state, new Msg.CursorDown(Col(0)));
 
-        Assert.Equal(1, next.Columns[0].Cursor);
+        Assert.Equal(1, next.Focused.Columns[0].Cursor);
         // Landing on File1 triggers a preview load (see Transition.ReconcilePreview).
         Assert.Equal(@"C:\a.txt", Assert.Single(effects.OfType<Effect.LoadPreview>()).Path);
     }
@@ -52,7 +52,7 @@ public class TransitionTests
 
         var (next, _) = Transition.Apply(state, new Msg.CursorDown(Col(0)));
 
-        Assert.Equal(2, next.Columns[0].Cursor);
+        Assert.Equal(2, next.Focused.Columns[0].Cursor);
     }
 
     [Fact]
@@ -63,7 +63,7 @@ public class TransitionTests
 
         var (next, _) = Transition.Apply(state, new Msg.CursorUp(Col(0)));
 
-        Assert.Equal(0, next.Columns[0].Cursor);
+        Assert.Equal(0, next.Focused.Columns[0].Cursor);
     }
 
     [Fact]
@@ -74,7 +74,7 @@ public class TransitionTests
 
         var (next, _) = Transition.Apply(state, new Msg.CursorUp(Col(0)));
 
-        Assert.Equal(-1, next.Columns[0].Cursor);
+        Assert.Equal(-1, next.Focused.Columns[0].Cursor);
     }
 
     [Fact]
@@ -85,7 +85,7 @@ public class TransitionTests
 
         var (next, _) = Transition.Apply(state, new Msg.CursorPageDown(Col(0), PageSize: 0));
 
-        Assert.Equal(1, next.Columns[0].Cursor);
+        Assert.Equal(1, next.Focused.Columns[0].Cursor);
     }
 
     [Fact]
@@ -96,7 +96,7 @@ public class TransitionTests
 
         var (next, _) = Transition.Apply(state, new Msg.CursorPageDown(Col(0), PageSize: 100));
 
-        Assert.Equal(2, next.Columns[0].Cursor);
+        Assert.Equal(2, next.Focused.Columns[0].Cursor);
     }
 
     [Fact]
@@ -107,7 +107,7 @@ public class TransitionTests
 
         var (next, _) = Transition.Apply(state, new Msg.CursorHome(Col(0)));
 
-        Assert.Equal(0, next.Columns[0].Cursor);
+        Assert.Equal(0, next.Focused.Columns[0].Cursor);
     }
 
     [Fact]
@@ -118,7 +118,7 @@ public class TransitionTests
 
         var (next, _) = Transition.Apply(state, new Msg.CursorEnd(Col(0)));
 
-        Assert.Equal(2, next.Columns[0].Cursor);
+        Assert.Equal(2, next.Focused.Columns[0].Cursor);
     }
 
     [Fact]
@@ -129,7 +129,7 @@ public class TransitionTests
 
         var (next, effects) = Transition.Apply(state, new Msg.CursorTo(Col(0), 2));
 
-        Assert.Equal(2, next.Columns[0].Cursor);
+        Assert.Equal(2, next.Focused.Columns[0].Cursor);
         // Landing on File2 triggers a preview load (see Transition.ReconcilePreview).
         Assert.Equal(@"C:\b.txt", Assert.Single(effects.OfType<Effect.LoadPreview>()).Path);
     }
@@ -142,7 +142,7 @@ public class TransitionTests
 
         var (next, _) = Transition.Apply(state, new Msg.CursorTo(Col(0), 99));
 
-        Assert.Equal(2, next.Columns[0].Cursor);
+        Assert.Equal(2, next.Focused.Columns[0].Cursor);
     }
 
     [Fact]
@@ -153,7 +153,7 @@ public class TransitionTests
 
         var (next, _) = Transition.Apply(state, new Msg.CursorTo(Col(0), 0));
 
-        Assert.Equal(-1, next.Columns[0].Cursor);
+        Assert.Equal(-1, next.Focused.Columns[0].Cursor);
     }
 
     [Fact]
@@ -191,7 +191,7 @@ public class TransitionTests
 
         var (next, effects) = Transition.Apply(state, new Msg.FocusColumn(Col(1)));
 
-        Assert.Equal(1, next.FocusedColumn);
+        Assert.Equal(1, next.Focused.FocusedColumn);
         Assert.Empty(effects);
     }
 
@@ -202,7 +202,7 @@ public class TransitionTests
 
         var (next, _) = Transition.Apply(state, new Msg.FocusColumn(Col(3)));
 
-        Assert.Equal(0, next.FocusedColumn);
+        Assert.Equal(0, next.Focused.FocusedColumn);
     }
 
     [Fact]
@@ -227,12 +227,12 @@ public class TransitionTests
 
         var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(Col(0), 0));
 
-        Assert.Equal(2, next.Columns.Length);
-        Assert.Equal(0, next.Columns[0].Cursor);
-        Assert.Equal(new Location.RealDirectory(@"C:\sub"), next.Columns[1].Location);
-        Assert.Equal(-1, next.Columns[1].Cursor);
-        Assert.Equal(LoadState.Loading, next.Columns[1].Load);
-        Assert.Equal(1, next.FocusedColumn);
+        Assert.Equal(2, next.Focused.Columns.Length);
+        Assert.Equal(0, next.Focused.Columns[0].Cursor);
+        Assert.Equal(new Location.RealDirectory(@"C:\sub"), next.Focused.Columns[1].Location);
+        Assert.Equal(-1, next.Focused.Columns[1].Cursor);
+        Assert.Equal(LoadState.Loading, next.Focused.Columns[1].Load);
+        Assert.Equal(1, next.Focused.FocusedColumn);
 
         var readDirectory = Assert.IsType<Effect.ReadDirectory>(Assert.Single(effects));
         Assert.Equal(1, readDirectory.At.Index);
@@ -252,9 +252,9 @@ public class TransitionTests
 
         var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(Col(0), 0));
 
-        Assert.Equal(1, next.FocusedColumn);
-        Assert.Equal(LoadState.Loaded, next.Columns[1].Load);
-        Assert.Equal(0, next.Columns[1].Cursor);
+        Assert.Equal(1, next.Focused.FocusedColumn);
+        Assert.Equal(LoadState.Loaded, next.Focused.Columns[1].Load);
+        Assert.Equal(0, next.Focused.Columns[1].Cursor);
         Assert.Empty(effects.OfType<Effect.ReadDirectory>());
     }
 
@@ -265,7 +265,7 @@ public class TransitionTests
 
         var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(Col(0), 0));
 
-        Assert.Equal(new Location.RealDirectory(@"C:\"), next.Columns[1].Location);
+        Assert.Equal(new Location.RealDirectory(@"C:\"), next.Focused.Columns[1].Location);
         var effect = Assert.IsType<Effect.ReadDirectory>(Assert.Single(effects));
         Assert.Equal(new Location.RealDirectory(@"C:\"), effect.Location);
     }
@@ -277,9 +277,9 @@ public class TransitionTests
 
         var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(Col(0), 2));
 
-        Assert.Single(next.Columns);
-        Assert.Equal(2, next.Columns[0].Cursor);
-        Assert.Equal(0, next.FocusedColumn);
+        Assert.Single(next.Focused.Columns);
+        Assert.Equal(2, next.Focused.Columns[0].Cursor);
+        Assert.Equal(0, next.Focused.FocusedColumn);
         // No directory-read effect for a file, but selecting it does trigger a preview load.
         Assert.Equal(@"C:\b.txt", Assert.Single(effects.OfType<Effect.LoadPreview>()).Path);
     }
@@ -287,17 +287,19 @@ public class TransitionTests
     [Fact]
     public void EnterDirectory_on_file_truncates_columns_to_its_right()
     {
-        var state = StateWithColumns(
-            new Column(new Location.RealDirectory(@"C:\"), [Dir, File1], Cursor: 0, Load: LoadState.Loaded),
-            new Column(new Location.RealDirectory(@"C:\sub"), [File1], Cursor: 0, Load: LoadState.Loaded),
-            new Column(new Location.RealDirectory(@"C:\sub\stale"), [], Load: LoadState.Loading)) with
-        { FocusedColumn = 2 };
+        var state = AppState.SinglePane(
+            [
+                new Column(new Location.RealDirectory(@"C:\"), [Dir, File1], Cursor: 0, Load: LoadState.Loaded),
+                new Column(new Location.RealDirectory(@"C:\sub"), [File1], Cursor: 0, Load: LoadState.Loaded),
+                new Column(new Location.RealDirectory(@"C:\sub\stale"), [], Load: LoadState.Loading),
+            ],
+            focusedColumn: 2);
 
         var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(Col(0), 1));
 
-        Assert.Single(next.Columns);
-        Assert.Equal(1, next.Columns[0].Cursor);
-        Assert.Equal(0, next.FocusedColumn);
+        Assert.Single(next.Focused.Columns);
+        Assert.Equal(1, next.Focused.Columns[0].Cursor);
+        Assert.Equal(0, next.Focused.FocusedColumn);
         // Selecting File1 (and losing focus from the now-truncated column 2) triggers a preview load.
         Assert.Equal(@"C:\a.txt", Assert.Single(effects.OfType<Effect.LoadPreview>()).Path);
         Assert.Equal(@"C:\a.txt", Assert.Single(effects.OfType<Effect.OpenWithDefaultApp>()).Path);
@@ -321,7 +323,7 @@ public class TransitionTests
 
         var (next, _) = Transition.Apply(state, new Msg.EnterDirectory(Col(0), 0));
 
-        Assert.Equal(1, next.FocusedColumn);
+        Assert.Equal(1, next.Focused.FocusedColumn);
     }
 
     [Fact]
@@ -331,10 +333,10 @@ public class TransitionTests
 
         var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(Col(0), 0, FocusChild: false));
 
-        Assert.Equal(2, next.Columns.Length);
-        Assert.Equal(new Location.RealDirectory(@"C:\sub"), next.Columns[1].Location);
-        Assert.Equal(LoadState.Loading, next.Columns[1].Load);
-        Assert.Equal(0, next.FocusedColumn);
+        Assert.Equal(2, next.Focused.Columns.Length);
+        Assert.Equal(new Location.RealDirectory(@"C:\sub"), next.Focused.Columns[1].Location);
+        Assert.Equal(LoadState.Loading, next.Focused.Columns[1].Load);
+        Assert.Equal(0, next.Focused.FocusedColumn);
         var effect = Assert.IsType<Effect.ReadDirectory>(Assert.Single(effects));
         Assert.Equal(1, effect.At.Index);
     }
@@ -348,9 +350,9 @@ public class TransitionTests
 
         var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(Col(0), 2, FocusChild: false));
 
-        Assert.Single(next.Columns);
-        Assert.Equal(2, next.Columns[0].Cursor);
-        Assert.Equal(0, next.FocusedColumn);
+        Assert.Single(next.Focused.Columns);
+        Assert.Equal(2, next.Focused.Columns[0].Cursor);
+        Assert.Equal(0, next.Focused.FocusedColumn);
         // Selecting File2 triggers a preview load.
         Assert.Equal(@"C:\b.txt", Assert.Single(effects.OfType<Effect.LoadPreview>()).Path);
         Assert.Equal(@"C:\b.txt", Assert.Single(effects.OfType<Effect.OpenWithDefaultApp>()).Path);
@@ -359,15 +361,17 @@ public class TransitionTests
     [Fact]
     public void GoToParent_moves_focus_left_and_keeps_right_columns()
     {
-        var state = StateWithColumns(
-            new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loaded),
-            new Column(new Location.RealDirectory(@"C:\sub"), [File1], Cursor: 0, Load: LoadState.Loaded)) with
-        { FocusedColumn = 1 };
+        var state = AppState.SinglePane(
+            [
+                new Column(new Location.RealDirectory(@"C:\"), [Dir], Cursor: 0, Load: LoadState.Loaded),
+                new Column(new Location.RealDirectory(@"C:\sub"), [File1], Cursor: 0, Load: LoadState.Loaded),
+            ],
+            focusedColumn: 1);
 
         var (next, effects) = Transition.Apply(state, new Msg.GoToParent(Col(1)));
 
-        Assert.Equal(0, next.FocusedColumn);
-        Assert.Equal(2, next.Columns.Length);
+        Assert.Equal(0, next.Focused.FocusedColumn);
+        Assert.Equal(2, next.Focused.Columns.Length);
         Assert.Empty(effects);
     }
 
@@ -391,10 +395,10 @@ public class TransitionTests
 
         var (next, effects) = Transition.Apply(state, new Msg.Refresh());
 
-        Assert.All(next.Columns, c => Assert.Equal(LoadState.Loading, c.Load));
+        Assert.All(next.Focused.Columns, c => Assert.Equal(LoadState.Loading, c.Load));
         // Entries are kept so the UI does not flash while reloading.
-        Assert.Single(next.Columns[0].Entries);
-        Assert.Single(next.Columns[1].Entries);
+        Assert.Single(next.Focused.Columns[0].Entries);
+        Assert.Single(next.Focused.Columns[1].Entries);
 
         Assert.Equal(2, effects.Count);
         var first = Assert.IsType<Effect.ReadDirectory>(effects[0]);
@@ -415,9 +419,9 @@ public class TransitionTests
             state,
             new Msg.DirectoryLoaded(Col(0), new Location.RealDirectory(@"C:\"), [Dir]));
 
-        Assert.Equal(LoadState.Loaded, next.Columns[0].Load);
-        Assert.Single(next.Columns[0].Entries);
-        Assert.Equal(0, next.Columns[0].Cursor);
+        Assert.Equal(LoadState.Loaded, next.Focused.Columns[0].Load);
+        Assert.Single(next.Focused.Columns[0].Entries);
+        Assert.Equal(0, next.Focused.Columns[0].Cursor);
 
         // The clamped cursor landed on a directory, so the pane fills in the column beside it.
         Assert.Equal(
@@ -433,7 +437,7 @@ public class TransitionTests
 
         var (next, _) = Transition.Apply(state, new Msg.DirectoryLoaded(Col(0), new Location.RealDirectory(@"C:\"), []));
 
-        Assert.Equal(-1, next.Columns[0].Cursor);
+        Assert.Equal(-1, next.Focused.Columns[0].Cursor);
     }
 
     [Fact]
@@ -469,9 +473,9 @@ public class TransitionTests
 
         var (next, effects) = Transition.Apply(state, new Msg.DirectoryLoadFailed(Col(0), new Location.RealDirectory(@"C:\"), "access denied"));
 
-        Assert.Equal(LoadState.Error, next.Columns[0].Load);
-        Assert.Equal("access denied", next.Columns[0].ErrorMessage);
-        Assert.Single(next.Columns[0].Entries);
+        Assert.Equal(LoadState.Error, next.Focused.Columns[0].Load);
+        Assert.Equal("access denied", next.Focused.Columns[0].ErrorMessage);
+        Assert.Single(next.Focused.Columns[0].Entries);
         Assert.Empty(effects);
     }
 
@@ -494,8 +498,8 @@ public class TransitionTests
 
         var (next, effects) = Transition.Apply(state, new Msg.DeleteEntry(Col(0), 1));
 
-        Assert.Equal(LoadState.Loading, next.Columns[0].Load);
-        Assert.Equal(3, next.Columns[0].Entries.Length);
+        Assert.Equal(LoadState.Loading, next.Focused.Columns[0].Load);
+        Assert.Equal(3, next.Focused.Columns[0].Entries.Length);
 
         var effect = Assert.IsType<Effect.DeleteToRecycleBin>(Assert.Single(effects));
         Assert.Equal(0, effect.At.Index);
@@ -524,7 +528,7 @@ public class TransitionTests
 
         var (next, effects) = Transition.Apply(state, new Msg.DeleteEntry(Col(0), 0));
 
-        Assert.Equal(LoadState.Loading, next.Columns[0].Load);
+        Assert.Equal(LoadState.Loading, next.Focused.Columns[0].Load);
         var effect = Assert.IsType<Effect.DeleteToRecycleBin>(Assert.Single(effects));
         Assert.Equal([@"C:\sub"], effect.Targets);
     }
@@ -570,8 +574,8 @@ public class TransitionTests
 
         var (next, effects) = Transition.Apply(state, new Msg.ToggleMark(Col(0), 2));
 
-        Assert.True(next.Columns[0].Entries[2].IsMarked);
-        Assert.Equal(2, next.Columns[0].Cursor);
+        Assert.True(next.Focused.Columns[0].Entries[2].IsMarked);
+        Assert.Equal(2, next.Focused.Columns[0].Cursor);
         // Moving the cursor onto File2 triggers a preview load.
         Assert.Equal(@"C:\b.txt", Assert.Single(effects.OfType<Effect.LoadPreview>()).Path);
     }
@@ -585,7 +589,7 @@ public class TransitionTests
         var (once, _) = Transition.Apply(state, new Msg.ToggleMark(Col(0), 1));
         var (twice, _) = Transition.Apply(once, new Msg.ToggleMark(Col(0), 1));
 
-        Assert.False(twice.Columns[0].Entries[1].IsMarked);
+        Assert.False(twice.Focused.Columns[0].Entries[1].IsMarked);
     }
 
     /// <summary>
@@ -604,7 +608,7 @@ public class TransitionTests
 
         var (next, _) = Transition.Apply(state, new Msg.ToggleMark(Col(0), 0));
 
-        Assert.False(next.Columns[0].Entries[0].IsMarked);
+        Assert.False(next.Focused.Columns[0].Entries[0].IsMarked);
     }
 
     [Fact]
@@ -637,8 +641,8 @@ public class TransitionTests
 
         var (next, effects) = Transition.Apply(state, new Msg.ToggleMarkAtCursor(Col(0)));
 
-        Assert.True(next.Columns[0].Entries[0].IsMarked);
-        Assert.Equal(1, next.Columns[0].Cursor);
+        Assert.True(next.Focused.Columns[0].Entries[0].IsMarked);
+        Assert.Equal(1, next.Focused.Columns[0].Cursor);
         // Advancing onto File1 triggers a preview load.
         Assert.Equal(@"C:\a.txt", Assert.Single(effects.OfType<Effect.LoadPreview>()).Path);
     }
@@ -651,8 +655,8 @@ public class TransitionTests
 
         var (next, _) = Transition.Apply(state, new Msg.ToggleMarkAtCursor(Col(0)));
 
-        Assert.True(next.Columns[0].Entries[1].IsMarked);
-        Assert.Equal(1, next.Columns[0].Cursor);
+        Assert.True(next.Focused.Columns[0].Entries[1].IsMarked);
+        Assert.Equal(1, next.Focused.Columns[0].Cursor);
     }
 
     [Fact]
@@ -686,7 +690,7 @@ public class TransitionTests
 
         var (next, effects) = Transition.Apply(state, new Msg.ClearMarks(Col(0)));
 
-        Assert.All(next.Columns[0].Entries, e => Assert.False(e.IsMarked));
+        Assert.All(next.Focused.Columns[0].Entries, e => Assert.False(e.IsMarked));
         Assert.Empty(effects);
     }
 
@@ -724,8 +728,8 @@ public class TransitionTests
 
         var (next, effects) = Transition.Apply(state, new Msg.DeleteMarked(Col(0)));
 
-        Assert.Equal(LoadState.Loading, next.Columns[0].Load);
-        Assert.Equal(3, next.Columns[0].Entries.Length);
+        Assert.Equal(LoadState.Loading, next.Focused.Columns[0].Load);
+        Assert.Equal(3, next.Focused.Columns[0].Entries.Length);
 
         var effect = Assert.IsType<Effect.DeleteToRecycleBin>(Assert.Single(effects));
         Assert.Equal(0, effect.At.Index);
@@ -793,11 +797,11 @@ public class TransitionTests
 
         var (next, effects) = Transition.Apply(state, new Msg.MarkRange(Col(0), 1, 2, Additive: false));
 
-        Assert.False(next.Columns[0].Entries[0].IsMarked);
-        Assert.True(next.Columns[0].Entries[1].IsMarked);
-        Assert.True(next.Columns[0].Entries[2].IsMarked);
-        Assert.False(next.Columns[0].Entries[3].IsMarked);
-        Assert.Equal(2, next.Columns[0].Cursor);
+        Assert.False(next.Focused.Columns[0].Entries[0].IsMarked);
+        Assert.True(next.Focused.Columns[0].Entries[1].IsMarked);
+        Assert.True(next.Focused.Columns[0].Entries[2].IsMarked);
+        Assert.False(next.Focused.Columns[0].Entries[3].IsMarked);
+        Assert.Equal(2, next.Focused.Columns[0].Cursor);
         // The cursor lands on File2 (entries[2]), triggering a preview load.
         Assert.Equal(@"C:\b.txt", Assert.Single(effects.OfType<Effect.LoadPreview>()).Path);
     }
@@ -810,8 +814,8 @@ public class TransitionTests
 
         var (next, _) = Transition.Apply(state, new Msg.MarkRange(Col(0), FromIndex: 2, ToIndex: 0, Additive: false));
 
-        Assert.All(next.Columns[0].Entries, e => Assert.True(e.IsMarked));
-        Assert.Equal(0, next.Columns[0].Cursor);
+        Assert.All(next.Focused.Columns[0].Entries, e => Assert.True(e.IsMarked));
+        Assert.Equal(0, next.Focused.Columns[0].Cursor);
     }
 
     [Fact]
@@ -822,8 +826,8 @@ public class TransitionTests
 
         var (next, _) = Transition.Apply(state, new Msg.MarkRange(Col(0), FromIndex: -5, ToIndex: 50, Additive: false));
 
-        Assert.All(next.Columns[0].Entries, e => Assert.True(e.IsMarked));
-        Assert.Equal(2, next.Columns[0].Cursor);
+        Assert.All(next.Focused.Columns[0].Entries, e => Assert.True(e.IsMarked));
+        Assert.Equal(2, next.Focused.Columns[0].Cursor);
     }
 
     [Fact]
@@ -835,9 +839,9 @@ public class TransitionTests
 
         var (next, _) = Transition.Apply(state, new Msg.MarkRange(Col(0), 1, 2, Additive: true));
 
-        Assert.True(next.Columns[0].Entries[0].IsMarked);
-        Assert.True(next.Columns[0].Entries[1].IsMarked);
-        Assert.True(next.Columns[0].Entries[2].IsMarked);
+        Assert.True(next.Focused.Columns[0].Entries[0].IsMarked);
+        Assert.True(next.Focused.Columns[0].Entries[1].IsMarked);
+        Assert.True(next.Focused.Columns[0].Entries[2].IsMarked);
     }
 
     [Fact]
@@ -849,9 +853,9 @@ public class TransitionTests
 
         var (next, _) = Transition.Apply(state, new Msg.MarkRange(Col(0), 1, 2, Additive: false));
 
-        Assert.False(next.Columns[0].Entries[0].IsMarked);
-        Assert.True(next.Columns[0].Entries[1].IsMarked);
-        Assert.True(next.Columns[0].Entries[2].IsMarked);
+        Assert.False(next.Focused.Columns[0].Entries[0].IsMarked);
+        Assert.True(next.Focused.Columns[0].Entries[1].IsMarked);
+        Assert.True(next.Focused.Columns[0].Entries[2].IsMarked);
     }
 
     [Fact]
@@ -862,7 +866,7 @@ public class TransitionTests
 
         var (next, _) = Transition.Apply(state, new Msg.MarkRange(Col(0), 0, 1, Additive: false));
 
-        Assert.Equal(1, next.Columns[0].Cursor);
+        Assert.Equal(1, next.Focused.Columns[0].Cursor);
     }
 
     [Fact]
@@ -895,8 +899,8 @@ public class TransitionTests
 
         var (next, _) = Transition.Apply(state, new Msg.DirectoryLoaded(Col(0), new Location.RealDirectory(@"C:\"), [File1, File2]));
 
-        Assert.True(next.Columns[0].Entries[0].IsMarked);
-        Assert.False(next.Columns[0].Entries[1].IsMarked);
+        Assert.True(next.Focused.Columns[0].Entries[0].IsMarked);
+        Assert.False(next.Focused.Columns[0].Entries[1].IsMarked);
     }
 
     [Fact]
@@ -907,8 +911,8 @@ public class TransitionTests
 
         var (next, _) = Transition.Apply(state, new Msg.DirectoryLoaded(Col(0), new Location.RealDirectory(@"C:\"), [File2]));
 
-        Assert.Single(next.Columns[0].Entries);
-        Assert.False(next.Columns[0].Entries[0].IsMarked);
+        Assert.Single(next.Focused.Columns[0].Entries);
+        Assert.False(next.Focused.Columns[0].Entries[0].IsMarked);
     }
 
     [Fact]
@@ -925,9 +929,9 @@ public class TransitionTests
         var (next, effects) = Transition.Apply(
             state, new Msg.ShellOpCompleted(Col(0), new Location.RealDirectory(@"C:\"), [@"C:\", @"C:\sub"]));
 
-        Assert.Equal(LoadState.Loading, next.Columns[0].Load);
-        Assert.Equal(LoadState.Loading, next.Columns[1].Load);
-        Assert.Equal(LoadState.Loaded, next.Columns[2].Load);
+        Assert.Equal(LoadState.Loading, next.Focused.Columns[0].Load);
+        Assert.Equal(LoadState.Loading, next.Focused.Columns[1].Load);
+        Assert.Equal(LoadState.Loaded, next.Focused.Columns[2].Load);
         Assert.Equal(2, effects.Count);
         var first = Assert.IsType<Effect.ReadDirectory>(effects[0]);
         Assert.Equal(0, first.At.Index);
@@ -946,8 +950,8 @@ public class TransitionTests
 
         var (next, effects) = Transition.Apply(state, new Msg.ShellOpCompleted(Col(0), new Location.RealDirectory(@"C:\"), []));
 
-        Assert.Equal(LoadState.Loading, next.Columns[0].Load);
-        Assert.Equal(LoadState.Loaded, next.Columns[1].Load);
+        Assert.Equal(LoadState.Loading, next.Focused.Columns[0].Load);
+        Assert.Equal(LoadState.Loaded, next.Focused.Columns[1].Load);
         var effect = Assert.IsType<Effect.ReadDirectory>(Assert.Single(effects));
         Assert.Equal(0, effect.At.Index);
         Assert.Equal(new Location.RealDirectory(@"C:\"), effect.Location);
@@ -965,8 +969,8 @@ public class TransitionTests
         var (next, effects) = Transition.Apply(
             state, new Msg.ShellOpCompleted(Col(1), new Location.RealDirectory(@"C:\sub"), [@"C:\sub"]));
 
-        Assert.Equal(LoadState.Loaded, next.Columns[0].Load);
-        Assert.Equal(LoadState.Loading, next.Columns[1].Load);
+        Assert.Equal(LoadState.Loaded, next.Focused.Columns[0].Load);
+        Assert.Equal(LoadState.Loading, next.Focused.Columns[1].Load);
         var effect = Assert.IsType<Effect.ReadDirectory>(Assert.Single(effects));
         Assert.Equal(1, effect.At.Index);
         Assert.Equal(new Location.RealDirectory(@"C:\sub"), effect.Location);
@@ -1003,9 +1007,9 @@ public class TransitionTests
 
         var (next, effects) = Transition.Apply(state, new Msg.ShellOpFailed(Col(0), new Location.RealDirectory(@"C:\"), "access denied"));
 
-        Assert.Equal(LoadState.Error, next.Columns[0].Load);
-        Assert.Equal("access denied", next.Columns[0].ErrorMessage);
-        Assert.Single(next.Columns[0].Entries);
+        Assert.Equal(LoadState.Error, next.Focused.Columns[0].Load);
+        Assert.Equal("access denied", next.Focused.Columns[0].ErrorMessage);
+        Assert.Single(next.Focused.Columns[0].Entries);
         Assert.Empty(effects);
     }
 
@@ -1030,8 +1034,8 @@ public class TransitionTests
         var (next, effects) = Transition.Apply(
             state, new Msg.DropFiles(Col(0), TargetEntryIndex: -1, paths, ShiftHeld: false, CtrlHeld: false));
 
-        Assert.Equal(LoadState.Loading, next.Columns[0].Load);
-        Assert.Equal(2, next.Columns[0].Entries.Length);
+        Assert.Equal(LoadState.Loading, next.Focused.Columns[0].Load);
+        Assert.Equal(2, next.Focused.Columns[0].Entries.Length);
 
         var effect = Assert.IsType<Effect.ShellCopyOrMove>(Assert.Single(effects));
         Assert.Equal(0, effect.At.Index);
@@ -1051,7 +1055,7 @@ public class TransitionTests
         var (next, effects) = Transition.Apply(
             state, new Msg.DropFiles(Col(0), TargetEntryIndex: 0, paths, ShiftHeld: false, CtrlHeld: false));
 
-        Assert.Equal(LoadState.Loading, next.Columns[0].Load);
+        Assert.Equal(LoadState.Loading, next.Focused.Columns[0].Load);
 
         var effect = Assert.IsType<Effect.ShellCopyOrMove>(Assert.Single(effects));
         Assert.Equal(new Location.RealDirectory(@"C:\dest"), effect.ColumnLocation);
@@ -1531,9 +1535,9 @@ public class TransitionTests
         var (next, effects) = Transition.Apply(
             state, new Msg.JobCompleted(1, SkippedFiles: 0, AffectedDirs: [@"C:\dest", @"C:\sub"]));
 
-        Assert.Equal(LoadState.Loading, next.Columns[0].Load);
-        Assert.Equal(LoadState.Loading, next.Columns[1].Load);
-        Assert.Equal(LoadState.Loaded, next.Columns[2].Load);
+        Assert.Equal(LoadState.Loading, next.Focused.Columns[0].Load);
+        Assert.Equal(LoadState.Loading, next.Focused.Columns[1].Load);
+        Assert.Equal(LoadState.Loaded, next.Focused.Columns[2].Load);
         Assert.Equal(2, effects.Count);
     }
 
@@ -1586,7 +1590,7 @@ public class TransitionTests
         Assert.Equal(JobStatus.Cancelled, updated.Status);
         Assert.Equal(1, updated.DoneFiles); // partial progress preserved, not forced to TotalFiles
         Assert.Null(updated.CurrentFile);
-        Assert.Equal(LoadState.Loading, next.Columns[0].Load);
+        Assert.Equal(LoadState.Loading, next.Focused.Columns[0].Load);
         Assert.Single(effects);
     }
 
@@ -1781,8 +1785,8 @@ public class TransitionTests
 
         var (next, effects) = Transition.Apply(state, new Msg.ExternalDirectoryChanged(@"C:\dest"));
 
-        Assert.Equal(LoadState.Loading, next.Columns[0].Load);
-        Assert.Equal(LoadState.Loaded, next.Columns[1].Load);
+        Assert.Equal(LoadState.Loading, next.Focused.Columns[0].Load);
+        Assert.Equal(LoadState.Loaded, next.Focused.Columns[1].Load);
         var effect = Assert.IsType<Effect.ReadDirectory>(Assert.Single(effects));
         Assert.Equal(0, effect.At.Index);
     }
@@ -1794,7 +1798,7 @@ public class TransitionTests
 
         var (next, effects) = Transition.Apply(state, new Msg.ExternalDirectoryChanged(@"D:\elsewhere"));
 
-        Assert.Equal(LoadState.Loaded, next.Columns[0].Load);
+        Assert.Equal(LoadState.Loaded, next.Focused.Columns[0].Load);
         Assert.Empty(effects);
     }
 
@@ -1803,13 +1807,13 @@ public class TransitionTests
     {
         var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
-        Assert.Equal(0, state.Preview.Generation);
+        Assert.Equal(0, state.Focused.Preview.Generation);
 
         var (next, effects) = Transition.Apply(state, new Msg.CursorDown(Col(0)));
 
-        Assert.Equal(PreviewKind.Loading, next.Preview.Kind);
-        Assert.Equal(@"C:\a.txt", next.Preview.Path);
-        Assert.Equal(1, next.Preview.Generation);
+        Assert.Equal(PreviewKind.Loading, next.Focused.Preview.Kind);
+        Assert.Equal(@"C:\a.txt", next.Focused.Preview.Path);
+        Assert.Equal(1, next.Focused.Preview.Generation);
         var effect = Assert.IsType<Effect.LoadPreview>(Assert.Single(effects));
         Assert.Equal(1, effect.Generation);
         Assert.Equal(@"C:\a.txt", effect.Path);
@@ -1836,8 +1840,8 @@ public class TransitionTests
 
         var (next, effects) = Transition.Apply(state, new Msg.CursorDown(Col(0)));
 
-        Assert.Equal(@"C:\$Recycle.Bin\S-1-5-21-1\$R00L0W8.txt", next.Preview.Path);
-        Assert.Equal(@"D:\projects\notes.txt", next.Preview.OriginalPath);
+        Assert.Equal(@"C:\$Recycle.Bin\S-1-5-21-1\$R00L0W8.txt", next.Focused.Preview.Path);
+        Assert.Equal(@"D:\projects\notes.txt", next.Focused.Preview.OriginalPath);
         Assert.Equal(@"C:\$Recycle.Bin\S-1-5-21-1\$R00L0W8.txt", Assert.Single(effects.OfType<Effect.LoadPreview>()).Path);
     }
 
@@ -1848,7 +1852,7 @@ public class TransitionTests
 
         var (next, _) = Transition.Apply(StateWithColumns(column), new Msg.CursorDown(Col(0)));
 
-        Assert.Null(next.Preview.OriginalPath);
+        Assert.Null(next.Focused.Preview.OriginalPath);
     }
 
     [Fact]
@@ -1869,7 +1873,7 @@ public class TransitionTests
         var effect = Assert.Single(effects.OfType<Effect.LoadPreview>());
         Assert.Equal(PreviewTarget.Volume, effect.Target);
         Assert.Equal(@"C:\", effect.Path);
-        Assert.Equal(PreviewKind.Loading, next.Preview.Kind);
+        Assert.Equal(PreviewKind.Loading, next.Focused.Preview.Kind);
     }
 
     /// <summary>
@@ -1963,12 +1967,12 @@ public class TransitionTests
 
         var capacity = new PreviewCapacity("Windows (C:)", "NTFS · 固定ドライブ", UsedBytes: 750, TotalBytes: 1000);
         var (next, effects) = Transition.Apply(
-            loading, new Msg.PreviewCapacityLoaded(First, loading.Preview.Generation, capacity));
+            loading, new Msg.PreviewCapacityLoaded(First, loading.Focused.Preview.Generation, capacity));
 
-        Assert.Equal(PreviewKind.Capacity, next.Preview.Kind);
-        Assert.Equal(capacity, next.Preview.Capacity);
-        Assert.Equal(250, next.Preview.Capacity!.FreeBytes);
-        Assert.Equal(0.75, next.Preview.Capacity!.UsedFraction);
+        Assert.Equal(PreviewKind.Capacity, next.Focused.Preview.Kind);
+        Assert.Equal(capacity, next.Focused.Preview.Capacity);
+        Assert.Equal(250, next.Focused.Preview.Capacity!.FreeBytes);
+        Assert.Equal(0.75, next.Focused.Preview.Capacity!.UsedFraction);
         Assert.Empty(effects);
     }
 
@@ -1988,10 +1992,10 @@ public class TransitionTests
         var (next, _) = Transition.Apply(
             loading,
             new Msg.PreviewCapacityLoaded(
-                First, loading.Preview.Generation - 1, new PreviewCapacity("stale", "stale", 1, 2)));
+                First, loading.Focused.Preview.Generation - 1, new PreviewCapacity("stale", "stale", 1, 2)));
 
-        Assert.Equal(PreviewKind.Loading, next.Preview.Kind);
-        Assert.Null(next.Preview.Capacity);
+        Assert.Equal(PreviewKind.Loading, next.Focused.Preview.Kind);
+        Assert.Null(next.Focused.Preview.Capacity);
     }
 
     /// <summary>The bin has a size but no size limit, so there is nothing for a bar to be full of.</summary>
@@ -2008,23 +2012,21 @@ public class TransitionTests
     public void CursorMove_onto_a_directory_clears_the_preview_and_shows_the_directory_instead()
     {
         var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 1, Load: LoadState.Loaded);
-        var state = StateWithColumns(column) with
-        {
-            Preview = new PreviewState(3, @"C:\a.txt", PreviewKind.Text, "hi", [], null),
-        };
+        var initial = StateWithColumns(column);
+        var state = initial.WithPane(initial.Focused with { Preview = new PreviewState(3, @"C:\a.txt", PreviewKind.Text, "hi", [], null) });
 
         var (next, effects) = Transition.Apply(state, new Msg.CursorUp(Col(0)));
 
-        Assert.Equal(PreviewKind.None, next.Preview.Kind);
-        Assert.Null(next.Preview.Path);
-        Assert.Equal(4, next.Preview.Generation);
+        Assert.Equal(PreviewKind.None, next.Focused.Preview.Kind);
+        Assert.Null(next.Focused.Preview.Path);
+        Assert.Equal(4, next.Focused.Preview.Generation);
 
         // A folder's preview is the column beside it, not the pane on the right.
         Assert.Equal(
             new Effect.ReadDirectory(Col(1), new Location.RealDirectory(@"C:\sub"), Speculative: true),
             Assert.Single(effects));
-        Assert.Equal(2, next.Columns.Length);
-        Assert.Equal(LoadState.Loading, next.Columns[1].Load);
+        Assert.Equal(2, next.Focused.Columns.Length);
+        Assert.Equal(LoadState.Loading, next.Focused.Columns[1].Load);
     }
 
     private static Column DrivePaneColumn(int cursor = 0) => new(
@@ -2046,7 +2048,7 @@ public class TransitionTests
 
         var (next, _) = Transition.Apply(state, new Msg.ToggleMarkAtCursor(Col(0)));
 
-        var column = next.Columns[0];
+        var column = next.Focused.Columns[0];
         Assert.Equal(3, column.Entries.Length);
         Assert.Equal("ドライブ", column.Entries[0].Name);
         Assert.DoesNotContain(column.Entries, e => e.Kind == EntryKind.Drive);
@@ -2066,8 +2068,8 @@ public class TransitionTests
         var (collapsed, _) = Transition.Apply(state, new Msg.ToggleMarkAtCursor(Col(0)));
         var (expanded, _) = Transition.Apply(collapsed, new Msg.ToggleMarkAtCursor(Col(0)));
 
-        Assert.Equal(5, expanded.Columns[0].Entries.Length);
-        Assert.Empty(expanded.Columns[0].CollapsedGroups);
+        Assert.Equal(5, expanded.Focused.Columns[0].Entries.Length);
+        Assert.Empty(expanded.Focused.Columns[0].CollapsedGroups);
     }
 
     [Fact]
@@ -2084,7 +2086,7 @@ public class TransitionTests
         // section would come back collapsed forever.
         var (expanded, expandEffects) = Transition.Apply(collapsed, new Msg.ToggleMarkAtCursor(Col(0)));
         Assert.Empty(Assert.IsType<Effect.SetCollapsedGroups>(Assert.Single(expandEffects)).Groups);
-        Assert.Empty(expanded.Columns[0].CollapsedGroups);
+        Assert.Empty(expanded.Focused.Columns[0].CollapsedGroups);
     }
 
     [Fact]
@@ -2104,7 +2106,7 @@ public class TransitionTests
 
         var (next, effects) = Transition.Apply(state, new Msg.CollapsedGroupsRestored(Col(0), ["drives"]));
 
-        var column = next.Columns[0];
+        var column = next.Focused.Columns[0];
         Assert.Equal(3, column.Entries.Length);
         Assert.Equal(5, column.AllEntries.Length);
         Assert.Equal(["drives"], column.CollapsedGroups);
@@ -2123,7 +2125,7 @@ public class TransitionTests
 
         var (next, _) = Transition.Apply(state, new Msg.CollapsedGroupsRestored(Col(0), ["gone"]));
 
-        Assert.Equal(5, next.Columns[0].Entries.Length);
+        Assert.Equal(5, next.Focused.Columns[0].Entries.Length);
         Assert.Empty(next.CheckInvariants());
     }
 
@@ -2135,8 +2137,8 @@ public class TransitionTests
 
         var (next, _) = Transition.Apply(state, new Msg.CollapsedGroupsRestored(Col(0), ["drives"]));
 
-        Assert.Empty(next.Columns[0].CollapsedGroups);
-        Assert.Equal(3, next.Columns[0].Entries.Length);
+        Assert.Empty(next.Focused.Columns[0].CollapsedGroups);
+        Assert.Equal(3, next.Focused.Columns[0].Entries.Length);
     }
 
     [Fact]
@@ -2149,7 +2151,7 @@ public class TransitionTests
         var (next, _) = Transition.Apply(state, new Msg.CursorHome(Col(0)));
         var (collapsed, _) = Transition.Apply(next, new Msg.ToggleMarkAtCursor(Col(0)));
 
-        var result = collapsed.Columns[0];
+        var result = collapsed.Focused.Columns[0];
         Assert.InRange(result.Cursor, 0, result.Entries.Length - 1);
         Assert.Empty(collapsed.CheckInvariants());
     }
@@ -2162,7 +2164,7 @@ public class TransitionTests
 
         var (next, _) = Transition.Apply(state, new Msg.ToggleMarkAtCursor(Col(0)));
 
-        Assert.DoesNotContain(next.Columns[0].AllEntries, e => e.IsMarked);
+        Assert.DoesNotContain(next.Focused.Columns[0].AllEntries, e => e.IsMarked);
     }
 
     [Fact]
@@ -2174,9 +2176,9 @@ public class TransitionTests
         var (afterEnter, enterEffects) = Transition.Apply(state, new Msg.EnterDirectory(Col(0), 0));
 
         Assert.Empty(deleteEffects);
-        Assert.Equal(LoadState.Loaded, afterDelete.Columns[0].Load);
+        Assert.Equal(LoadState.Loaded, afterDelete.Focused.Columns[0].Load);
         Assert.Empty(enterEffects);
-        Assert.Single(afterEnter.Columns);
+        Assert.Single(afterEnter.Focused.Columns);
     }
 
     [Fact]
@@ -2190,8 +2192,8 @@ public class TransitionTests
         var (next, _) = Transition.Apply(
             state, new Msg.DirectoryLoaded(Col(0), new Location.RealDirectory(@"C:\"), [File1, File2]));
 
-        Assert.Equal(1, next.Columns[0].Cursor);
-        Assert.Equal(File2.Name, next.Columns[0].Entries[next.Columns[0].Cursor].Name);
+        Assert.Equal(1, next.Focused.Columns[0].Cursor);
+        Assert.Equal(File2.Name, next.Focused.Columns[0].Entries[next.Focused.Columns[0].Cursor].Name);
     }
 
     [Fact]
@@ -2205,8 +2207,8 @@ public class TransitionTests
         var (next, _) = Transition.Apply(
             state, new Msg.DirectoryLoaded(Col(0), new Location.RealDirectory(@"C:\"), [Dir, File2]));
 
-        Assert.Equal(1, next.Columns[0].Cursor);
-        Assert.Equal(File2.Name, next.Columns[0].Entries[1].Name);
+        Assert.Equal(1, next.Focused.Columns[0].Cursor);
+        Assert.Equal(File2.Name, next.Focused.Columns[0].Entries[1].Name);
     }
 
     [Fact]
@@ -2216,7 +2218,7 @@ public class TransitionTests
             new Location.RealDirectory(@"C:\"), [Dir, File1], Cursor: 0, Load: LoadState.Loaded);
 
         Assert.Equal(column.Entries, column.AllEntries);
-        Assert.Empty(new AppState { Columns = [column], FocusedColumn = 0 }.CheckInvariants());
+        Assert.Empty(AppState.SinglePane([column], 0).CheckInvariants());
     }
 
     [Fact]
@@ -2229,7 +2231,7 @@ public class TransitionTests
             AllEntries = [Dir],
         };
 
-        var violations = new AppState { Columns = [broken], FocusedColumn = 0 }.CheckInvariants();
+        var violations = AppState.SinglePane([broken], 0).CheckInvariants();
 
         Assert.Contains(violations, v => v.Contains("not in AllEntries", StringComparison.Ordinal));
     }
@@ -2247,7 +2249,7 @@ public class TransitionTests
             AllEntries = [Dir, File1],
         };
 
-        var violations = new AppState { Columns = [broken], FocusedColumn = 0 }.CheckInvariants();
+        var violations = AppState.SinglePane([broken], 0).CheckInvariants();
 
         Assert.Contains(violations, v => v.Contains("not in AllEntries", StringComparison.Ordinal));
     }
@@ -2262,7 +2264,7 @@ public class TransitionTests
             AllEntries = [Dir, File1],
         };
 
-        Assert.Empty(new AppState { Columns = [reordered], FocusedColumn = 0 }.CheckInvariants());
+        Assert.Empty(AppState.SinglePane([reordered], 0).CheckInvariants());
     }
 
     [Fact]
@@ -2280,21 +2282,19 @@ public class TransitionTests
 
         // Nothing visible is marked, so there is nothing to delete - the hidden mark is not acted on.
         Assert.Empty(effects);
-        Assert.True(next.Columns[0].AllEntries[1].IsMarked);
+        Assert.True(next.Focused.Columns[0].AllEntries[1].IsMarked);
     }
 
     [Fact]
     public void CursorMove_off_a_still_loading_preview_cancels_the_abandoned_generation()
     {
         var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 1, Load: LoadState.Loaded);
-        var state = StateWithColumns(column) with
-        {
-            Preview = new PreviewState(3, @"C:\a.txt", PreviewKind.Loading, null, [], null),
-        };
+        var initial = StateWithColumns(column);
+        var state = initial.WithPane(initial.Focused with { Preview = new PreviewState(3, @"C:\a.txt", PreviewKind.Loading, null, [], null) });
 
         var (next, effects) = Transition.Apply(state, new Msg.CursorDown(Col(0))); // File1 -> File2
 
-        Assert.Equal(4, next.Preview.Generation);
+        Assert.Equal(4, next.Focused.Preview.Generation);
         var cancel = Assert.IsType<Effect.CancelPreview>(effects[0]);
         Assert.Equal(3, cancel.Generation);
         var load = Assert.IsType<Effect.LoadPreview>(effects[1]);
@@ -2306,11 +2306,9 @@ public class TransitionTests
     public void CursorMove_off_a_completed_preview_does_not_cancel_anything()
     {
         var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 1, Load: LoadState.Loaded);
-        var state = StateWithColumns(column) with
-        {
-            // Already delivered - there is no outstanding work to call off.
-            Preview = new PreviewState(3, @"C:\a.txt", PreviewKind.Text, "hi", [], null),
-        };
+        var initial = StateWithColumns(column);
+        // Already delivered - there is no outstanding work to call off.
+        var state = initial.WithPane(initial.Focused with { Preview = new PreviewState(3, @"C:\a.txt", PreviewKind.Text, "hi", [], null) });
 
         var (_, effects) = Transition.Apply(state, new Msg.CursorDown(Col(0)));
 
@@ -2321,14 +2319,12 @@ public class TransitionTests
     public void CursorMove_from_a_loading_preview_onto_a_directory_cancels_without_reloading()
     {
         var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 1, Load: LoadState.Loaded);
-        var state = StateWithColumns(column) with
-        {
-            Preview = new PreviewState(3, @"C:\a.txt", PreviewKind.Loading, null, [], null),
-        };
+        var initial = StateWithColumns(column);
+        var state = initial.WithPane(initial.Focused with { Preview = new PreviewState(3, @"C:\a.txt", PreviewKind.Loading, null, [], null) });
 
         var (next, effects) = Transition.Apply(state, new Msg.CursorUp(Col(0))); // File1 -> Dir
 
-        Assert.Equal(PreviewKind.None, next.Preview.Kind);
+        Assert.Equal(PreviewKind.None, next.Focused.Preview.Kind);
         var cancel = Assert.IsType<Effect.CancelPreview>(Assert.Single(effects.OfType<Effect.CancelPreview>()));
         Assert.Equal(3, cancel.Generation);
         Assert.Empty(effects.OfType<Effect.LoadPreview>());
@@ -2346,7 +2342,7 @@ public class TransitionTests
         var (again, againEffects) = Transition.Apply(afterMove, new Msg.CursorTo(Col(0), 1)); // same index - no-op
 
         Assert.Empty(againEffects);
-        Assert.Equal(afterMove.Preview, again.Preview);
+        Assert.Equal(afterMove.Focused.Preview, again.Focused.Preview);
     }
 
     [Fact]
@@ -2357,7 +2353,7 @@ public class TransitionTests
 
         var (next, effects) = Transition.Apply(state, new Msg.DirectoryLoaded(Col(0), new Location.RealDirectory(@"C:\"), [File1]));
 
-        Assert.Equal(PreviewKind.Loading, next.Preview.Kind);
+        Assert.Equal(PreviewKind.Loading, next.Focused.Preview.Kind);
         Assert.Equal(@"C:\a.txt", Assert.Single(effects.OfType<Effect.LoadPreview>()).Path);
     }
 
@@ -2366,14 +2362,14 @@ public class TransitionTests
     /// a column whose cursor moves from a directory onto a file, so the move itself (via
     /// <c>Transition.ReconcilePreview</c>) is what produces the live generation these tests react
     /// against - constructing a state with the cursor pre-positioned on a file bypasses that
-    /// reconciliation entirely and leaves <see cref="AppState.Preview"/> stuck at
+    /// reconciliation entirely and leaves <see cref="Pane.Preview"/> stuck at
     /// <see cref="PreviewKind.None"/> generation 0.
     /// </summary>
     private static AppState StateWithLoadingPreview()
     {
         var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1], Cursor: 0, Load: LoadState.Loaded);
         var (afterMove, _) = Transition.Apply(StateWithColumns(column), new Msg.CursorDown(Col(0)));
-        Assert.Equal(PreviewKind.Loading, afterMove.Preview.Kind); // sanity
+        Assert.Equal(PreviewKind.Loading, afterMove.Focused.Preview.Kind); // sanity
         return afterMove;
     }
 
@@ -2381,15 +2377,15 @@ public class TransitionTests
     public void PreviewLoaded_with_matching_generation_fills_in_image_bytes()
     {
         var afterCursor = StateWithLoadingPreview();
-        var generation = afterCursor.Preview.Generation;
+        var generation = afterCursor.Focused.Preview.Generation;
         ImmutableArray<byte> bytes = [1, 2, 3, 4];
 
         var (next, effects) = Transition.Apply(
             afterCursor, new Msg.PreviewLoaded(First, generation, PreviewKind.Image, null, bytes, null));
 
-        Assert.Equal(PreviewKind.Image, next.Preview.Kind);
-        Assert.Equal(bytes, next.Preview.ImageBytes);
-        Assert.Null(next.Preview.Text);
+        Assert.Equal(PreviewKind.Image, next.Focused.Preview.Kind);
+        Assert.Equal(bytes, next.Focused.Preview.ImageBytes);
+        Assert.Null(next.Focused.Preview.Text);
         Assert.Empty(effects);
     }
 
@@ -2397,13 +2393,13 @@ public class TransitionTests
     public void PreviewLoaded_binary_stores_the_label_in_Text()
     {
         var afterCursor = StateWithLoadingPreview();
-        var generation = afterCursor.Preview.Generation;
+        var generation = afterCursor.Focused.Preview.Generation;
 
         var (next, _) = Transition.Apply(
             afterCursor, new Msg.PreviewLoaded(First, generation, PreviewKind.Binary, null, [], "PE Executable"));
 
-        Assert.Equal(PreviewKind.Binary, next.Preview.Kind);
-        Assert.Equal("PE Executable", next.Preview.Text);
+        Assert.Equal(PreviewKind.Binary, next.Focused.Preview.Kind);
+        Assert.Equal("PE Executable", next.Focused.Preview.Text);
     }
 
     /// <summary>
@@ -2415,14 +2411,14 @@ public class TransitionTests
     public void PreviewLoaded_binary_retains_the_carried_head_bytes()
     {
         var afterCursor = StateWithLoadingPreview();
-        var generation = afterCursor.Preview.Generation;
+        var generation = afterCursor.Focused.Preview.Generation;
         ImmutableArray<byte> head = [0x4D, 0x5A, 0x90, 0x00];
 
         var (next, _) = Transition.Apply(
             afterCursor, new Msg.PreviewLoaded(First, generation, PreviewKind.Binary, null, head, "PE Executable"));
 
-        Assert.Equal(PreviewKind.Binary, next.Preview.Kind);
-        Assert.Equal(head, next.Preview.ImageBytes);
+        Assert.Equal(PreviewKind.Binary, next.Focused.Preview.Kind);
+        Assert.Equal(head, next.Focused.Preview.ImageBytes);
     }
 
     [Fact]
@@ -2431,9 +2427,9 @@ public class TransitionTests
         var afterCursor = StateWithLoadingPreview();
 
         var (next, effects) = Transition.Apply(
-            afterCursor, new Msg.PreviewLoaded(First, afterCursor.Preview.Generation - 1, PreviewKind.Text, "stale", [], null));
+            afterCursor, new Msg.PreviewLoaded(First, afterCursor.Focused.Preview.Generation - 1, PreviewKind.Text, "stale", [], null));
 
-        Assert.Equal(afterCursor.Preview, next.Preview);
+        Assert.Equal(afterCursor.Focused.Preview, next.Focused.Preview);
         Assert.Empty(effects);
     }
 
@@ -2441,26 +2437,26 @@ public class TransitionTests
     public void PreviewLoaded_stores_the_carried_metadata()
     {
         var afterCursor = StateWithLoadingPreview();
-        var generation = afterCursor.Preview.Generation;
+        var generation = afterCursor.Focused.Preview.Generation;
         var metadata = new PreviewMetadata(
             "file1", 1234, new DateTime(2024, 1, 1), new DateTime(2024, 1, 2), PixelWidth: 640, PixelHeight: 480, BitsPerPixel: 24);
 
         var (next, _) = Transition.Apply(
             afterCursor, new Msg.PreviewLoaded(First, generation, PreviewKind.Image, null, [1, 2], null, metadata));
 
-        Assert.Equal(metadata, next.Preview.Metadata);
+        Assert.Equal(metadata, next.Focused.Preview.Metadata);
     }
 
     [Fact]
     public void PreviewLoaded_without_metadata_defaults_to_null()
     {
         var afterCursor = StateWithLoadingPreview();
-        var generation = afterCursor.Preview.Generation;
+        var generation = afterCursor.Focused.Preview.Generation;
 
         var (next, _) = Transition.Apply(
             afterCursor, new Msg.PreviewLoaded(First, generation, PreviewKind.Text, "hi", [], null));
 
-        Assert.Null(next.Preview.Metadata);
+        Assert.Null(next.Focused.Preview.Metadata);
     }
 
     [Fact]
@@ -2469,10 +2465,10 @@ public class TransitionTests
         var afterCursor = StateWithLoadingPreview();
 
         var (next, effects) = Transition.Apply(
-            afterCursor, new Msg.PreviewFailed(First, afterCursor.Preview.Generation, "denied"));
+            afterCursor, new Msg.PreviewFailed(First, afterCursor.Focused.Preview.Generation, "denied"));
 
-        Assert.Equal(PreviewKind.None, next.Preview.Kind);
-        Assert.Equal("denied", next.Preview.Error);
+        Assert.Equal(PreviewKind.None, next.Focused.Preview.Kind);
+        Assert.Equal("denied", next.Focused.Preview.Error);
         Assert.Empty(effects);
     }
 
@@ -2482,9 +2478,9 @@ public class TransitionTests
         var afterCursor = StateWithLoadingPreview();
 
         var (next, effects) = Transition.Apply(
-            afterCursor, new Msg.PreviewFailed(First, afterCursor.Preview.Generation - 1, "denied"));
+            afterCursor, new Msg.PreviewFailed(First, afterCursor.Focused.Preview.Generation - 1, "denied"));
 
-        Assert.Equal(afterCursor.Preview, next.Preview);
+        Assert.Equal(afterCursor.Focused.Preview, next.Focused.Preview);
         Assert.Empty(effects);
     }
 
@@ -2497,7 +2493,7 @@ public class TransitionTests
 
         var (next, effects) = Transition.Apply(state, new Msg.FocusColumn(Col(1)));
 
-        Assert.Equal(PreviewKind.Loading, next.Preview.Kind);
+        Assert.Equal(PreviewKind.Loading, next.Focused.Preview.Kind);
         Assert.Equal(@"C:\sub\a.txt", Assert.Single(effects.OfType<Effect.LoadPreview>()).Path);
     }
 
@@ -2664,23 +2660,20 @@ public class TransitionTests
     [Fact]
     public void PlacesChanged_re_reads_only_the_drive_panes()
     {
-        var state = new AppState
-        {
-            Columns =
+        var state = AppState.SinglePane(
             [
                 DrivePaneColumn(),
                 new Column(new Location.RealDirectory(@"C:\work"), [File1], Cursor: 0, Load: LoadState.Loaded),
             ],
-            FocusedColumn = 0,
-        };
+            focusedColumn: 0);
 
         var (next, effects) = Transition.Apply(state, new Msg.PlacesChanged());
 
         var read = Assert.IsType<Effect.ReadDirectory>(Assert.Single(effects));
         Assert.Equal(0, read.At.Index);
         Assert.Equal(Location.Drives.Instance, read.Location);
-        Assert.Equal(LoadState.Loading, next.Columns[0].Load);
-        Assert.Equal(LoadState.Loaded, next.Columns[1].Load);
+        Assert.Equal(LoadState.Loading, next.Focused.Columns[0].Load);
+        Assert.Equal(LoadState.Loaded, next.Focused.Columns[1].Load);
     }
 
     /// <summary>
@@ -2714,8 +2707,8 @@ public class TransitionTests
         Assert.Empty(entryEffects);
         Assert.Empty(markedEffects);
         Assert.Empty(permanentEffects);
-        Assert.Equal(LoadState.Loaded, afterEntry.Columns[0].Load);
-        Assert.Equal(LoadState.Loaded, afterMarked.Columns[0].Load);
+        Assert.Equal(LoadState.Loaded, afterEntry.Focused.Columns[0].Load);
+        Assert.Equal(LoadState.Loaded, afterMarked.Focused.Columns[0].Load);
     }
 }
 
@@ -2899,7 +2892,7 @@ public class TransitionProperties
                 Assert.Empty(next.CheckInvariants());
                 // Preview.Generation only ever increases - PreviewLoaded/PreviewFailed never bump
                 // it themselves, and ReconcilePreview only bumps forward.
-                Assert.True(next.Preview.Generation >= state.Preview.Generation);
+                Assert.True(next.Focused.Preview.Generation >= state.Focused.Preview.Generation);
                 state = next;
             }
         });
@@ -2918,34 +2911,46 @@ public class TransitionProperties
         });
     }
 
-    // AppState.Columns is an ImmutableArray<Column>, and ImmutableArray<T>.Equals compares the
+    // Pane.Columns is an ImmutableArray<Column>, and ImmutableArray<T>.Equals compares the
     // underlying array by reference, not by content. Two independently-built states with equal
     // content but different array instances would otherwise (incorrectly) compare unequal, so
     // this compares field by field; xunit's Assert.Equal already does element-wise comparison
     // for the IEnumerable<Entry> members (ImmutableArray<Entry>).
     private static void AssertStatesEqual(AppState expected, AppState actual)
     {
-        Assert.Equal(expected.FocusedColumn, actual.FocusedColumn);
+        Assert.Equal(expected.FocusedPane, actual.FocusedPane);
+        Assert.Equal(expected.NextPaneId, actual.NextPaneId);
         Assert.Equal(expected.NextJobId, actual.NextJobId);
         Assert.Equal(expected.Jobs, actual.Jobs);
-        Assert.Equal(expected.Preview.Generation, actual.Preview.Generation);
-        Assert.Equal(expected.Preview.Path, actual.Preview.Path);
-        Assert.Equal(expected.Preview.Kind, actual.Preview.Kind);
-        Assert.Equal(expected.Preview.Text, actual.Preview.Text);
-        Assert.Equal(expected.Preview.ImageBytes, actual.Preview.ImageBytes);
-        Assert.Equal(expected.Preview.Error, actual.Preview.Error);
         Assert.Equal(expected.CutPending, actual.CutPending);
-        Assert.Equal(expected.Columns.Length, actual.Columns.Length);
-        for (var i = 0; i < expected.Columns.Length; i++)
+        Assert.Equal(expected.Panes.Length, actual.Panes.Length);
+
+        for (var p = 0; p < expected.Panes.Length; p++)
         {
-            var e = expected.Columns[i];
-            var a = actual.Columns[i];
-            Assert.Equal(e.Location, a.Location);
-            Assert.Equal(e.Cursor, a.Cursor);
-            Assert.Equal(e.ScrollOffset, a.ScrollOffset);
-            Assert.Equal(e.Load, a.Load);
-            Assert.Equal(e.ErrorMessage, a.ErrorMessage);
-            Assert.Equal(e.Entries, a.Entries);
+            var expectedPane = expected.Panes[p];
+            var actualPane = actual.Panes[p];
+            Assert.Equal(expectedPane.Id, actualPane.Id);
+            Assert.Equal(expectedPane.FocusedColumn, actualPane.FocusedColumn);
+            Assert.Equal(expectedPane.View, actualPane.View);
+            Assert.Equal(expectedPane.Preview.Generation, actualPane.Preview.Generation);
+            Assert.Equal(expectedPane.Preview.Path, actualPane.Preview.Path);
+            Assert.Equal(expectedPane.Preview.Kind, actualPane.Preview.Kind);
+            Assert.Equal(expectedPane.Preview.Text, actualPane.Preview.Text);
+            Assert.Equal(expectedPane.Preview.ImageBytes, actualPane.Preview.ImageBytes);
+            Assert.Equal(expectedPane.Preview.Error, actualPane.Preview.Error);
+            Assert.Equal(expectedPane.Columns.Length, actualPane.Columns.Length);
+
+            for (var i = 0; i < expectedPane.Columns.Length; i++)
+            {
+                var e = expectedPane.Columns[i];
+                var a = actualPane.Columns[i];
+                Assert.Equal(e.Location, a.Location);
+                Assert.Equal(e.Cursor, a.Cursor);
+                Assert.Equal(e.ScrollOffset, a.ScrollOffset);
+                Assert.Equal(e.Load, a.Load);
+                Assert.Equal(e.ErrorMessage, a.ErrorMessage);
+                Assert.Equal(e.Entries, a.Entries);
+            }
         }
     }
 }

@@ -11,14 +11,12 @@ public class PreviewRetryProjectionTests
 {
     private static StateProjection.PreviewVm Project(int attempt, bool timedOut)
     {
-        var state = AppState.Initial with
+        var preview = new PreviewState(1, @"C:\v\clip.mp4", PreviewKind.Binary, "MP4 Video (ffmpeg: タイムアウト)", [], null)
         {
-            Preview = new PreviewState(1, @"C:\v\clip.mp4", PreviewKind.Binary, "MP4 Video (ffmpeg: タイムアウト)", [], null)
-            {
-                Attempt = attempt,
-                TimedOut = timedOut,
-            },
+            Attempt = attempt,
+            TimedOut = timedOut,
         };
+        var state = AppState.Initial.WithPane(AppState.Initial.Focused with { Preview = preview });
 
         return StateProjection.ProjectPreview(state);
     }

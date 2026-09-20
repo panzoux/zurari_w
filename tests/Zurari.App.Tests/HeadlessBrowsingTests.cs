@@ -51,12 +51,12 @@ public class HeadlessBrowsingTests
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: new Zurari.Runtime.UserSettingsStore(IsolatedSettings.NewDirectory()));
             var loop = new MessageLoop(
-                initial: new AppState { Columns = [new Column(new Location.RealDirectory(root), Entries: [])], FocusedColumn = 0 },
+                initial: AppState.SinglePane([new Column(new Location.RealDirectory(root), Entries: [])]),
                 runEffect: runtime.Submit);
 
             // 1. Refresh loads the root column.
             loop.Dispatch(new Msg.Refresh());
-            DrainUntil(loop, queue, () => loop.State.Columns[0].Load == LoadState.Loaded, TimeSpan.FromSeconds(10));
+            DrainUntil(loop, queue, () => loop.State.Focused.Columns[0].Load == LoadState.Loaded, TimeSpan.FromSeconds(10));
 
             // Two columns: the root, plus the one that opened beside the cursor because it landed
             // on a directory.
@@ -71,13 +71,13 @@ public class HeadlessBrowsingTests
 
             // 2. Move the cursor onto "Alpha" and enter it.
             loop.Dispatch(new Msg.CursorTo(Col(0), alphaIndex));
-            Assert.Equal(alphaIndex, loop.State.Columns[0].Cursor);
+            Assert.Equal(alphaIndex, loop.State.Focused.Columns[0].Cursor);
 
             // Entering moves into the column that is already there rather than reloading it.
             loop.Dispatch(new Msg.EnterDirectory(Col(0), alphaIndex));
-            Assert.Equal(2, loop.State.Columns.Length);
-            Assert.Equal(1, loop.State.FocusedColumn);
-            DrainUntil(loop, queue, () => loop.State.Columns[1].Load == LoadState.Loaded, TimeSpan.FromSeconds(10));
+            Assert.Equal(2, loop.State.Focused.Columns.Length);
+            Assert.Equal(1, loop.State.Focused.FocusedColumn);
+            DrainUntil(loop, queue, () => loop.State.Focused.Columns[1].Load == LoadState.Loaded, TimeSpan.FromSeconds(10));
 
             var afterEnterVms = StateProjection.Project(loop.State);
             Assert.Equal(2, afterEnterVms.Count);
@@ -89,12 +89,12 @@ public class HeadlessBrowsingTests
 
             // 3. Move the cursor down in the child column (clamps at the single entry).
             loop.Dispatch(new Msg.CursorDown(Col(1)));
-            Assert.Equal(0, loop.State.Columns[1].Cursor);
+            Assert.Equal(0, loop.State.Focused.Columns[1].Cursor);
 
             // 4. Go back to the parent column: focus moves left, right columns stay.
             loop.Dispatch(new Msg.GoToParent(Col(1)));
-            Assert.Equal(0, loop.State.FocusedColumn);
-            Assert.Equal(2, loop.State.Columns.Length);
+            Assert.Equal(0, loop.State.Focused.FocusedColumn);
+            Assert.Equal(2, loop.State.Focused.Columns.Length);
 
             var afterParentVms = StateProjection.Project(loop.State);
             Assert.True(afterParentVms[0].IsFocused);

@@ -25,6 +25,14 @@ public static class Transition
             // exist before (just opened) compares against nothing, so its child column and preview
             // are set up by the same code that keeps them current.
             var before = state.PaneOf(pane.Id);
+            if (ReferenceEquals(before, pane))
+            {
+                // Nothing touched this pane, so there is nothing to reconcile - skipping it keeps
+                // the unfocused pane free on every keystroke instead of costing a PaneOf scan and
+                // two reconcile passes it can never change the outcome of.
+                continue;
+            }
+
             result = ReconcileChildColumn(before, pane.Id, result.State, result.Effects);
             result = ReconcilePreview(before, pane.Id, result.State, result.Effects);
         }
@@ -791,7 +799,7 @@ public static class Transition
     private static (AppState, IReadOnlyList<Effect>) Collapse(
         AppState state, ColumnRef at, Column column, string group)
     {
-        var toggled = column.ToggleGroup(group, state.PaneOf(at.Pane)!.View);
+        var toggled = column.ToggleGroup(group, state.ViewAt(at));
         var next = state.WithColumn(at, toggled);
         return column.Location is Location.Drives
             ? (next, new Effect[] { new Effect.SetCollapsedGroups([.. toggled.CollapsedGroups]) })
@@ -816,7 +824,7 @@ public static class Transition
         }
 
         return column.Location is Location.Drives
-            ? state.WithColumn(at, column.WithCollapsedGroups([.. groups], state.PaneOf(at.Pane)!.View))
+            ? state.WithColumn(at, column.WithCollapsedGroups([.. groups], state.ViewAt(at)))
             : state;
     }
 
@@ -845,7 +853,7 @@ public static class Transition
         }
 
         var updated = WithMarkChange(
-            column, state.PaneOf(at.Pane)!.View, e => ReferenceEquals(e, target) ? e with { IsMarked = !e.IsMarked } : e);
+            column, state.ViewAt(at), e => ReferenceEquals(e, target) ? e with { IsMarked = !e.IsMarked } : e);
         return state.WithColumn(at, updated with { Cursor = entryIndex });
     }
 
@@ -884,7 +892,7 @@ public static class Transition
         }
 
         var updated = WithMarkChange(
-            column, state.PaneOf(at.Pane)!.View, e => ReferenceEquals(e, target) ? e with { IsMarked = !e.IsMarked } : e);
+            column, state.ViewAt(at), e => ReferenceEquals(e, target) ? e with { IsMarked = !e.IsMarked } : e);
 
         // Advancing past the row you just marked is what makes marking a run of files one keypress
         // each. Skips a header, which is never a mark target.
@@ -920,7 +928,7 @@ public static class Transition
             return state;
         }
 
-        var updated = WithMarkChange(column, state.PaneOf(at.Pane)!.View, e => e.IsMarked ? e with { IsMarked = false } : e);
+        var updated = WithMarkChange(column, state.ViewAt(at), e => e.IsMarked ? e with { IsMarked = false } : e);
         return state.WithColumn(at, updated);
     }
 
@@ -990,7 +998,7 @@ public static class Transition
             }
         }
 
-        var updated = WithMarkChange(column, state.PaneOf(at.Pane)!.View, e =>
+        var updated = WithMarkChange(column, state.ViewAt(at), e =>
         {
             if (inRange.Contains(e))
             {

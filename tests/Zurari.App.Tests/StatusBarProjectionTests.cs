@@ -10,7 +10,7 @@ namespace Zurari.App.Tests;
 /// </summary>
 public class StatusBarProjectionTests
 {
-    private static AppState StateWith(Column column) => new() { Columns = [column], FocusedColumn = 0 };
+    private static AppState StateWith(Column column) => AppState.SinglePane([column]);
 
     private static Column Folder(params Entry[] entries) =>
         new(new Location.RealDirectory(@"C:\x"), [.. entries], Cursor: 0, Load: LoadState.Loaded);
@@ -81,10 +81,10 @@ public class StatusBarProjectionTests
     [Fact]
     public void In_sort_mode_the_hints_show_the_current_order_and_the_field_keys()
     {
-        var state = StateWith(Folder(new Entry("b.txt", EntryKind.File))) with
+        var withView = StateWith(Folder(new Entry("b.txt", EntryKind.File)));
+        var state = withView.WithPane(withView.Focused with { View = new ViewOptions(new SortOrder(SortMode.Size, Descending: true)) }) with
         {
             InputMode = InputMode.Sort,
-            View = new ViewOptions(new SortOrder(SortMode.Size, Descending: true)),
         };
 
         var hints = StateProjection.ProjectStatusBar(state).Hints;

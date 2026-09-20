@@ -7,10 +7,8 @@ namespace Zurari.App.Tests;
 public class JobProjectionTests
 {
     private static AppState StateWithJobs(params Job[] jobs) =>
-        new()
+        AppState.SinglePane([new Column(Location.Drives.Instance, [], Load: LoadState.Loaded)]) with
         {
-            Columns = [new Column(Location.Drives.Instance, [], Load: LoadState.Loaded)],
-            FocusedColumn = 0,
             Jobs = [.. jobs],
         };
 

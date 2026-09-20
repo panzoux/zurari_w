@@ -92,20 +92,6 @@ public class PaneTests
     }
 
     [Fact]
-    public void The_shim_writes_into_the_focused_pane_even_when_it_is_not_pane_zero()
-    {
-        var pane0 = new Pane(new PaneId(0), [Dir(@"C:\")], 0);
-        var pane1 = new Pane(new PaneId(1), [Dir(@"D:\")], 0);
-        var state = AppState.Initial with { Panes = [pane0, pane1], FocusedPane = 1, NextPaneId = 2 };
-        var preview = PreviewState.Initial with { Generation = 1 };
-
-        var next = state with { Preview = preview };
-
-        Assert.Equal(preview, next.Panes[1].Preview);
-        Assert.Same(pane0, next.Panes[0]);
-    }
-
-    [Fact]
     public void Invariants_reject_duplicate_pane_ids_and_ids_not_below_NextPaneId()
     {
         var pane = new Pane(new PaneId(0), [Dir(@"C:\")], 0);
