@@ -152,14 +152,19 @@ public sealed class ShellEffectExecutor : IDisposable
             // nearly every name collides, so nearly every row turned into an end-truncated path and
             // the whole list read as identical. Where it came from goes to OriginalPath, which the
             // preview shows in full.
-            var entries = RecycleBinFolder.EnumerateParsingNames()
-                .Select(item => new Entry(
+            var items = RecycleBinFolder.EnumerateParsingNames();
+            var entryBuilder = ImmutableArray.CreateBuilder<Entry>(items.Count);
+            foreach (var item in items)
+            {
+                entryBuilder.Add(new Entry(
                     item.Parsing,
                     item.IsFolder ? EntryKind.Directory : EntryKind.File,
                     SizeBytes: -1,
                     DisplayName: LastSegment(item.Original),
-                    OriginalPath: item.Original))
-                .ToImmutableArray();
+                    OriginalPath: item.Original));
+            }
+
+            var entries = entryBuilder.MoveToImmutable();
             post(new Msg.DirectoryLoaded(effect.At, effect.Location, entries));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -429,6 +434,20 @@ public sealed class ShellEffectExecutor : IDisposable
     /// destination, plus - only for a move, since a copy leaves its sources untouched - the
     /// distinct parents of its sources.
     /// </summary>
+    /// <summary>Ordinal-ignore-case membership over a builder's contents.</summary>
+    private static bool ContainsIgnoreCase(ImmutableArray<string>.Builder builder, string value)
+    {
+        foreach (var existing in builder)
+        {
+            if (string.Equals(existing, value, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static ImmutableArray<string> AffectedDirs(Effect.ShellCopyOrMove effect)
     {
         var builder = ImmutableArray.CreateBuilder<string>();
@@ -438,7 +457,7 @@ public sealed class ShellEffectExecutor : IDisposable
         {
             foreach (var parent in DistinctParents(effect.Paths))
             {
-                if (!builder.Contains(parent, StringComparer.OrdinalIgnoreCase))
+                if (!ContainsIgnoreCase(builder, parent))
                 {
                     builder.Add(parent);
                 }
@@ -469,7 +488,7 @@ public sealed class ShellEffectExecutor : IDisposable
                 parent = null;
             }
 
-            if (parent is not null && !builder.Contains(parent, StringComparer.OrdinalIgnoreCase))
+            if (parent is not null && !ContainsIgnoreCase(builder, parent))
             {
                 builder.Add(parent);
             }

@@ -53,7 +53,7 @@ public class RootPaneTests
             Assert.Equal(new Location.RealDirectory(dir), entries[1].Target);
 
             // Drives still follow, under their own header.
-            var drivesHeader = entries.ToList().FindIndex(e => e is { Kind: EntryKind.Header, Name: "ドライブ" });
+            var drivesHeader = new List<Entry>(entries).FindIndex(e => e is { Kind: EntryKind.Header, Name: "ドライブ" });
             Assert.True(drivesHeader > 1, "the drives section should come after the favorites");
         }
         finally
@@ -86,10 +86,15 @@ public class RootPaneTests
 
             var entries = ReadRoot(() => [new RootPlace(a, "fol1"), new RootPlace(b, "fol1")]);
 
-            var labels = entries
-                .Where(e => e.Group == "favorites" && e.Kind != EntryKind.Header)
-                .Select(e => e.Label)
-                .ToList();
+            var labels = new List<string?>();
+            foreach (var entry in entries)
+            {
+                if (entry.Group == "favorites" && entry.Kind != EntryKind.Header)
+                {
+                    labels.Add(entry.Label);
+                }
+            }
+
             Assert.Equal([$"fol1 ({a})", $"fol1 ({b})"], labels);
         }
         finally
@@ -112,7 +117,7 @@ public class RootPaneTests
             // Only ambiguous labels get an address after them.
             Assert.Equal(
                 "ひとつだけ",
-                entries.Single(e => e.Group == "favorites" && e.Kind != EntryKind.Header).Label);
+                Assert.Single(TestEntries.Where(entries, e => e.Group == "favorites" && e.Kind != EntryKind.Header)).Label);
         }
         finally
         {
@@ -146,7 +151,7 @@ public class RootPaneTests
         runtime.Submit(new Effect.ReadDirectory(Col(0), Location.Drives.Instance));
         var loaded = Assert.IsType<Msg.DirectoryLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
 
-        var drives = loaded.Entries.Where(e => e.Kind == EntryKind.Drive).ToList();
+        var drives = TestEntries.Where(loaded.Entries, e => e.Kind == EntryKind.Drive);
         Assert.NotEmpty(drives);
         Assert.All(drives, d => Assert.Equal("名前 " + d.Name, d.Label));
     }
@@ -163,7 +168,7 @@ public class RootPaneTests
         runtime.Submit(new Effect.ReadDirectory(Col(0), Location.Drives.Instance));
         var loaded = Assert.IsType<Msg.DirectoryLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
 
-        var drives = loaded.Entries.Where(e => e.Kind == EntryKind.Drive).ToList();
+        var drives = TestEntries.Where(loaded.Entries, e => e.Kind == EntryKind.Drive);
         Assert.NotEmpty(drives);
         Assert.All(drives, d => Assert.Contains(d.Name.TrimEnd('\\', '/'), d.Label, StringComparison.Ordinal));
     }

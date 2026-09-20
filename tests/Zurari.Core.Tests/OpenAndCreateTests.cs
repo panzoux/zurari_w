@@ -20,7 +20,7 @@ public class OpenAndCreateTests
 
         Assert.Equal(
             new Effect.OpenWithDefaultApp(@"C:\here\notes.txt"),
-            Assert.Single(effects.OfType<Effect.OpenWithDefaultApp>()));
+            Assert.Single(TestEffects.Of<Effect.OpenWithDefaultApp>(effects)));
     }
 
     /// <summary>A disc image is opened by becoming a drive, not by launching something.</summary>
@@ -31,8 +31,8 @@ public class OpenAndCreateTests
 
         var (_, effects) = Transition.Apply(state, new Msg.EnterDirectory(Col(0), 0));
 
-        Assert.Single(effects.OfType<Effect.MountImage>());
-        Assert.Empty(effects.OfType<Effect.OpenWithDefaultApp>());
+        Assert.Single(TestEffects.Of<Effect.MountImage>(effects));
+        Assert.Empty(TestEffects.Of<Effect.OpenWithDefaultApp>(effects));
     }
 
     [Fact]
@@ -42,7 +42,7 @@ public class OpenAndCreateTests
 
         var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(Col(0), 0));
 
-        Assert.Empty(effects.OfType<Effect.OpenWithDefaultApp>());
+        Assert.Empty(TestEffects.Of<Effect.OpenWithDefaultApp>(effects));
         Assert.Equal(2, next.Focused.Columns.Length);
     }
 
@@ -63,7 +63,7 @@ public class OpenAndCreateTests
 
         var (_, effects) = Transition.Apply(state, new Msg.CreateFolderRequested(Col(0)));
 
-        Assert.Equal(new Effect.CreateFolder(Col(0), Here), Assert.Single(effects.OfType<Effect.CreateFolder>()));
+        Assert.Equal(new Effect.CreateFolder(Col(0), Here), Assert.Single(TestEffects.Of<Effect.CreateFolder>(effects)));
     }
 
     /// <summary>
@@ -79,7 +79,7 @@ public class OpenAndCreateTests
 
         var (next, effects) = Transition.Apply(state, new Msg.CreateFolderRequested(Col(0)));
 
-        Assert.Empty(effects.OfType<Effect.CreateFolder>());
+        Assert.Empty(TestEffects.Of<Effect.CreateFolder>(effects));
         Assert.NotNull(next.Notice);
     }
 
@@ -92,7 +92,7 @@ public class OpenAndCreateTests
 
         Assert.Equal("新しいフォルダー", asked.RevealTarget);
         Assert.Equal(LoadState.Loading, asked.Focused.Columns[0].Load);
-        Assert.Equal(new Effect.ReadDirectory(Col(0), Here), Assert.Single(effects.OfType<Effect.ReadDirectory>()));
+        Assert.Equal(new Effect.ReadDirectory(Col(0), Here), Assert.Single(TestEffects.Of<Effect.ReadDirectory>(effects)));
 
         var (loaded, _) = Transition.Apply(
             asked,

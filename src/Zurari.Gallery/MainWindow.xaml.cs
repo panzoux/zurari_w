@@ -33,9 +33,15 @@ public partial class MainWindow : Window
             () => session.HandleEntryPointerPressed(e),
             $"EntryPointerPressed(col={e.ColumnIndex}, entry={e.EntryIndex}, button={e.Button}, modifiers={e.Modifiers})");
         Browser.ColumnWidthsChanged += (_, e) =>
-            LastEventText.Text = "ColumnWidthsChanged(widths="
-                + string.Join(", ", e.Widths.Select(w => w.ToString("F0", CultureInfo.InvariantCulture)))
-                + ")";
+        {
+            var widths = new string[e.Widths.Count];
+            for (var i = 0; i < widths.Length; i++)
+            {
+                widths[i] = e.Widths[i].ToString("F0", CultureInfo.InvariantCulture);
+            }
+
+            LastEventText.Text = "ColumnWidthsChanged(widths=" + string.Join(", ", widths) + ")";
+        };
 
         DatasetSelector.SelectedIndex = 0;
     }

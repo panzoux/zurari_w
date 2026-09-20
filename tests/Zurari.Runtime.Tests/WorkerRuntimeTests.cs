@@ -7,6 +7,18 @@ namespace Zurari.Runtime.Tests;
 
 public class WorkerRuntimeTests
 {
+    /// <summary>Every row after the "ドライブ" header, i.e. the drives themselves.</summary>
+    private static List<Entry> DrivesUnderTheHeader(Msg.DirectoryLoaded loaded)
+    {
+        var drives = new List<Entry>();
+        for (var i = 1; i < loaded.Entries.Length; i++)
+        {
+            drives.Add(loaded.Entries[i]);
+        }
+
+        return drives;
+    }
+
     private static string CreateTempDir() => TempDirectory.Create("zurari-runtime-tests");
 
     private static Msg WaitForMsg(ConcurrentQueue<Msg> queue, TimeSpan timeout)
@@ -119,11 +131,11 @@ public class WorkerRuntimeTests
         // header is a real entry rather than something the view adds, because the cursor lands on it.
         Assert.Equal(EntryKind.Header, loaded.Entries[0].Kind);
         Assert.Equal("ドライブ", loaded.Entries[0].Name);
-        Assert.All(loaded.Entries.Skip(1), e => Assert.Equal(EntryKind.Drive, e.Kind));
+        Assert.All(DrivesUnderTheHeader(loaded), e => Assert.Equal(EntryKind.Drive, e.Kind));
         Assert.All(loaded.Entries, e => Assert.Equal("drives", e.Group));
 
         // Every drive reads as something, and the name stays the path so rows stay distinguishable.
-        Assert.All(loaded.Entries.Skip(1), e =>
+        Assert.All(DrivesUnderTheHeader(loaded), e =>
         {
             Assert.False(string.IsNullOrWhiteSpace(e.Label));
             Assert.EndsWith(@"\", e.Name, StringComparison.Ordinal);
@@ -210,8 +222,8 @@ public class WorkerRuntimeTests
             var loaded = Assert.IsType<Msg.DirectoryLoaded>(WaitForMsg(queue, TimeSpan.FromSeconds(10)));
 
             Assert.Equal(2, loaded.Entries.Length);
-            Assert.False(loaded.Entries.Single(e => e.Name == "plain.txt").IsHidden);
-            Assert.True(loaded.Entries.Single(e => e.Name == "hidden.txt").IsHidden);
+            Assert.False(Assert.Single(TestEntries.Where(loaded.Entries, e => e.Name == "plain.txt")).IsHidden);
+            Assert.True(Assert.Single(TestEntries.Where(loaded.Entries, e => e.Name == "hidden.txt")).IsHidden);
         }
         finally
         {

@@ -59,16 +59,30 @@ public class GalleryDatasetsTests
         Assert.Empty(root.Children[0].Children);
     }
 
+    /// <summary>The first directory among <paramref name="node"/>'s children, if it has one.</summary>
+    private static GalleryNode? FirstDirectory(GalleryNode node)
+    {
+        foreach (var child in node.Children)
+        {
+            if (child.Kind == EntryKind.Directory)
+            {
+                return child;
+            }
+        }
+
+        return null;
+    }
+
     [Fact]
     public void Deep_chain_is_at_least_8_directories_deep()
     {
         var node = GalleryDatasets.Deep();
         var depth = 0;
-        var next = node.Children.FirstOrDefault(c => c.Kind == EntryKind.Directory);
+        var next = FirstDirectory(node);
         while (next is not null)
         {
             depth++;
-            next = next.Children.FirstOrDefault(c => c.Kind == EntryKind.Directory);
+            next = FirstDirectory(next);
         }
 
         Assert.True(depth >= 8, $"expected at least 8 nested directories, got {depth}");

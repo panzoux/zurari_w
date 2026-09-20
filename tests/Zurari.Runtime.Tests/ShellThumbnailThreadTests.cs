@@ -150,7 +150,7 @@ public class ShellThumbnailThreadTests
             WaitFor<Msg.PreviewLoaded>(queue, TimeSpan.FromSeconds(10));
 
             Assert.Equal(2, threads.Count);
-            Assert.Single(threads.Distinct());
+            Assert.Single(new HashSet<int>(threads));
         }
         finally
         {

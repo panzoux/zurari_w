@@ -275,9 +275,8 @@ internal static class VideoThumbnailer
                 return null;
             }
 
-            var firstLine = output
-                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .FirstOrDefault();
+            var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var firstLine = lines.Length > 0 ? lines[0] : null;
             return string.IsNullOrWhiteSpace(firstLine) ? null : firstLine;
         }
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)

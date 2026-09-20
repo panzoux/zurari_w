@@ -216,7 +216,7 @@ public sealed class JobEngine : IDisposable
             {
                 var parent = Path.GetDirectoryName(source.TrimEnd('\\', '/'));
                 if (!string.IsNullOrEmpty(parent)
-                    && !dirs.Contains(parent, StringComparer.OrdinalIgnoreCase))
+                    && !dirs.Exists(d => string.Equals(d, parent, StringComparison.OrdinalIgnoreCase)))
                 {
                     dirs.Add(parent);
                 }

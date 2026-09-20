@@ -32,7 +32,7 @@ public class ChildColumnTests
         Assert.Equal(LoadState.Loading, next.Focused.Columns[1].Load);
         Assert.Equal(0, next.Focused.FocusedColumn);
 
-        var read = Assert.Single(effects.OfType<Effect.ReadDirectory>());
+        var read = Assert.Single(TestEffects.Of<Effect.ReadDirectory>(effects));
         Assert.Equal(1, read.At.Index);
         Assert.True(read.Speculative, "a column the cursor is only resting on is speculative");
     }
@@ -97,7 +97,7 @@ public class ChildColumnTests
             new Msg.DirectoryLoaded(Col(1), new Location.RealDirectory(@"C:\sub"), [new Entry("deep", EntryKind.Directory)]));
 
         Assert.Equal(2, loaded.Focused.Columns.Length);
-        Assert.Empty(effects.OfType<Effect.ReadDirectory>());
+        Assert.Empty(TestEffects.Of<Effect.ReadDirectory>(effects));
     }
 
     /// <summary>
@@ -119,7 +119,7 @@ public class ChildColumnTests
 
         Assert.Equal(0, next.Focused.FocusedColumn);
         Assert.Equal(3, next.Focused.Columns.Length);
-        Assert.Empty(effects.OfType<Effect.ReadDirectory>());
+        Assert.Empty(TestEffects.Of<Effect.ReadDirectory>(effects));
     }
 
     /// <summary>
@@ -161,8 +161,8 @@ public class ChildColumnTests
         var (next, effects) = Transition.Apply(state, new Msg.Refresh());
 
         Assert.Equal(2, next.Focused.Columns.Length);
-        Assert.Equal(2, effects.OfType<Effect.ReadDirectory>().Count());
-        Assert.DoesNotContain(effects.OfType<Effect.ReadDirectory>(), e => e.Speculative);
+        Assert.Equal(2, TestEffects.Of<Effect.ReadDirectory>(effects).Count);
+        Assert.DoesNotContain(TestEffects.Of<Effect.ReadDirectory>(effects), e => e.Speculative);
     }
 
     [Fact]

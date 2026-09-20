@@ -19,12 +19,12 @@ public class SortTests
     }
 
     /// <summary>Runs a listing through the real path a listing takes: a load, then the derived view.</summary>
-    private static IReadOnlyList<string> Order(SortOrder sort, params Entry[] entries)
+    private static List<string> Order(SortOrder sort, params Entry[] entries)
     {
         var state = With(sort, entries);
         var (loaded, _) = Transition.Apply(
             state, new Msg.DirectoryLoaded(Col(0), new Location.RealDirectory(@"C:\"), [.. entries]));
-        return [.. loaded.Focused.Columns[0].Entries.Select(e => e.Name)];
+        return TestEntries.Names(loaded.Focused.Columns[0].Entries);
     }
 
     /// <summary>
@@ -172,7 +172,7 @@ public class SortTests
 
         var (next, _) = Transition.Apply(state, new Msg.SetSortMode(SortMode.Name));
 
-        Assert.Equal(["ドライブ", @"Z:\", @"C:\"], next.Focused.Columns[0].Entries.Select(e => e.Name));
+        Assert.Equal(["ドライブ", @"Z:\", @"C:\"], TestEntries.Names(next.Focused.Columns[0].Entries));
     }
 
     [Fact]
@@ -202,11 +202,11 @@ public class SortTests
 
         var (next, effects) = Transition.Apply(state, new Msg.SetSortMode(SortMode.Size));
 
-        Assert.Equal(["b.txt", "a.txt"], next.Focused.Columns[0].Entries.Select(e => e.Name));
-        Assert.Equal(["d.txt", "c.txt"], next.Focused.Columns[1].Entries.Select(e => e.Name));
+        Assert.Equal(["b.txt", "a.txt"], TestEntries.Names(next.Focused.Columns[0].Entries));
+        Assert.Equal(["d.txt", "c.txt"], TestEntries.Names(next.Focused.Columns[1].Entries));
         Assert.Equal(
             new Effect.SetViewOptions(new ViewOptions(new SortOrder(SortMode.Size))),
-            Assert.Single(effects.OfType<Effect.SetViewOptions>()));
+            Assert.Single(TestEffects.Of<Effect.SetViewOptions>(effects)));
     }
 
     /// <summary>
@@ -225,7 +225,7 @@ public class SortTests
 
         var (next, _) = Transition.Apply(state, new Msg.SetSortMode(SortMode.Size));
 
-        Assert.Equal(["c.txt", "b.txt", "a.txt"], next.Focused.Columns[0].Entries.Select(e => e.Name));
+        Assert.Equal(["c.txt", "b.txt", "a.txt"], TestEntries.Names(next.Focused.Columns[0].Entries));
         Assert.Equal("a.txt", next.Focused.Columns[0].Entries[next.Focused.Columns[0].Cursor].Name);
     }
 
@@ -239,9 +239,9 @@ public class SortTests
         var (next, effects) = Transition.Apply(
             state, new Msg.ViewRestored(First, new ViewOptions(new SortOrder(SortMode.Size))));
 
-        Assert.Equal(["b.txt", "a.txt"], next.Focused.Columns[0].Entries.Select(e => e.Name));
+        Assert.Equal(["b.txt", "a.txt"], TestEntries.Names(next.Focused.Columns[0].Entries));
         Assert.Equal(new SortOrder(SortMode.Size), next.Focused.View.Sort);
-        Assert.Empty(effects.OfType<Effect.SetViewOptions>());
+        Assert.Empty(TestEffects.Of<Effect.SetViewOptions>(effects));
     }
 
     [Fact]
@@ -256,7 +256,7 @@ public class SortTests
 
         var (next, _) = Transition.Apply(state, new Msg.SetSortMode(SortMode.Size));
 
-        var moved = next.Focused.Columns[0].Entries.Single(e => e.Name == "a.txt");
+        var moved = Assert.Single(TestEntries.Where(next.Focused.Columns[0].Entries, e => e.Name == "a.txt"));
         Assert.True(moved.IsMarked);
         Assert.Empty(next.CheckInvariants());
     }
@@ -285,7 +285,7 @@ public class SortTests
             state,
             new Msg.DirectoryLoaded(Col(0), new Location.RealDirectory(@"C:\"), [File("a.txt"), Hidden("desktop.ini"), File("b.txt")]));
 
-        Assert.Equal(["a.txt", "b.txt"], loaded.Focused.Columns[0].Entries.Select(e => e.Name));
+        Assert.Equal(["a.txt", "b.txt"], TestEntries.Names(loaded.Focused.Columns[0].Entries));
         Assert.Equal(3, loaded.Focused.Columns[0].AllEntries.Length);
     }
 
@@ -303,13 +303,13 @@ public class SortTests
 
         var (shown, effects) = Transition.Apply(loaded, new Msg.ToggleHiddenFiles());
 
-        Assert.Equal(["a.txt", "desktop.ini"], shown.Focused.Columns[0].Entries.Select(e => e.Name));
+        Assert.Equal(["a.txt", "desktop.ini"], TestEntries.Names(shown.Focused.Columns[0].Entries));
         Assert.True(shown.Focused.View.ShowHidden);
-        Assert.Empty(effects.OfType<Effect.ReadDirectory>());
-        Assert.Single(effects.OfType<Effect.SetViewOptions>());
+        Assert.Empty(TestEffects.Of<Effect.ReadDirectory>(effects));
+        Assert.Single(TestEffects.Of<Effect.SetViewOptions>(effects));
 
         var (hiddenAgain, _) = Transition.Apply(shown, new Msg.ToggleHiddenFiles());
-        Assert.Equal(["a.txt"], hiddenAgain.Focused.Columns[0].Entries.Select(e => e.Name));
+        Assert.Equal(["a.txt"], TestEntries.Names(hiddenAgain.Focused.Columns[0].Entries));
     }
 
     /// <summary>
@@ -362,7 +362,7 @@ public class SortTests
 
         var (concealed, _) = Transition.Apply(onHidden, new Msg.ToggleHiddenFiles());
 
-        Assert.Equal(["a.txt"], concealed.Focused.Columns[0].Entries.Select(e => e.Name));
+        Assert.Equal(["a.txt"], TestEntries.Names(concealed.Focused.Columns[0].Entries));
         Assert.Equal(0, concealed.Focused.Columns[0].Cursor);
         Assert.Empty(concealed.CheckInvariants());
     }

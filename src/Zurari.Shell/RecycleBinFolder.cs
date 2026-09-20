@@ -64,7 +64,17 @@ public static class RecycleBinFolder
     /// </remarks>
     public static IReadOnlyList<RecycleBinItem> EnumerateParsingNames() => Read();
 
-    public static IReadOnlyList<string> Enumerate() => [.. Read().Select(i => i.Original)];
+    public static IReadOnlyList<string> Enumerate()
+    {
+        var items = Read();
+        var originals = new List<string>(items.Count);
+        foreach (var item in items)
+        {
+            originals.Add(item.Original);
+        }
+
+        return originals;
+    }
 
     private static List<RecycleBinItem> Read()
     {

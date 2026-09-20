@@ -142,7 +142,7 @@ public class UserSettingsStoreTests
 
             // The write goes to a temp name and is moved into place, so that a crash partway cannot
             // leave a truncated file that would load as defaults and lose every preference.
-            Assert.Equal(["settings.json"], Directory.GetFiles(settingsDir).Select(Path.GetFileName));
+            Assert.Equal(["settings.json"], Array.ConvertAll(Directory.GetFiles(settingsDir), Path.GetFileName));
         }
         finally
         {

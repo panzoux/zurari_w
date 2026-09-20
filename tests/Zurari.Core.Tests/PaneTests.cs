@@ -5,8 +5,20 @@ namespace Zurari.Core.Tests;
 
 public class PaneTests
 {
-    private static Column Dir(string path, params string[] names) =>
-        new Column(new Location.RealDirectory(path), [.. names.Select(n => new Entry(n, EntryKind.File))], Cursor: names.Length > 0 ? 0 : -1, Load: LoadState.Loaded);
+    private static Column Dir(string path, params string[] names)
+    {
+        var entries = ImmutableArray.CreateBuilder<Entry>(names.Length);
+        foreach (var name in names)
+        {
+            entries.Add(new Entry(name, EntryKind.File));
+        }
+
+        return new Column(
+            new Location.RealDirectory(path),
+            entries.MoveToImmutable(),
+            Cursor: names.Length > 0 ? 0 : -1,
+            Load: LoadState.Loaded);
+    }
 
     /// <summary>
     /// Two panes, top (id 0, focused) and bottom (id 1), each showing one column. Every test that
@@ -148,7 +160,7 @@ public class PaneTests
 
         var (_, effects) = Transition.Apply(state, new Msg.EnterDirectory(state.Focused.Ref(0), 0));
 
-        var read = Assert.Single(effects.OfType<Effect.ReadDirectory>());
+        var read = Assert.Single(TestEffects.Of<Effect.ReadDirectory>(effects));
         Assert.Equal(state.Focused.Ref(1), read.At);
     }
 
@@ -163,7 +175,7 @@ public class PaneTests
 
         var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(at, 0));
 
-        var read = Assert.Single(effects.OfType<Effect.ReadDirectory>());
+        var read = Assert.Single(TestEffects.Of<Effect.ReadDirectory>(effects));
         Assert.Equal(new PaneId(1), read.At.Pane);
         Assert.Equal(2, next.Panes[1].Columns.Length);
         Assert.Same(state.Panes[0], next.Panes[0]);
@@ -177,7 +189,7 @@ public class PaneTests
 
         var (_, effects) = Transition.Apply(state, new Msg.Refresh());
 
-        var reads = effects.OfType<Effect.ReadDirectory>().ToList();
+        var reads = TestEffects.Of<Effect.ReadDirectory>(effects);
         Assert.Contains(reads, r => r.At.Pane == new PaneId(0));
         Assert.Contains(reads, r => r.At.Pane == new PaneId(1));
     }
@@ -191,7 +203,7 @@ public class PaneTests
 
         var (next, effects) = Transition.Apply(state, new Msg.ExternalDirectoryChanged(@"D:\stale"));
 
-        var read = Assert.Single(effects.OfType<Effect.ReadDirectory>());
+        var read = Assert.Single(TestEffects.Of<Effect.ReadDirectory>(effects));
         Assert.Equal(new PaneId(1), read.At.Pane);
         Assert.Same(state.Panes[0], next.Panes[0]);
     }
@@ -229,7 +241,7 @@ public class PaneTests
         var (editing, _) = Transition.Apply(state, new Msg.RenameRequested(at));
         var (_, effects) = Transition.Apply(editing, new Msg.RenameSubmitted("new.txt"));
 
-        var renamed = Assert.Single(effects.OfType<Effect.RenameEntry>());
+        var renamed = Assert.Single(TestEffects.Of<Effect.RenameEntry>(effects));
         Assert.Equal(at, renamed.At);
     }
 
@@ -254,7 +266,7 @@ public class PaneTests
 
         var (next, effects) = Transition.Apply(state, new Msg.CursorDown(new ColumnRef(new PaneId(1), 0)));
 
-        var load = Assert.Single(effects.OfType<Effect.LoadPreview>());
+        var load = Assert.Single(TestEffects.Of<Effect.LoadPreview>(effects));
         Assert.Equal(new PaneId(1), load.Pane);
         Assert.Equal(@"C:\b\q.txt", load.Path);
         Assert.Same(state.Panes[0], next.Panes[0]);

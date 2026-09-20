@@ -67,7 +67,7 @@ public class RenameTests
 
         Assert.Equal(
             new Effect.RenameEntry(Col(0), Here, "notes.txt", "readme.txt"),
-            Assert.Single(effects.OfType<Effect.RenameEntry>()));
+            Assert.Single(TestEffects.Of<Effect.RenameEntry>(effects)));
 
         // Still open: it closes when the rename actually happened, not when it was asked for.
         Assert.NotNull(next.Rename);
@@ -80,7 +80,7 @@ public class RenameTests
 
         var (_, effects) = Transition.Apply(state, new Msg.RenameSubmitted("  readme.txt  "));
 
-        Assert.Equal("readme.txt", Assert.Single(effects.OfType<Effect.RenameEntry>()).NewName);
+        Assert.Equal("readme.txt", Assert.Single(TestEffects.Of<Effect.RenameEntry>(effects)).NewName);
     }
 
     [Fact]
@@ -91,7 +91,7 @@ public class RenameTests
         var (next, effects) = Transition.Apply(state, new Msg.RenameSubmitted("notes.txt"));
 
         Assert.Null(next.Rename);
-        Assert.Empty(effects.OfType<Effect.RenameEntry>());
+        Assert.Empty(TestEffects.Of<Effect.RenameEntry>(effects));
     }
 
     /// <summary>
@@ -110,7 +110,7 @@ public class RenameTests
 
         var (next, effects) = Transition.Apply(state, new Msg.RenameSubmitted(name));
 
-        Assert.Empty(effects.OfType<Effect.RenameEntry>());
+        Assert.Empty(TestEffects.Of<Effect.RenameEntry>(effects));
         Assert.NotNull(next.Rename);
         Assert.NotNull(next.Rename!.Error);
     }
@@ -138,7 +138,7 @@ public class RenameTests
         var (retry, effects) = Transition.Apply(failed, new Msg.RenameSubmitted("free.txt"));
 
         Assert.Null(retry.Rename!.Error);
-        Assert.Single(effects.OfType<Effect.RenameEntry>());
+        Assert.Single(TestEffects.Of<Effect.RenameEntry>(effects));
     }
 
     [Fact]
@@ -151,7 +151,7 @@ public class RenameTests
 
         Assert.Null(done.Rename);
         Assert.Equal("readme.txt", done.RevealTarget);
-        Assert.Single(effects.OfType<Effect.ReadDirectory>());
+        Assert.Single(TestEffects.Of<Effect.ReadDirectory>(effects));
 
         var (loaded, _) = Transition.Apply(
             done, new Msg.DirectoryLoaded(Col(0), Here, [new Entry("readme.txt", EntryKind.File)]));
@@ -167,7 +167,7 @@ public class RenameTests
         var (next, effects) = Transition.Apply(state, new Msg.RenameCancelled());
 
         Assert.Null(next.Rename);
-        Assert.Empty(effects.OfType<Effect.RenameEntry>());
+        Assert.Empty(TestEffects.Of<Effect.RenameEntry>(effects));
     }
 
     [Fact]
@@ -178,6 +178,6 @@ public class RenameTests
         var (next, effects) = Transition.Apply(state, new Msg.RenameSubmitted("x.txt"));
 
         Assert.Null(next.Rename);
-        Assert.Empty(effects.OfType<Effect.RenameEntry>());
+        Assert.Empty(TestEffects.Of<Effect.RenameEntry>(effects));
     }
 }

@@ -1,0 +1,4 @@
+T:System.Linq.Enumerable; LINQ is banned project-wide - write an explicit loop
+T:System.Linq.Queryable; LINQ is banned project-wide - write an explicit loop
+T:System.Linq.ParallelEnumerable; LINQ is banned project-wide - write an explicit loop
+T:System.Linq.ImmutableArrayExtensions; LINQ is banned project-wide - use ImmutableArray builders and explicit loops

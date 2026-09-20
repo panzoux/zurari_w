@@ -41,7 +41,7 @@ public class TransitionTests
 
         Assert.Equal(1, next.Focused.Columns[0].Cursor);
         // Landing on File1 triggers a preview load (see Transition.ReconcilePreview).
-        Assert.Equal(@"C:\a.txt", Assert.Single(effects.OfType<Effect.LoadPreview>()).Path);
+        Assert.Equal(@"C:\a.txt", Assert.Single(TestEffects.Of<Effect.LoadPreview>(effects)).Path);
     }
 
     [Fact]
@@ -131,7 +131,7 @@ public class TransitionTests
 
         Assert.Equal(2, next.Focused.Columns[0].Cursor);
         // Landing on File2 triggers a preview load (see Transition.ReconcilePreview).
-        Assert.Equal(@"C:\b.txt", Assert.Single(effects.OfType<Effect.LoadPreview>()).Path);
+        Assert.Equal(@"C:\b.txt", Assert.Single(TestEffects.Of<Effect.LoadPreview>(effects)).Path);
     }
 
     [Fact]
@@ -255,7 +255,7 @@ public class TransitionTests
         Assert.Equal(1, next.Focused.FocusedColumn);
         Assert.Equal(LoadState.Loaded, next.Focused.Columns[1].Load);
         Assert.Equal(0, next.Focused.Columns[1].Cursor);
-        Assert.Empty(effects.OfType<Effect.ReadDirectory>());
+        Assert.Empty(TestEffects.Of<Effect.ReadDirectory>(effects));
     }
 
     [Fact]
@@ -281,7 +281,7 @@ public class TransitionTests
         Assert.Equal(2, next.Focused.Columns[0].Cursor);
         Assert.Equal(0, next.Focused.FocusedColumn);
         // No directory-read effect for a file, but selecting it does trigger a preview load.
-        Assert.Equal(@"C:\b.txt", Assert.Single(effects.OfType<Effect.LoadPreview>()).Path);
+        Assert.Equal(@"C:\b.txt", Assert.Single(TestEffects.Of<Effect.LoadPreview>(effects)).Path);
     }
 
     [Fact]
@@ -301,8 +301,8 @@ public class TransitionTests
         Assert.Equal(1, next.Focused.Columns[0].Cursor);
         Assert.Equal(0, next.Focused.FocusedColumn);
         // Selecting File1 (and losing focus from the now-truncated column 2) triggers a preview load.
-        Assert.Equal(@"C:\a.txt", Assert.Single(effects.OfType<Effect.LoadPreview>()).Path);
-        Assert.Equal(@"C:\a.txt", Assert.Single(effects.OfType<Effect.OpenWithDefaultApp>()).Path);
+        Assert.Equal(@"C:\a.txt", Assert.Single(TestEffects.Of<Effect.LoadPreview>(effects)).Path);
+        Assert.Equal(@"C:\a.txt", Assert.Single(TestEffects.Of<Effect.OpenWithDefaultApp>(effects)).Path);
     }
 
     [Fact]
@@ -354,8 +354,8 @@ public class TransitionTests
         Assert.Equal(2, next.Focused.Columns[0].Cursor);
         Assert.Equal(0, next.Focused.FocusedColumn);
         // Selecting File2 triggers a preview load.
-        Assert.Equal(@"C:\b.txt", Assert.Single(effects.OfType<Effect.LoadPreview>()).Path);
-        Assert.Equal(@"C:\b.txt", Assert.Single(effects.OfType<Effect.OpenWithDefaultApp>()).Path);
+        Assert.Equal(@"C:\b.txt", Assert.Single(TestEffects.Of<Effect.LoadPreview>(effects)).Path);
+        Assert.Equal(@"C:\b.txt", Assert.Single(TestEffects.Of<Effect.OpenWithDefaultApp>(effects)).Path);
     }
 
     [Fact]
@@ -577,7 +577,7 @@ public class TransitionTests
         Assert.True(next.Focused.Columns[0].Entries[2].IsMarked);
         Assert.Equal(2, next.Focused.Columns[0].Cursor);
         // Moving the cursor onto File2 triggers a preview load.
-        Assert.Equal(@"C:\b.txt", Assert.Single(effects.OfType<Effect.LoadPreview>()).Path);
+        Assert.Equal(@"C:\b.txt", Assert.Single(TestEffects.Of<Effect.LoadPreview>(effects)).Path);
     }
 
     [Fact]
@@ -644,7 +644,7 @@ public class TransitionTests
         Assert.True(next.Focused.Columns[0].Entries[0].IsMarked);
         Assert.Equal(1, next.Focused.Columns[0].Cursor);
         // Advancing onto File1 triggers a preview load.
-        Assert.Equal(@"C:\a.txt", Assert.Single(effects.OfType<Effect.LoadPreview>()).Path);
+        Assert.Equal(@"C:\a.txt", Assert.Single(TestEffects.Of<Effect.LoadPreview>(effects)).Path);
     }
 
     [Fact]
@@ -803,7 +803,7 @@ public class TransitionTests
         Assert.False(next.Focused.Columns[0].Entries[3].IsMarked);
         Assert.Equal(2, next.Focused.Columns[0].Cursor);
         // The cursor lands on File2 (entries[2]), triggering a preview load.
-        Assert.Equal(@"C:\b.txt", Assert.Single(effects.OfType<Effect.LoadPreview>()).Path);
+        Assert.Equal(@"C:\b.txt", Assert.Single(TestEffects.Of<Effect.LoadPreview>(effects)).Path);
     }
 
     [Fact]
@@ -1842,7 +1842,7 @@ public class TransitionTests
 
         Assert.Equal(@"C:\$Recycle.Bin\S-1-5-21-1\$R00L0W8.txt", next.Focused.Preview.Path);
         Assert.Equal(@"D:\projects\notes.txt", next.Focused.Preview.OriginalPath);
-        Assert.Equal(@"C:\$Recycle.Bin\S-1-5-21-1\$R00L0W8.txt", Assert.Single(effects.OfType<Effect.LoadPreview>()).Path);
+        Assert.Equal(@"C:\$Recycle.Bin\S-1-5-21-1\$R00L0W8.txt", Assert.Single(TestEffects.Of<Effect.LoadPreview>(effects)).Path);
     }
 
     [Fact]
@@ -1870,7 +1870,7 @@ public class TransitionTests
         var (next, effects) = Transition.Apply(StateWithColumns(column), new Msg.CursorDown(Col(0)));
 
         // Two effects: what to say about the drive, and what to show in the column beside it.
-        var effect = Assert.Single(effects.OfType<Effect.LoadPreview>());
+        var effect = Assert.Single(TestEffects.Of<Effect.LoadPreview>(effects));
         Assert.Equal(PreviewTarget.Volume, effect.Target);
         Assert.Equal(@"C:\", effect.Path);
         Assert.Equal(PreviewKind.Loading, next.Focused.Preview.Kind);
@@ -1909,7 +1909,7 @@ public class TransitionTests
 
         var (_, effects) = Transition.Apply(StateWithColumns(column), new Msg.CursorDown(Col(0)));
 
-        var effect = Assert.Single(effects.OfType<Effect.LoadPreview>());
+        var effect = Assert.Single(TestEffects.Of<Effect.LoadPreview>(effects));
         Assert.Equal(PreviewTarget.RecycleBin, effect.Target);
     }
 
@@ -1944,11 +1944,11 @@ public class TransitionTests
         // whether the pane on the right also describes it as a volume.
         if (expectsCapacity)
         {
-            Assert.Equal(PreviewTarget.Volume, Assert.Single(effects.OfType<Effect.LoadPreview>()).Target);
+            Assert.Equal(PreviewTarget.Volume, Assert.Single(TestEffects.Of<Effect.LoadPreview>(effects)).Target);
         }
         else
         {
-            Assert.Empty(effects.OfType<Effect.LoadPreview>());
+            Assert.Empty(TestEffects.Of<Effect.LoadPreview>(effects));
         }
     }
 
@@ -2325,9 +2325,9 @@ public class TransitionTests
         var (next, effects) = Transition.Apply(state, new Msg.CursorUp(Col(0))); // File1 -> Dir
 
         Assert.Equal(PreviewKind.None, next.Focused.Preview.Kind);
-        var cancel = Assert.IsType<Effect.CancelPreview>(Assert.Single(effects.OfType<Effect.CancelPreview>()));
+        var cancel = Assert.IsType<Effect.CancelPreview>(Assert.Single(TestEffects.Of<Effect.CancelPreview>(effects)));
         Assert.Equal(3, cancel.Generation);
-        Assert.Empty(effects.OfType<Effect.LoadPreview>());
+        Assert.Empty(TestEffects.Of<Effect.LoadPreview>(effects));
     }
 
     [Fact]
@@ -2354,7 +2354,7 @@ public class TransitionTests
         var (next, effects) = Transition.Apply(state, new Msg.DirectoryLoaded(Col(0), new Location.RealDirectory(@"C:\"), [File1]));
 
         Assert.Equal(PreviewKind.Loading, next.Focused.Preview.Kind);
-        Assert.Equal(@"C:\a.txt", Assert.Single(effects.OfType<Effect.LoadPreview>()).Path);
+        Assert.Equal(@"C:\a.txt", Assert.Single(TestEffects.Of<Effect.LoadPreview>(effects)).Path);
     }
 
     /// <summary>
@@ -2494,7 +2494,7 @@ public class TransitionTests
         var (next, effects) = Transition.Apply(state, new Msg.FocusColumn(Col(1)));
 
         Assert.Equal(PreviewKind.Loading, next.Focused.Preview.Kind);
-        Assert.Equal(@"C:\sub\a.txt", Assert.Single(effects.OfType<Effect.LoadPreview>()).Path);
+        Assert.Equal(@"C:\sub\a.txt", Assert.Single(TestEffects.Of<Effect.LoadPreview>(effects)).Path);
     }
 
     [Fact]

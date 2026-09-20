@@ -20,9 +20,19 @@ namespace Zurari.App.Tests;
 /// </remarks>
 public class EffectRoutingTests
 {
-    private static IEnumerable<Type> AllEffectTypes() =>
-        typeof(Effect).GetNestedTypes(BindingFlags.Public)
-            .Where(t => typeof(Effect).IsAssignableFrom(t) && !t.IsAbstract);
+    private static List<Type> AllEffectTypes()
+    {
+        var concrete = new List<Type>();
+        foreach (var nested in typeof(Effect).GetNestedTypes(BindingFlags.Public))
+        {
+            if (typeof(Effect).IsAssignableFrom(nested) && !nested.IsAbstract)
+            {
+                concrete.Add(nested);
+            }
+        }
+
+        return concrete;
+    }
 
     [Fact]
     public void Every_effect_has_an_executor()
@@ -52,7 +62,7 @@ public class EffectRoutingTests
     {
         // Guards the guard: a reflection query that silently matched nothing would pass the test
         // above no matter how many effects went unrouted.
-        Assert.True(AllEffectTypes().Count() >= 9);
+        Assert.True(AllEffectTypes().Count >= 9);
     }
 
     /// <summary>
@@ -68,10 +78,15 @@ public class EffectRoutingTests
     {
         // Excluding the compiler-generated copy constructor, which every record has and which is
         // protected by definition - it exists to serve `with`, not to open the hierarchy.
-        var declared = typeof(Effect)
-            .GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-            .Where(c => c.GetParameters() is not [{ ParameterType: var p }] || p != typeof(Effect))
-            .ToList();
+        var declared = new List<ConstructorInfo>();
+        foreach (var ctor in typeof(Effect).GetConstructors(
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+        {
+            if (ctor.GetParameters() is not [{ ParameterType: var p }] || p != typeof(Effect))
+            {
+                declared.Add(ctor);
+            }
+        }
 
         Assert.NotEmpty(declared);
         Assert.All(declared, c => Assert.True(c.IsFamilyAndAssembly || c.IsPrivate));

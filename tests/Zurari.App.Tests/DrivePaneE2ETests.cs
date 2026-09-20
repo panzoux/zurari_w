@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.IO;
-using System.Linq;
 using Zurari.App;
 using Zurari.Core;
 using Zurari.Runtime;
@@ -190,16 +189,16 @@ public class DrivePaneE2ETests
                     loop,
                     queue,
                     () => loop.State.Focused.Columns[0].Load == LoadState.Loaded
-                        && loop.State.Focused.Columns[0].Entries.Any(e => e.Name == target),
+                        && TestEntries.Where(loop.State.Focused.Columns[0].Entries, e => e.Name == target).Count > 0,
                     TimeSpan.FromSeconds(10));
 
-                var pinned = loop.State.Focused.Columns[0].Entries.Single(e => e.Name == target);
+                var pinned = Assert.Single(TestEntries.Where(loop.State.Focused.Columns[0].Entries, e => e.Name == target));
                 Assert.True(pinned.IsRemovable);
                 Assert.Equal("panzoux", pinned.Label);
 
                 // Collapse ドライブ specifically, not just the first header - the pinned row lives
                 // under お気に入り, and collapsing that would hide the very thing session three checks.
-                var header = loop.State.Focused.Columns[0].Entries.ToList()
+                var header = new List<Entry>(loop.State.Focused.Columns[0].Entries)
                     .FindIndex(e => e.Kind == EntryKind.Header && e.Group == EntryGroups.Drives);
                 loop.Dispatch(new Msg.ToggleSection(Col(0), header));
                 DrainUntil(loop, queue, () => store.Load().CollapsedGroups?.Count > 0, TimeSpan.FromSeconds(10));

@@ -39,8 +39,9 @@ public static class GalleryDatasets
     public static GalleryNode Cjk()
     {
         var rng = new Random(3);
-        var veryLongName =
-            string.Concat(Enumerable.Repeat("とても長いファイル名の一部です_", 7)) + "終わり.txt";
+        var nameParts = new string[7];
+        Array.Fill(nameParts, "とても長いファイル名の一部です_");
+        var veryLongName = string.Concat(nameParts) + "終わり.txt";
 
         GalleryNode[] children =
         [

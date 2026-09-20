@@ -56,7 +56,7 @@ public class PinnedPlacesTests
             var entries = ReadRoot(runtime, queue);
             // A local folder is a favorite; only a UNC path lands in ネットワーク. See
             // EntryGroups.ForPath - the section follows the path, not the gesture that added it.
-            var added = entries.Where(e => e.Group == EntryGroups.Favorites).ToList();
+            var added = TestEntries.Where(entries, e => e.Group == EntryGroups.Favorites);
             Assert.Equal(EntryKind.Header, added[0].Kind);
             Assert.Equal("お気に入り", added[0].Name);
             Assert.Equal(target, added[1].Name);
@@ -174,10 +174,14 @@ public class PinnedPlacesTests
 
             // Both are local folders, so both sit in お気に入り: the known one and the added one.
             // Neither may read as a bare "shared-name" when the other is right beside it.
-            var labels = entries
-                .Where(e => e.Group == EntryGroups.Favorites && e.Kind != EntryKind.Header)
-                .Select(e => e.Label)
-                .ToList();
+            var labels = new List<string?>();
+            foreach (var entry in entries)
+            {
+                if (entry.Group == EntryGroups.Favorites && entry.Kind != EntryKind.Header)
+                {
+                    labels.Add(entry.Label);
+                }
+            }
 
             Assert.Contains($"shared-name ({favorite})", labels);
             Assert.Contains($"shared-name ({pinned})", labels);
@@ -186,7 +190,7 @@ public class PinnedPlacesTests
             // Only the one the user added can be taken away again.
             Assert.Equal(
                 pinned,
-                entries.Single(e => e.IsRemovable).Name);
+                Assert.Single(TestEntries.Where(entries, e => e.IsRemovable)).Name);
         }
         finally
         {
@@ -213,9 +217,9 @@ public class PinnedPlacesTests
                 settings: store,
                 places: () => [new RootPlace(known, "ダウンロード")]);
 
-            var rows = ReadRoot(runtime, queue)
-                .Where(e => e.Kind != EntryKind.Header && e.Group == EntryGroups.Favorites)
-                .ToList();
+            var rows = TestEntries.Where(
+                ReadRoot(runtime, queue),
+                e => e.Kind != EntryKind.Header && e.Group == EntryGroups.Favorites);
 
             // One row, and it is the permanent one - not a second, removable copy beside it.
             Assert.Single(rows);

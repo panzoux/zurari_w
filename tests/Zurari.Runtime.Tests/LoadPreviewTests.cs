@@ -562,9 +562,12 @@ public class LoadPreviewTests
             var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
             while (DateTime.UtcNow < deadline)
             {
-                if (queue.Any(m => m is Msg.DirectoryLoaded))
+                foreach (var queued in queue)
                 {
-                    return;
+                    if (queued is Msg.DirectoryLoaded)
+                    {
+                        return;
+                    }
                 }
 
                 Thread.Sleep(20);

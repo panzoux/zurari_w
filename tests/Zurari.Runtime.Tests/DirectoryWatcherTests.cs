@@ -43,7 +43,8 @@ public class DirectoryWatcherTests
             File.WriteAllText(Path.Combine(dir, "external.txt"), "hello");
 
             Assert.True(WaitForAny(queue, TimeSpan.FromSeconds(3)), "Expected an ExternalDirectoryChanged Msg.");
-            Assert.Equal(dir, queue.First().Path);
+            Assert.True(queue.TryPeek(out var first));
+            Assert.Equal(dir, first!.Path);
         }
         finally
         {

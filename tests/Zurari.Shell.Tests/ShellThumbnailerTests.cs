@@ -44,8 +44,13 @@ public class ShellThumbnailerTests
         encoder.Save(stream);
     }
 
-    private static string[] FilesIn(string dir) =>
-        [.. Directory.GetFiles(dir, "*", EverythingIncludingHidden).Select(Path.GetFileName).Order()!];
+    private static string[] FilesIn(string dir)
+    {
+        var names = Array.ConvertAll(
+            Directory.GetFiles(dir, "*", EverythingIncludingHidden), Path.GetFileName)!;
+        Array.Sort(names, StringComparer.Ordinal);
+        return names!;
+    }
 
     /// <summary>
     /// A real extraction of a known image. What this proves is that the interface declarations are

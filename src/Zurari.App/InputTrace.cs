@@ -17,6 +17,9 @@ namespace Zurari.App;
 /// </remarks>
 internal static class InputTrace
 {
+    /// <summary>How many names <see cref="FirstNames{T}"/> shows before it stops.</summary>
+    private const int MaxTracedNames = 3;
+
     /// <summary>One key event as a handler saw it.</summary>
     /// <param name="phase">Which handler: <c>previewKey</c> or <c>key</c>.</param>
     /// <param name="key">The raw <see cref="KeyEventArgs.Key"/>.</param>
@@ -66,17 +69,30 @@ internal static class InputTrace
             var column = state.Focused.Columns[state.Focused.FocusedColumn];
             line += string.Create(
                 CultureInfo.InvariantCulture,
-                $" loc={Describe(column.Location)} sortable={column.IsSortable} first=[{FirstNames(column.Entries.Select(e => e.Name))}]");
+                $" loc={Describe(column.Location)} sortable={column.IsSortable} first=[{FirstNames(column.Entries, e => e.Name)}]");
         }
 
         return line;
     }
 
     /// <summary>The first few names of a list, for a log line: enough to see an order change.</summary>
-    public static string FirstNames(IEnumerable<string> names)
+    public static string FirstNames<T>(IEnumerable<T> items, Func<T, string> name)
     {
-        ArgumentNullException.ThrowIfNull(names);
-        return string.Join(", ", names.Take(3));
+        ArgumentNullException.ThrowIfNull(items);
+        ArgumentNullException.ThrowIfNull(name);
+
+        var head = new List<string>(MaxTracedNames);
+        foreach (var item in items)
+        {
+            if (head.Count == MaxTracedNames)
+            {
+                break;
+            }
+
+            head.Add(name(item));
+        }
+
+        return string.Join(", ", head);
     }
 
     private static string Describe(Location location) => location switch

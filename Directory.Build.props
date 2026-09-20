@@ -21,5 +21,8 @@
     <!-- Per-layer API bans: a project opts in by having a BannedSymbols.txt next to its csproj. -->
     <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="3.3.4" PrivateAssets="all" />
     <AdditionalFiles Include="$(MSBuildProjectDirectory)\BannedSymbols.txt" Condition="Exists('$(MSBuildProjectDirectory)\BannedSymbols.txt')" />
+    <!-- Solution-wide ban, src and tests alike: no LINQ. ImplicitUsings imports System.Linq
+         everywhere, so nothing but the analyzer would make its absence visible. -->
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)build\no-linq\BannedSymbols.txt" />
   </ItemGroup>
 </Project>

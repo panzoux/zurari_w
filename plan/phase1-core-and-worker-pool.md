@@ -67,6 +67,7 @@ GUIは一切触らない。全成果物は `dotnet test` だけで検証でき�
 
 ### 注意
 
-- LINQは可(zurari本体はLINQ-free方針だったが本プロジェクトでは許可)。ホットパスのみ配慮
+- **LINQ禁止**(src / tests とも)。着手時は許可だったが撤回し、zurari 本体と同じ LINQ-free に戻した。
+  `build/no-linq/BannedSymbols.txt` がビルドで強制するので、忘れても落ちる
 - 例外はEffect実行の境界で捕捉し必ず `*Failed` Msg に変換。ワーカーを死なせない
 - 公開APIにXMLコメント(既存ファイルの粒度に合わせる)

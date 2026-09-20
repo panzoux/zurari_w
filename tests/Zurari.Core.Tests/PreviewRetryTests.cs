@@ -40,7 +40,7 @@ public class PreviewRetryTests
         Assert.False(next.Focused.Preview.TimedOut);
         Assert.Equal(
             new Effect.LoadPreview(First, 6, Clip, PreviewTarget.File, Attempt: 2),
-            Assert.Single(effects.OfType<Effect.LoadPreview>()));
+            Assert.Single(TestEffects.Of<Effect.LoadPreview>(effects)));
     }
 
     [Fact]
@@ -88,6 +88,6 @@ public class PreviewRetryTests
 
         Assert.Equal(1, next.Focused.Preview.Attempt);
         Assert.False(next.Focused.Preview.TimedOut);
-        Assert.Equal(1, Assert.Single(effects.OfType<Effect.LoadPreview>()).Attempt);
+        Assert.Equal(1, Assert.Single(TestEffects.Of<Effect.LoadPreview>(effects)).Attempt);
     }
 }

@@ -235,7 +235,12 @@ public sealed class ThumbnailCache
                 }
             }
 
-            var total = survivors.Sum(f => f.Length);
+            long total = 0;
+            foreach (var file in survivors)
+            {
+                total += file.Length;
+            }
+
             if (total <= MaxTotalBytes)
             {
                 return;

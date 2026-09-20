@@ -114,7 +114,7 @@ public class HorizontalScrollTests
 
         Assert.True(HorizontalOffset(browser) > 0, "8 columns should have scrolled the browser");
 
-        browser.Columns = deep.Take(2).Select((c, i) => c with { IsFocused = i == 1 }).ToArray();
+        browser.Columns = [deep[0] with { IsFocused = false }, deep[1] with { IsFocused = true }];
         Settle();
 
         AssertFullyVisible(browser, 1);
@@ -124,10 +124,16 @@ public class HorizontalScrollTests
     /// <paramref name="count"/> columns with the focus on <paramref name="focused"/>; anything
     /// past the focused column is a child column, the last of which carries a cursor of its own.
     /// </summary>
-    private static IReadOnlyList<ColumnVm> Deep(int count, int focused)
+    private static ColumnVm[] Deep(int count, int focused)
     {
         var columns = VirtualizationTests.MakeColumns(count, entryCount: 60, focused);
-        return [.. columns.Select((c, i) => i == count - 1 && i > focused ? c with { CursorIndex = 4 } : c)];
+        var deep = new ColumnVm[columns.Count];
+        for (var i = 0; i < columns.Count; i++)
+        {
+            deep[i] = i == count - 1 && i > focused ? columns[i] with { CursorIndex = 4 } : columns[i];
+        }
+
+        return deep;
     }
 
     private static IReadOnlyList<ColumnVm> Columns() =>

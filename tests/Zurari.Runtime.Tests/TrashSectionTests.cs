@@ -38,7 +38,7 @@ public class TrashSectionTests
     {
         var entries = ReadRoot(() => new TrashPlace("ゴミ箱 (3)"));
 
-        var trash = entries.Where(e => e.Group == EntryGroups.Trash).ToList();
+        var trash = TestEntries.Where(entries, e => e.Group == EntryGroups.Trash);
         Assert.Equal(2, trash.Count);
         Assert.Equal(EntryKind.Header, trash[0].Kind);
         Assert.Equal("ゴミ箱", trash[0].Name);
@@ -51,8 +51,9 @@ public class TrashSectionTests
     [Fact]
     public void The_trash_row_points_at_the_recycle_bin_and_cannot_be_removed()
     {
-        var row = ReadRoot(() => new TrashPlace("ゴミ箱"))
-            .Single(e => e.Group == EntryGroups.Trash && e.Kind != EntryKind.Header);
+        var row = Assert.Single(TestEntries.Where(
+            ReadRoot(() => new TrashPlace("ゴミ箱")),
+            e => e.Group == EntryGroups.Trash && e.Kind != EntryKind.Header));
 
         Assert.Equal(Location.RecycleBin.Instance, row.Target);
 

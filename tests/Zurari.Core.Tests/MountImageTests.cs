@@ -35,7 +35,7 @@ public class MountImageTests
 
         Assert.Equal(
             new Effect.MountImage(@"D:\images\ubuntu.iso"),
-            Assert.Single(effects.OfType<Effect.MountImage>()));
+            Assert.Single(TestEffects.Of<Effect.MountImage>(effects)));
     }
 
     /// <summary>
@@ -58,7 +58,7 @@ public class MountImageTests
 
         var (_, effects) = Transition.Apply(With(column), new Msg.EnterDirectory(Col(0), 0));
 
-        Assert.Equal(mounts, effects.OfType<Effect.MountImage>().Any());
+        Assert.Equal(mounts, TestEffects.Of<Effect.MountImage>(effects).Count > 0);
     }
 
     [Fact]
@@ -88,7 +88,7 @@ public class MountImageTests
         Assert.Equal(LoadState.Loading, next.Focused.Columns[0].Load);
         Assert.Equal(
             new Effect.ReadDirectory(Col(0), Location.Drives.Instance),
-            Assert.Single(effects.OfType<Effect.ReadDirectory>()));
+            Assert.Single(TestEffects.Of<Effect.ReadDirectory>(effects)));
     }
 
     [Fact]

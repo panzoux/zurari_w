@@ -77,7 +77,7 @@ public class CapacityPreviewTests
     [Fact]
     public void A_drive_with_nothing_in_it_still_says_what_kind_of_drive_it_is()
     {
-        var notReady = DriveInfo.GetDrives().FirstOrDefault(d => !d.IsReady);
+        var notReady = Array.Find(DriveInfo.GetDrives(), d => !d.IsReady);
         if (notReady is null)
         {
             return; // every drive on this machine is ready; nothing to describe.
@@ -132,7 +132,12 @@ public class CapacityPreviewTests
     /// <summary>A drive letter nothing is mounted on, or Z: if the machine somehow uses them all.</summary>
     private static string MissingDriveLetter()
     {
-        var used = DriveInfo.GetDrives().Select(d => char.ToUpperInvariant(d.Name[0])).ToHashSet();
+        var used = new HashSet<char>();
+        foreach (var drive in DriveInfo.GetDrives())
+        {
+            used.Add(char.ToUpperInvariant(drive.Name[0]));
+        }
+
         for (var letter = 'Z'; letter >= 'D'; letter--)
         {
             if (!used.Contains(letter))

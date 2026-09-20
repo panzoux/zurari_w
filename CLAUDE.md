@@ -38,6 +38,10 @@ pre-commit フックが check.ps1 を実行する(`git config core.hooksPath scr
 規約は機械的に強制される(直そうとせず従う。違反はビルドエラー):
 - **BannedApiAnalyzers**: 各プロジェクトの `BannedSymbols.txt`。Core/App/Shell で `File`/`Directory` 等は使えない。
   I/Oが必要になったら Effect を定義して Runtime に実装する — それが唯一かつ一番楽な道。
+- **LINQ禁止**: `build/no-linq/BannedSymbols.txt` を Directory.Build.props が全プロジェクト(src / tests とも)に適用。
+  `ImplicitUsings` のせいで `using System.Linq;` がなくても書けてしまうため、アナライザーだけが防ぐ。
+  代わりに明示的なループと BCL の非LINQ API(`List.Find/FindAll/Exists/ConvertAll`、`Array.Find/ConvertAll/Sort`、
+  `ImmutableArray.CreateBuilder`)を使う。テストの `effects.OfType<Effect.X>()` は `TestEffects.Of<Effect.X>(effects)`。
 - **tests/Zurari.Arch.Tests**: 層違反(RuntimeがWPFに触る等)をテストで検出。
 - `Directory.Build.props`: TreatWarningsAsErrors + AnalysisLevel latest-all。
   アナライザーを無効化・suppressする場合は .editorconfig に理由コメント付きで(乱用しない)。

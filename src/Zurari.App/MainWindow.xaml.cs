@@ -2,7 +2,6 @@ using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Input;
@@ -212,8 +211,16 @@ public sealed partial class MainWindow : Window, IDisposable
     /// <c>Environment.SpecialFolder</c> member, so the shell API is the only route) and
     /// <see cref="WorkerRuntime"/> to consume them — and Runtime is not allowed to depend on Shell.
     /// </summary>
-    private static IReadOnlyList<RootPlace> RootPlaces() =>
-        [.. Zurari.Shell.KnownFolders.UserPlaces().Select(f => new RootPlace(f.Path, f.Label))];
+    private static List<RootPlace> RootPlaces()
+    {
+        var places = new List<RootPlace>();
+        foreach (var folder in Zurari.Shell.KnownFolders.UserPlaces())
+        {
+            places.Add(new RootPlace(folder.Path, folder.Label));
+        }
+
+        return places;
+    }
 
     /// <summary>
     /// The recycle bin row, labelled with what is in it. Resolved here because the totals come from
@@ -1167,7 +1174,7 @@ public sealed partial class MainWindow : Window, IDisposable
             {
                 Trace.WriteLine(
                     $"[app] render focused={state.Focused.FocusedColumn} "
-                    + $"shown=[{InputTrace.FirstNames(projected[state.Focused.FocusedColumn].Entries.Select(vm => vm.Name))}]");
+                    + $"shown=[{InputTrace.FirstNames(projected[state.Focused.FocusedColumn].Entries, vm => vm.Name)}]");
             }
             lastRenderedColumns = state.Focused.Columns;
             lastRenderedFocusedColumn = state.Focused.FocusedColumn;
@@ -1179,13 +1186,17 @@ public sealed partial class MainWindow : Window, IDisposable
             // Only real directories can be watched. A virtual location (the drive list, and later
             // the recycle bin or the inside of an archive) has no path for FileSystemWatcher to
             // point at, so it is filtered out here rather than relying on the watcher to reject it.
-            directoryWatcher.SetWatchedPaths(
-                state.Focused.Columns
-                    .Select(c => c.Location)
-                    .OfType<Location.RealDirectory>()
-                    .Select(d => d.Path)
-                    .Distinct()
-                    .ToList());
+            var watchedPaths = new List<string>();
+            var seenPaths = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var column in state.Focused.Columns)
+            {
+                if (column.Location is Location.RealDirectory directory && seenPaths.Add(directory.Path))
+                {
+                    watchedPaths.Add(directory.Path);
+                }
+            }
+
+            directoryWatcher.SetWatchedPaths(watchedPaths);
         }
 
         RenderJobs(state);

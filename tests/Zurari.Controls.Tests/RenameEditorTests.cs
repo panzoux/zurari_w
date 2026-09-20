@@ -11,12 +11,16 @@ namespace Zurari.Controls.Tests;
 /// </summary>
 public class RenameEditorTests
 {
-    private static ColumnVm Column(params string[] names) =>
-        new(
-            "test",
-            [.. names.Select(n => new EntryVm(n, EntryKind.File, false, "1 KB", null))],
-            CursorIndex: 0,
-            IsFocused: true);
+    private static ColumnVm Column(params string[] names)
+    {
+        var entries = new EntryVm[names.Length];
+        for (var i = 0; i < names.Length; i++)
+        {
+            entries[i] = new EntryVm(names[i], EntryKind.File, false, "1 KB", null);
+        }
+
+        return new ColumnVm("test", entries, CursorIndex: 0, IsFocused: true);
+    }
 
     private static int CountTextBoxes(DependencyObject root)
     {

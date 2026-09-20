@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using System.Linq;
 
 namespace Zurari.Core;
 
@@ -132,7 +131,7 @@ public static class Transition
             return (state, effects);
         }
 
-        var truncated = pane.Columns.Take(childIndex).ToImmutableArray();
+        var truncated = TakeColumns(pane.Columns, childIndex);
         if (wanted is null)
         {
             return (state.WithPane(pane with { Columns = truncated }), effects);
@@ -321,7 +320,7 @@ public static class Transition
         var entry = column.Entries[entryIndex];
         if (entry.Kind is EntryKind.File or EntryKind.Header)
         {
-            var fileTruncated = pane.Columns.Take(at.Index + 1).ToImmutableArray();
+            var fileTruncated = TakeColumns(pane.Columns, at.Index + 1);
             fileTruncated = fileTruncated.SetItem(at.Index, column with { Cursor = entryIndex });
             var fileState = state.WithPane(pane with { Columns = fileTruncated, FocusedColumn = at.Index });
 
@@ -358,7 +357,7 @@ public static class Transition
                 NoEffects);
         }
 
-        var truncated = pane.Columns.Take(at.Index + 1).ToImmutableArray();
+        var truncated = TakeColumns(pane.Columns, at.Index + 1);
         truncated = truncated.SetItem(at.Index, column with { Cursor = entryIndex });
 
         var newColumnIndex = truncated.Length;
@@ -614,15 +613,27 @@ public static class Transition
     /// </summary>
     private static ImmutableArray<Entry> CarryMarks(ImmutableArray<Entry> oldEntries, ImmutableArray<Entry> newEntries)
     {
-        var markedNames = oldEntries.Where(e => e.IsMarked).Select(e => e.Name).ToHashSet(StringComparer.Ordinal);
+        var markedNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var entry in oldEntries)
+        {
+            if (entry.IsMarked)
+            {
+                markedNames.Add(entry.Name);
+            }
+        }
+
         if (markedNames.Count == 0)
         {
             return newEntries;
         }
 
-        return newEntries
-            .Select(e => markedNames.Contains(e.Name) ? e with { IsMarked = true } : e)
-            .ToImmutableArray();
+        var carried = ImmutableArray.CreateBuilder<Entry>(newEntries.Length);
+        foreach (var entry in newEntries)
+        {
+            carried.Add(markedNames.Contains(entry.Name) ? entry with { IsMarked = true } : entry);
+        }
+
+        return carried.MoveToImmutable();
     }
 
     private static AppState DirectoryLoadFailed(AppState state, ColumnRef at, Location location, string error)
@@ -697,10 +708,38 @@ public static class Transition
     /// set of search results gathered from several directories at once.
     /// </para>
     /// </remarks>
+    /// <summary>Whether any entry in <paramref name="entries"/> carries a mark.</summary>
+    private static bool AnyMarked(ImmutableArray<Entry> entries)
+    {
+        foreach (var entry in entries)
+        {
+            if (entry.IsMarked)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// The first <paramref name="length"/> columns, clamped to what <paramref name="columns"/> holds.
+    /// </summary>
+    private static ImmutableArray<Column> TakeColumns(ImmutableArray<Column> columns, int length)
+    {
+        var kept = Math.Clamp(length, 0, columns.Length);
+        return kept == columns.Length ? columns : columns.RemoveRange(kept, columns.Length - kept);
+    }
+
     private static Column WithMarkChange(Column column, ViewOptions view, Func<Entry, Entry> change)
     {
-        var updated = column.AllEntries.Select(change).ToImmutableArray();
-        return column.WithAllEntries(updated, view);
+        var updated = ImmutableArray.CreateBuilder<Entry>(column.AllEntries.Length);
+        foreach (var entry in column.AllEntries)
+        {
+            updated.Add(change(entry));
+        }
+
+        return column.WithAllEntries(updated.MoveToImmutable(), view);
     }
 
     /// <summary>
@@ -923,7 +962,7 @@ public static class Transition
 
         // Clears hidden marks too: Esc means "nothing is marked", and leaving marks alive on rows
         // the user cannot see would make them reappear the next time the view widened.
-        if (!column.AllEntries.Any(e => e.IsMarked))
+        if (!AnyMarked(column.AllEntries))
         {
             return state;
         }
@@ -1030,7 +1069,13 @@ public static class Transition
         // mean "put this here".
         if (column.Location is Location.Drives && IsPaneBackgroundOrHeader(column, targetEntryIndex))
         {
-            return (state, [.. paths.Select(p => new Effect.SetPinned(p, Pin: true))]);
+            var pins = new Effect[paths.Length];
+            for (var i = 0; i < paths.Length; i++)
+            {
+                pins[i] = new Effect.SetPinned(paths[i], Pin: true);
+            }
+
+            return (state, pins);
         }
 
         var dest = ResolveDropDest(column, targetEntryIndex);

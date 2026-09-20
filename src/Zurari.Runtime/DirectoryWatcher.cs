@@ -1,4 +1,3 @@
-using System.Linq;
 using Zurari.Core;
 
 namespace Zurari.Runtime;
@@ -65,10 +64,19 @@ public sealed class DirectoryWatcher : IDisposable
                 return;
             }
 
-            foreach (var stale in _watched.Keys.Where(k => !desired.Contains(k)).ToList())
+            var stale = new List<string>();
+            foreach (var watched in _watched.Keys)
             {
-                _watched[stale].Dispose();
-                _watched.Remove(stale);
+                if (!desired.Contains(watched))
+                {
+                    stale.Add(watched);
+                }
+            }
+
+            foreach (var path in stale)
+            {
+                _watched[path].Dispose();
+                _watched.Remove(path);
             }
 
             foreach (var path in desired)

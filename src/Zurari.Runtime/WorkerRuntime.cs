@@ -683,8 +683,11 @@ public sealed class WorkerRuntime : IDisposable
     {
         // Whatever the known folders already cover. Adding Downloads by hand is an easy thing to do
         // and would otherwise put a second, removable row beside the one that is always there.
-        var alreadyShown = new HashSet<string>(
-            favorites.Select(f => f.Name), StringComparer.OrdinalIgnoreCase);
+        var alreadyShown = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var favorite in favorites)
+        {
+            alreadyShown.Add(favorite.Name);
+        }
 
         foreach (var path in _settings.Load().PinnedPaths ?? [])
         {

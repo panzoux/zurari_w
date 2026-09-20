@@ -31,7 +31,7 @@ public static class StateProjection
         // membership check cheap instead of an O(entries * CutPending) scan.
         var cutPending = state.CutPending.IsDefaultOrEmpty
             ? null
-            : state.CutPending.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            : new HashSet<string>(state.CutPending, StringComparer.OrdinalIgnoreCase);
 
         var result = new Controls.ColumnVm[state.Focused.Columns.Length];
         for (var i = 0; i < state.Focused.Columns.Length; i++)

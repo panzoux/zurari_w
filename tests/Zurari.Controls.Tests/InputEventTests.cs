@@ -1,4 +1,3 @@
-using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -442,9 +441,10 @@ public class InputEventTests
     {
         // MouseButtonEventArgs has no public constructor overload accepting a click count
         // (WPF derives it from real click timing); tests fake it via the backing field.
-        var field = typeof(MouseButtonEventArgs)
-            .GetFields(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
-            .FirstOrDefault(f => f.Name.Contains("count", StringComparison.OrdinalIgnoreCase));
+        var field = Array.Find(
+            typeof(MouseButtonEventArgs).GetFields(
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance),
+            f => f.Name.Contains("count", StringComparison.OrdinalIgnoreCase));
         Assert.NotNull(field);
         field!.SetValue(e, clickCount);
     }
