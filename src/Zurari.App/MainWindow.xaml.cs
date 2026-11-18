@@ -71,24 +71,11 @@ public sealed partial class MainWindow : Window, IDisposable
     private readonly record struct RenderedPane(ImmutableArray<Column> Columns, int FocusedColumn, bool PaneFocused);
 
     /// <summary>
-    /// The <see cref="StateProjection.PreviewVm.Generation"/> of the image most recently decoded
-    /// into <see cref="PreviewImage"/>'s source - lets <see cref="RenderPreview"/> skip re-decoding
-    /// the same <c>BitmapImage</c> on every unrelated re-render (e.g. a job progress tick) and only
-    /// pay the decode cost when the previewed file actually changed.
-    /// </summary>
-    private int lastDecodedImageGeneration = -1;
-
-    /// <summary>
     /// How many items <see cref="TrashPlaceRow"/> last saw in the recycle bin. Only
     /// <see cref="ResolveIcon"/>'s cache key, so emptying the bin re-asks the shell for its icon.
     /// Written from a worker thread.
     /// </summary>
     private long trashItemCount;
-
-    /// <summary>The preview header's two lines, kept so a pane resize can re-fit them - see <see cref="FitPreviewHeader"/>.</summary>
-    private string? previewFileName;
-
-    private string? previewOriginalDirectory;
 
     /// <summary>
     /// How long <see cref="RunEffect"/> holds the latest <see cref="Effect.LoadPreview"/> before
@@ -165,40 +152,37 @@ public sealed partial class MainWindow : Window, IDisposable
         directoryWatcher = new DirectoryWatcher(post: PostToLoop);
         loop = new MessageLoop(AppState.Initial, RunEffect, Render);
 
-        Browser.CursorMoveRequested += (_, e) => Dispatch(ToCursorMsg(e, TopRef(e.ColumnIndex)));
-        Browser.ColumnFocusRequested += (_, e) => Dispatch(new Msg.FocusColumn(TopRef(e.ColumnIndex)));
-        Browser.EntryActivated += (_, e) => Dispatch(
+        TopPane.ColumnBrowser.CursorMoveRequested += (_, e) => Dispatch(ToCursorMsg(e, TopRef(e.ColumnIndex)));
+        TopPane.ColumnBrowser.ColumnFocusRequested += (_, e) => Dispatch(new Msg.FocusColumn(TopRef(e.ColumnIndex)));
+        TopPane.ColumnBrowser.EntryActivated += (_, e) => Dispatch(
             new Msg.EnterDirectory(TopRef(e.ColumnIndex), e.EntryIndex));
-        Browser.NavigateUpRequested += (_, e) => Dispatch(new Msg.GoToParent(TopRef(e.ColumnIndex)));
-        Browser.EntryPointerPressed += OnEntryPointerPressed;
-        Browser.EntryClicked += OnEntryClicked;
-        Browser.EntryDragRequested += OnEntryDragRequested;
-        Browser.FileDropRequested += (_, e) => Dispatch(
+        TopPane.ColumnBrowser.NavigateUpRequested += (_, e) => Dispatch(new Msg.GoToParent(TopRef(e.ColumnIndex)));
+        TopPane.ColumnBrowser.EntryPointerPressed += OnEntryPointerPressed;
+        TopPane.ColumnBrowser.EntryClicked += OnEntryClicked;
+        TopPane.ColumnBrowser.EntryDragRequested += OnEntryDragRequested;
+        TopPane.ColumnBrowser.FileDropRequested += (_, e) => Dispatch(
             new Msg.DropFiles(
                 TopRef(e.ColumnIndex), e.TargetEntryIndex, [.. e.Paths], e.ShiftHeld, e.CtrlHeld));
-        Browser.MarkRangeRequested += (_, e) => Dispatch(
+        TopPane.ColumnBrowser.MarkRangeRequested += (_, e) => Dispatch(
             new Msg.MarkRange(TopRef(e.ColumnIndex), e.FromIndex, e.ToIndex, e.Additive));
-        Browser.RubberBandStarted += OnRubberBandStarted;
-        Browser.SectionToggleRequested += (_, e) => Dispatch(
+        TopPane.ColumnBrowser.RubberBandStarted += OnRubberBandStarted;
+        TopPane.ColumnBrowser.SectionToggleRequested += (_, e) => Dispatch(
             new Msg.ToggleSection(TopRef(e.ColumnIndex), e.EntryIndex));
-        Browser.RenameSubmitted += (_, e) => Dispatch(new Msg.RenameSubmitted(e.NewName));
-        Browser.RenameCancelled += (_, _) => Dispatch(new Msg.RenameCancelled());
+        TopPane.ColumnBrowser.RenameSubmitted += (_, e) => Dispatch(new Msg.RenameSubmitted(e.NewName));
+        TopPane.ColumnBrowser.RenameCancelled += (_, _) => Dispatch(new Msg.RenameCancelled());
 
         // Restore the persisted preview-pane width (clamped: the XAML Min/star sizing keeps it
         // on-screen even if the saved value is larger than the current window).
         if (settingsStore.Load().PreviewWidth is { } previewWidth && previewWidth >= 150)
         {
-            PreviewColumn.Width = new GridLength(Math.Min(previewWidth, 2000));
+            TopPane.PreviewWidth = Math.Min(previewWidth, 2000);
         }
 
-        Closed += (_, _) =>
-        {
-            // Update, not Save: a bare Save writes the whole file, so saving just the width threw
-            // away every pinned place and collapsed section on the way out of the app.
-            settingsStore.Update(s => s with { PreviewWidth = PreviewColumn.ActualWidth });
-            Dispose();
-        };
-        Loaded += (_, _) => Browser.Focus();
+        TopPane.PreviewWidthChanged += OnPreviewWidthChanged;
+        TopPane.RetryRequested += OnPreviewRetryRequested;
+
+        Closed += (_, _) => Dispose();
+        Loaded += (_, _) => TopPane.ColumnBrowser.Focus();
 
         // The handle does not exist until here, and the shell registers against a handle.
         SourceInitialized += OnSourceInitialized;
@@ -209,9 +193,6 @@ public sealed partial class MainWindow : Window, IDisposable
         // The full name, not "zurari": that is the TUI one, and both can be open at once.
         Title = "zurari for Windows " + AppVersion();
 
-        // The header's two lines are shortened to fit, so a resize has to re-shorten them - the
-        // splitter drag is the whole reason the preview pane's width is not a constant.
-        PreviewPane.SizeChanged += (_, _) => FitPreviewHeader();
         PreviewKeyDown += OnWindowPreviewKeyDown;
         KeyDown += OnWindowKeyDown;
 
@@ -516,7 +497,17 @@ public sealed partial class MainWindow : Window, IDisposable
     }
 
     /// <summary>The link under a timed-out preview: try again, waiting longer.</summary>
-    private void OnPreviewRetryClick(object sender, RoutedEventArgs e) => Dispatch(new Msg.RetryPreview(loop.State.Panes[0].Id));
+    private void OnPreviewRetryRequested(object? sender, EventArgs e) => Dispatch(new Msg.RetryPreview(loop.State.Panes[0].Id));
+
+    /// <summary>
+    /// A preview splitter drag finished: store the width. Update, not Save: a bare Save writes the
+    /// whole file, so saving just the width threw away every pinned place and collapsed section.
+    /// </summary>
+    private void OnPreviewWidthChanged(object? sender, EventArgs e)
+    {
+        var width = ((PaneView)sender!).PreviewWidth;
+        settingsStore.Update(s => s with { PreviewWidth = width });
+    }
 
     private static Msg ToCursorMsg(CursorMoveRequestedEventArgs e, ColumnRef at)
     {
@@ -696,7 +687,7 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         var data = new DataObject(DataFormats.FileDrop, paths.ToArray());
-        var result = DragDrop.DoDragDrop(Browser, data, DragDropEffects.Copy | DragDropEffects.Move);
+        var result = DragDrop.DoDragDrop(sender as DependencyObject ?? TopPane.ColumnBrowser, data, DragDropEffects.Copy | DragDropEffects.Move);
         if (result == DragDropEffects.Move)
         {
             Dispatch(new Msg.Refresh());
@@ -793,7 +784,7 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         var cursor = focusedColumn.Cursor;
-        if (cursor < 0 || Browser.TryGetRowScreenRect(at.Index, cursor) is not { } rowRect)
+        if (cursor < 0 || TopPane.ColumnBrowser.TryGetRowScreenRect(at.Index, cursor) is not { } rowRect)
         {
             return;
         }
@@ -1156,7 +1147,7 @@ public sealed partial class MainWindow : Window, IDisposable
     {
         // Only the top pane is on screen so far; a second PaneView is a matter of rendering
         // state.Panes[1] into it the same way.
-        var watchedChanged = RenderPane(state, state.Panes[0]);
+        var watchedChanged = RenderPane(state, state.Panes[0], TopPane);
         watchedChanged |= DropGonePanes(state);
 
         // Cheap reconcile (see DirectoryWatcher.SetWatchedPaths' remarks) - only worth doing when
@@ -1169,8 +1160,8 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         RenderJobs(state);
-        RenderPreview(state, state.Panes[0]);
-        RenderRename(state, state.Panes[0]);
+        TopPane.RenderPreview(StateProjection.ProjectPreview(state, state.Panes[0]));
+        RenderRename(state, state.Panes[0], TopPane.ColumnBrowser);
 
         var statusBar = StateProjection.ProjectStatusBar(state);
         PathBarText.Text = statusBar.Path;
@@ -1182,7 +1173,7 @@ public sealed partial class MainWindow : Window, IDisposable
     /// Pushes <paramref name="pane"/>'s columns into the browser showing it, unless nothing that
     /// feeds the projection changed since last time. Returns whether it did.
     /// </summary>
-    private bool RenderPane(AppState state, Pane pane)
+    private bool RenderPane(AppState state, Pane pane, PaneView view)
     {
         // Reference comparison, not value comparison: Transition returns the very same
         // ImmutableArray<Column> instance (same underlying array) whenever a Msg does not touch the
@@ -1198,7 +1189,7 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         var projected = StateProjection.Project(state, pane, ResolveIcon, For(projectionCaches, pane.Id));
-        Browser.Columns = projected;
+        view.ColumnBrowser.Columns = projected;
 
         // What the screen was handed, as opposed to what Core holds. The two can only disagree
         // through the projection cache, and this is the line that would show it.
@@ -1351,37 +1342,6 @@ public sealed partial class MainWindow : Window, IDisposable
     }
 
     /// <summary>
-    /// Renders the preview header - the folder a deleted file came from, then its name - shortening
-    /// each from the middle to fit the pane's current width.
-    /// </summary>
-    /// <remarks>
-    /// Called both when the preview changes and when the pane is resized, so it reads its text from
-    /// <see cref="previewFileName"/>/<see cref="previewOriginalDirectory"/> rather than taking it as
-    /// an argument: a resize has no new state to project from.
-    /// </remarks>
-    private void FitPreviewHeader()
-    {
-        var width = PreviewPane.ActualWidth;
-        TextFitter.Fit(PreviewFileName, previewFileName, width, TextTrim.Middle);
-        TextFitter.Fit(PreviewOriginalPath, previewOriginalDirectory, width, TextTrim.Path);
-        PreviewOriginalPath.Visibility =
-            string.IsNullOrEmpty(previewOriginalDirectory) ? Visibility.Collapsed : Visibility.Visible;
-    }
-
-    /// <summary>
-    /// Wires <see cref="StateProjection.ProjectPreview"/> onto the preview pane's four
-    /// mutually-exclusive content views (image / text-or-hex / capacity bar / status message), toggling
-    /// visibility by <see cref="PreviewKind"/>, plus the Finder-style metadata block underneath
-    /// (<see cref="PreviewMetadataBlock"/>, shown whenever <c>vm.MetadataText</c> is non-empty -
-    /// independent of <see cref="PreviewKind"/>, since it applies to every kind alike).
-    /// <see cref="PreviewKind.Binary"/> shares the same monospace text box as
-    /// <see cref="PreviewKind.Text"/> - its <c>vm.Text</c> is already the label header plus hex
-    /// dump, composed in the projection. The only decision made here rather than in the projection
-    /// is the <c>ImageBytes</c> -&gt; <c>BitmapImage</c> decode, which is wiring (WPF-specific, not
-    /// a display-formatting choice) - cached by <see cref="lastDecodedImageGeneration"/> so it only
-    /// runs once per distinct preview, not on every unrelated re-render.
-    /// </summary>
-    /// <summary>
     /// Shows or hides the rename editor from whatever the state says, on every render.
     /// </summary>
     /// <remarks>
@@ -1389,14 +1349,14 @@ public sealed partial class MainWindow : Window, IDisposable
     /// says a row is being renamed, and goes away when it stops saying so. Nothing here decides
     /// anything - the control raises what the user did, and Core decides what that meant.
     /// </remarks>
-    private void RenderRename(AppState state, Pane pane)
+    private void RenderRename(AppState state, Pane pane, ColumnBrowser browser)
     {
         // The editor belongs to the pane the rename's column is in; any other pane shows none.
         if (state.Rename is not { } rename
             || rename.At.Pane != pane.Id
             || state.ColumnAt(rename.At) is not { } column)
         {
-            Browser.SyncRenameEditor(-1, -1, null, null);
+            browser.SyncRenameEditor(-1, -1, null, null);
             return;
         }
 
@@ -1426,125 +1386,6 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
-        Browser.SyncRenameEditor(rename.At.Index, index, column.Entries[index].Label, rename.Error);
-    }
-
-    /// <summary>
-    /// Draws how full a volume is: a summary line, a bar, and what is left.
-    /// </summary>
-    /// <remarks>
-    /// The bar is two star-sized grid columns rather than a width computed here, so it follows the
-    /// splitter without this method being told about it. The recycle bin has a size but no capacity,
-    /// so it gets the figures and no bar - a bar with nothing to be full of would be a lie.
-    /// </remarks>
-    private void RenderCapacity(StateProjection.CapacityVm capacity)
-    {
-        PreviewCapacitySummary.Text = capacity.Summary;
-
-        if (capacity.UsedFraction is { } fraction)
-        {
-            PreviewCapacityUsed.Width = new GridLength(fraction, GridUnitType.Star);
-            PreviewCapacityFree.Width = new GridLength(1 - fraction, GridUnitType.Star);
-            PreviewCapacityBar.Visibility = Visibility.Visible;
-        }
-        else
-        {
-            PreviewCapacityBar.Visibility = Visibility.Collapsed;
-        }
-
-        PreviewCapacityFreeText.Text = capacity.Free is { } free ? $"空き {free}" : string.Empty;
-        PreviewCapacityFreeText.Visibility =
-            capacity.Free is null ? Visibility.Collapsed : Visibility.Visible;
-        PreviewCapacityPanel.Visibility = Visibility.Visible;
-    }
-
-    private void RenderPreview(AppState state, Pane pane)
-    {
-        var vm = StateProjection.ProjectPreview(state, pane);
-        previewFileName = vm.FileName;
-        previewOriginalDirectory = vm.OriginalDirectory;
-        FitPreviewHeader();
-
-        PreviewMetadataBlock.Text = vm.MetadataText;
-        PreviewMetadataBlock.Visibility =
-            string.IsNullOrEmpty(vm.MetadataText) ? Visibility.Collapsed : Visibility.Visible;
-
-        PreviewImage.Visibility = Visibility.Collapsed;
-        PreviewTextBox.Visibility = Visibility.Collapsed;
-        PreviewMeta.Visibility = Visibility.Collapsed;
-        PreviewCapacityPanel.Visibility = Visibility.Collapsed;
-
-        switch (vm.Kind)
-        {
-            case PreviewKind.Image:
-                if (lastDecodedImageGeneration != vm.Generation)
-                {
-                    PreviewImage.Source = DecodeImage(vm.ImageBytes);
-                    lastDecodedImageGeneration = vm.Generation;
-                }
-
-                PreviewImage.Visibility = Visibility.Visible;
-                break;
-
-            case PreviewKind.Text:
-            case PreviewKind.Binary:
-                // Binary's vm.Text is already the label header + hex dump (see
-                // StateProjection.ProjectPreview) - the same monospace box as Text needs no
-                // special-casing to show it.
-                PreviewTextBox.Text = vm.Text ?? string.Empty;
-                PreviewTextBox.Visibility = Visibility.Visible;
-                break;
-
-            case PreviewKind.Capacity when vm.Capacity is { } capacity:
-                RenderCapacity(capacity);
-                break;
-
-            case PreviewKind.Loading:
-                PreviewMeta.Text = "読み込み中…";
-                PreviewMeta.Visibility = Visibility.Visible;
-                break;
-
-            case PreviewKind.None:
-            default:
-                if (vm.Error is not null)
-                {
-                    PreviewMeta.Text = vm.Error;
-                    PreviewMeta.Visibility = Visibility.Visible;
-                }
-
-                break;
-        }
-
-        PreviewRetryText.Text = vm.RetryLink ?? string.Empty;
-        PreviewRetry.Visibility = vm.RetryLink is null ? Visibility.Collapsed : Visibility.Visible;
-        PreviewGaveUp.Text = vm.GaveUp ?? string.Empty;
-        PreviewGaveUp.Visibility = vm.GaveUp is null ? Visibility.Collapsed : Visibility.Visible;
-    }
-
-    /// <summary>
-    /// Caps decode resolution (Phase 5 fix P1) so a huge photo cannot make the UI thread's decode
-    /// pass itself sluggish - roughly the preview pane's width; <see cref="BitmapImage.DecodePixelWidth"/>
-    /// alone (leaving <see cref="BitmapImage.DecodePixelHeight"/> at its default 0) preserves aspect
-    /// ratio automatically.
-    /// </summary>
-    private const int PreviewDecodePixelWidth = 1024;
-
-    /// <summary>
-    /// Decodes already-loaded image bytes (from <see cref="Msg.PreviewLoaded"/>, via
-    /// <see cref="Effect.LoadPreview"/> - Runtime's job, not this method's) into a frozen
-    /// <see cref="BitmapImage"/> so it is safe to hand to the UI thread's <see cref="Image"/>
-    /// control from here regardless of which thread posted the underlying <see cref="Msg"/>.
-    /// </summary>
-    private static BitmapImage DecodeImage(System.Collections.Immutable.ImmutableArray<byte> bytes)
-    {
-        using var stream = new MemoryStream([.. bytes]);
-        var image = new BitmapImage();
-        image.BeginInit();
-        image.CacheOption = BitmapCacheOption.OnLoad;
-        image.DecodePixelWidth = PreviewDecodePixelWidth;
-        image.StreamSource = stream;
-        image.EndInit();
-        image.Freeze();
-        return image;
+        browser.SyncRenameEditor(rename.At.Index, index, column.Entries[index].Label, rename.Error);
     }
 }
