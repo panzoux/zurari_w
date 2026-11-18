@@ -740,7 +740,10 @@ public static class StateProjection
         }
 
         var hidden = state.Focused.View.ShowHidden ? "隠しファイル: 表示中" : "隠しファイル";
-        return $"S 並べ替え    Ctrl+Shift+. {hidden}    Ctrl+D ピン留め";
+        var split = state.Panes.Length == 2
+            ? "Tab 切替  c/m コピー/移動  o 同期  Shift+O 入替  Ctrl+W 閉じる"
+            : "Ctrl+W 分割";
+        return $"S 並べ替え    Ctrl+Shift+. {hidden}    Ctrl+D ピン留め    {split}";
     }
 
     private static string FieldLabel(SortMode mode) => mode switch

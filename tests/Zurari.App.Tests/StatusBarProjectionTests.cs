@@ -78,6 +78,39 @@ public class StatusBarProjectionTests
     }
 
     [Fact]
+    public void With_two_panes_the_hints_list_the_split_keys()
+    {
+        var state = TwoPanes(Folder(new Entry("a.txt", EntryKind.File)), Folder(new Entry("b.txt", EntryKind.File)));
+
+        var hints = StateProjection.ProjectStatusBar(state).Hints;
+
+        Assert.Contains("Tab 切替  c/m コピー/移動  o 同期  Shift+O 入替  Ctrl+W 閉じる", hints);
+        Assert.DoesNotContain("Ctrl+W 分割", hints);
+        Assert.Contains("S 並べ替え", hints);
+    }
+
+    [Fact]
+    public void With_one_pane_the_hints_offer_splitting()
+    {
+        var hints = StateProjection.ProjectStatusBar(StateWith(Folder(new Entry("a.txt", EntryKind.File)))).Hints;
+
+        Assert.Contains("Ctrl+W 分割", hints);
+        Assert.DoesNotContain("Tab 切替", hints);
+    }
+
+    /// <summary>Sort mode and rename each have their own hints; the split's keys do not apply there.</summary>
+    [Fact]
+    public void Sort_mode_hints_do_not_mention_the_split()
+    {
+        var state = TwoPanes(Folder(new Entry("a.txt", EntryKind.File)), Folder(new Entry("b.txt", EntryKind.File))) with
+        {
+            InputMode = InputMode.Sort,
+        };
+
+        Assert.DoesNotContain("Ctrl+W", StateProjection.ProjectStatusBar(state).Hints);
+    }
+
+    [Fact]
     public void The_path_bar_shows_the_focused_bottom_panes_path()
     {
         var top = Folder(new Entry("t.txt", EntryKind.File));
