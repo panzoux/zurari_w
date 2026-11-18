@@ -48,12 +48,20 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
   `pwsh`, never `powershell` (5.1 mangles the Japanese in `plan/*.md`, see a932bab).
 - The pre-commit hook runs `check.ps1`. **Never `--no-verify`.** If it fails, fix the cause.
 - `dotnet format Zurari.sln` before committing if check.ps1 reports formatting.
-- Commit messages end with `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`.
+- Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - After each commit, set the task's Status row to `[x]` with `(this commit)` in the commit cell in the
   *next* commit, or run `pwsh scripts/status.ps1` after committing the row.
 - `plan/*.md` are CRLF. Edit them without converting line endings.
 - A new `Msg` must be added to `GenMsg` in `tests/Zurari.Core.Tests/TransitionTests.cs` (project rule).
 - Do not leave the shell's cwd in `artifacts/testresults` when committing (check.ps1 deletes it).
+
+> **No LINQ (added 2026-09-20, commit `d142ce2`).** `build/no-linq/BannedSymbols.txt` applies to
+> `src/` and `tests/` alike, and `ImplicitUsings` means `System.Linq` is in scope without a `using` -
+> only the analyzer stops it. Use explicit loops and the non-LINQ BCL (`List.Find/FindAll/Exists/
+> ConvertAll`, `Array.Find/Sort`, `ImmutableArray.CreateBuilder`). In tests, pick effects with
+> `TestEffects.Of<Effect.X>(effects)` (`tests/TestSupport/EffectPicks.cs`), which returns a `List<T>`
+> - so `Assert.Single(...)`, `.Count` and `Assert.Empty(...)` all work on it. The snippets below
+> follow this; if you spot a stray `Where`/`Select`/`Any`/`OfType` in a later task, rewrite it.
 
 ## Decisions made while planning (not in the design; recorded here)
 
@@ -546,7 +554,7 @@ Append to `tests/Zurari.Core.Tests/PaneTests.cs`:
 
         var (_, effects) = Transition.Apply(state, new Msg.EnterDirectory(state.Focused.Ref(0), 0));
 
-        var read = Assert.Single(effects.OfType<Effect.ReadDirectory>());
+        var read = Assert.Single(TestEffects.Of<Effect.ReadDirectory>(effects));
         Assert.Equal(state.Focused.Ref(1), read.At);
     }
 ```
@@ -808,7 +816,7 @@ Append to `PaneTests.cs`:
 
         var (next, effects) = Transition.Apply(state, new Msg.CursorDown(new ColumnRef(new PaneId(1), 0)));
 
-        var load = Assert.Single(effects.OfType<Effect.LoadPreview>());
+        var load = Assert.Single(TestEffects.Of<Effect.LoadPreview>(effects));
         Assert.Equal(new PaneId(1), load.Pane);
         Assert.Equal(@"C:\b\q.txt", load.Path);
         Assert.Equal(state.Panes[0].Preview, next.Panes[0].Preview);
@@ -1056,7 +1064,8 @@ In `Any_msg_sequence_yields_valid_state_and_effects`, replace the single generat
                 }
 ```
 
-- [ ] **Step 3: Three example tests the 7a.3 review asked for** (in `PaneTests.cs`)
+- [ ] **Step 3: Three example tests the 7a.3 review asked for** (in `PaneTests.cs`; `TwoPanes` and `Dir`
+  are that file's existing helpers)
 
 ```csharp
     [Fact]
@@ -1064,7 +1073,7 @@ In `Any_msg_sequence_yields_valid_state_and_effects`, replace the single generat
     {
         // Both panes count generations from their own start, so the same number means two different
         // files. An implementation that checked only the generation would pass the earlier tests.
-        var state = TwoPanes(Files(@"C:\a", "x.txt"), Files(@"C:\b", "p.txt"));
+        var state = TwoPanes(Dir(@"C:\a", "x.txt"), Dir(@"C:\b", "p.txt"));
         var (loadedA, _) = Transition.Apply(state, new Msg.CursorTo(new ColumnRef(new PaneId(0), 0), 0));
         var (both, _) = Transition.Apply(loadedA, new Msg.CursorTo(new ColumnRef(new PaneId(1), 0), 0));
         Assert.Equal(both.Panes[0].Preview.Generation, both.Panes[1].Preview.Generation);
@@ -1079,13 +1088,13 @@ In `Any_msg_sequence_yields_valid_state_and_effects`, replace the single generat
     [Fact]
     public void Leaving_a_file_cancels_that_panes_preview_and_names_the_pane()
     {
-        var state = TwoPanes(Files(@"C:\a", "x.txt"), Files(@"C:\b", "p.txt", "q"));
+        var state = TwoPanes(Dir(@"C:\a", "x.txt"), Dir(@"C:\b", "p.txt", "q"));
         var (loading, _) = Transition.Apply(state, new Msg.CursorTo(new ColumnRef(new PaneId(1), 0), 0));
         var generation = loading.Panes[1].Preview.Generation;
 
         var (_, effects) = Transition.Apply(loading, new Msg.CursorTo(new ColumnRef(new PaneId(1), 0), 1));
 
-        var cancelled = Assert.Single(effects.OfType<Effect.CancelPreview>());
+        var cancelled = Assert.Single(TestEffects.Of<Effect.CancelPreview>(effects));
         Assert.Equal(new PaneId(1), cancelled.Pane);
         Assert.Equal(generation, cancelled.Generation);
     }
@@ -1093,13 +1102,13 @@ In `Any_msg_sequence_yields_valid_state_and_effects`, replace the single generat
     [Fact]
     public void Refreshing_both_panes_leaves_both_previews_alone()
     {
-        var state = TwoPanes(Files(@"C:\a", "x.txt"), Files(@"C:\b", "p.txt"));
+        var state = TwoPanes(Dir(@"C:\a", "x.txt"), Dir(@"C:\b", "p.txt"));
 
         var (next, effects) = Transition.Apply(state, new Msg.Refresh());
 
-        Assert.Equal(2, effects.OfType<Effect.ReadDirectory>().Count());
-        Assert.Empty(effects.OfType<Effect.LoadPreview>());
-        Assert.Empty(effects.OfType<Effect.CancelPreview>());
+        Assert.Equal(2, TestEffects.Of<Effect.ReadDirectory>(effects).Count);
+        Assert.Empty(TestEffects.Of<Effect.LoadPreview>(effects));
+        Assert.Empty(TestEffects.Of<Effect.CancelPreview>(effects));
         Assert.Equal(state.Panes[0].Preview, next.Panes[0].Preview);
         Assert.Equal(state.Panes[1].Preview, next.Panes[1].Preview);
     }
@@ -1153,9 +1162,20 @@ namespace Zurari.Core.Tests;
 
 public class SplitTests
 {
-    private static Column Files(string path, params string[] names) =>
-        new(new Location.RealDirectory(path), [.. names.Select(n => new Entry(n, EntryKind.File))],
-            Cursor: names.Length > 0 ? 0 : -1, Load: LoadState.Loaded);
+    private static Column Files(string path, params string[] names)
+    {
+        var entries = ImmutableArray.CreateBuilder<Entry>(names.Length);
+        foreach (var name in names)
+        {
+            entries.Add(new Entry(name, EntryKind.File));
+        }
+
+        return new Column(
+            new Location.RealDirectory(path),
+            entries.MoveToImmutable(),
+            Cursor: names.Length > 0 ? 0 : -1,
+            Load: LoadState.Loaded);
+    }
 
     private static AppState Browsing() =>
         AppState.SinglePane([Files(@"C:\a", "x.txt", "y.txt")]);
@@ -1173,7 +1193,7 @@ public class SplitTests
         Assert.Equal(2, next.NextPaneId);
         Assert.Equal(new Location.RealDirectory(@"C:\a"), next.Panes[1].Columns[0].Location);
         Assert.Equal(LoadState.Loading, next.Panes[1].Columns[0].Load);
-        var read = Assert.Single(effects.OfType<Effect.ReadDirectory>());
+        var read = Assert.Single(TestEffects.Of<Effect.ReadDirectory>(effects));
         Assert.Equal(new ColumnRef(new PaneId(1), 0), read.At);
         Assert.Empty(next.CheckInvariants());
     }
@@ -1382,7 +1402,7 @@ git commit -m "Split into two panes and move focus between them"
         Assert.Equal(new Location.RealDirectory(@"C:\b"), next.Panes[0].Columns[0].Location);
         Assert.Equal("q", next.Panes[0].Columns[0].CursorName);
         Assert.Equal(new PaneId(0), next.Panes[0].Id);
-        Assert.Empty(effects.OfType<Effect.ReadDirectory>());
+        Assert.Empty(TestEffects.Of<Effect.ReadDirectory>(effects));
     }
 
     [Fact]
@@ -1487,7 +1507,7 @@ is `PasteRequested`.
 
         var (next, effects) = Transition.Apply(state, new Msg.CopyToOtherPane(IsMove: false));
 
-        var job = Assert.Single(effects.OfType<Effect.RunFileJob>());
+        var job = Assert.Single(TestEffects.Of<Effect.RunFileJob>(effects));
         Assert.Equal(@"D:\dst\sub", job.DestDir);
         Assert.Equal([@"C:\src\f.txt"], job.Sources);
         Assert.Equal(JobKind.Copy, job.Kind);
@@ -1501,7 +1521,7 @@ is `PasteRequested`.
 
         var (_, effects) = Transition.Apply(state, new Msg.CopyToOtherPane(IsMove: true));
 
-        var job = Assert.Single(effects.OfType<Effect.RunFileJob>());
+        var job = Assert.Single(TestEffects.Of<Effect.RunFileJob>(effects));
         Assert.Equal(@"D:\dst", job.DestDir);
         Assert.Equal(JobKind.Move, job.Kind);
     }
@@ -1517,7 +1537,7 @@ is `PasteRequested`.
 
         var (_, effects) = Transition.Apply(state, new Msg.CopyToOtherPane(IsMove: false));
 
-        Assert.Equal([@"C:\src\sub"], Assert.Single(effects.OfType<Effect.RunFileJob>()).Sources);
+        Assert.Equal([@"C:\src\sub"], Assert.Single(TestEffects.Of<Effect.RunFileJob>(effects)).Sources);
     }
 
     [Fact]
@@ -1552,7 +1572,7 @@ is `PasteRequested`.
 
         var (next, effects) = Transition.Apply(state, new Msg.CopyToOtherPane(IsMove: true));
 
-        Assert.Empty(effects.OfType<Effect.RunFileJob>());
+        Assert.Empty(TestEffects.Of<Effect.RunFileJob>(effects));
         Assert.NotNull(next.Notice);
     }
 ```
@@ -1618,14 +1638,19 @@ Find how `PasteRequested`'s handler collects nothing itself (it receives `Source
     /// <summary>The marked entries' paths, or the cursor entry's when nothing is marked. Headers and drives never.</summary>
     private static ImmutableArray<string> OperationTargets(Column column)
     {
-        var marked = column.Entries
-            .Where(e => e.IsMarked && e.Kind is EntryKind.File or EntryKind.Directory)
-            .Select(e => EntryPath(column, e))
-            .OfType<string>()
-            .ToImmutableArray();
-        if (!marked.IsEmpty)
+        var marked = ImmutableArray.CreateBuilder<string>();
+        foreach (var entry in column.Entries)
         {
-            return marked;
+            if (entry.IsMarked && entry.Kind is EntryKind.File or EntryKind.Directory
+                && EntryPath(column, entry) is { } markedPath)
+            {
+                marked.Add(markedPath);
+            }
+        }
+
+        if (marked.Count > 0)
+        {
+            return marked.ToImmutable();
         }
 
         return column.Cursor >= 0 && column.Cursor < column.Entries.Length
@@ -1761,7 +1786,7 @@ Found by the 7a.2 code review; each is invisible with one pane and wrong with tw
         var (_, effects) = Transition.Apply(
             state, new Msg.ShellOpCompleted(closedPane, new Location.RealDirectory(@"D:\dst"), [@"C:\src"]));
 
-        var read = Assert.Single(effects.OfType<Effect.ReadDirectory>());
+        var read = Assert.Single(TestEffects.Of<Effect.ReadDirectory>(effects));
         Assert.Equal(new ColumnRef(new PaneId(0), 0), read.At);
     }
 
@@ -1855,15 +1880,15 @@ so a single "highest generation" would drop the second pane's first preview as s
         runtime.Submit(new Effect.LoadPreview(new PaneId(0), 5, a));
         runtime.Submit(new Effect.LoadPreview(new PaneId(1), 1, b));
 
-        var loaded = WaitFor(posted, TimeSpan.FromSeconds(5), q => q.OfType<Msg.PreviewLoaded>().Count() >= 2)
-            .OfType<Msg.PreviewLoaded>().ToList();
+        var loaded = PreviewsIn(WaitFor(posted, TimeSpan.FromSeconds(5), seen => PreviewsIn(seen).Count >= 2));
         Assert.Contains(loaded, m => m.Pane == new PaneId(0) && m.Text == "alpha");
         Assert.Contains(loaded, m => m.Pane == new PaneId(1) && m.Text == "bravo");
         TempDirectory.Delete(dir);
     }
 ```
 
-If `WorkerRuntimeTests` has no `WaitFor`, add:
+If `WorkerRuntimeTests` has no `WaitFor`, add it and the `PreviewsIn` picker beside it. Both are
+explicit loops because LINQ is banned; `new List<Msg>(queue)` is `ConcurrentQueue`'s own snapshot.
 
 ```csharp
     private static List<Msg> WaitFor(ConcurrentQueue<Msg> queue, TimeSpan timeout, Func<List<Msg>, bool> done)
@@ -1871,7 +1896,7 @@ If `WorkerRuntimeTests` has no `WaitFor`, add:
         var deadline = DateTime.UtcNow + timeout;
         while (DateTime.UtcNow < deadline)
         {
-            var seen = queue.ToList();
+            var seen = new List<Msg>(queue);
             if (done(seen))
             {
                 return seen;
@@ -1880,7 +1905,21 @@ If `WorkerRuntimeTests` has no `WaitFor`, add:
             Thread.Sleep(10);
         }
 
-        return queue.ToList();
+        return new List<Msg>(queue);
+    }
+
+    private static List<Msg.PreviewLoaded> PreviewsIn(List<Msg> msgs)
+    {
+        var loaded = new List<Msg.PreviewLoaded>();
+        foreach (var msg in msgs)
+        {
+            if (msg is Msg.PreviewLoaded preview)
+            {
+                loaded.Add(preview);
+            }
+        }
+
+        return loaded;
     }
 ```
 
@@ -2278,7 +2317,7 @@ git commit -m "Show two panes: Ctrl+W, Tab, click to focus, o, Shift+O, c and m"
 
         var (_, effects) = Transition.Apply(split, new Msg.ToggleHiddenFiles());
 
-        var saved = Assert.Single(effects.OfType<Effect.SetPaneViews>());
+        var saved = Assert.Single(TestEffects.Of<Effect.SetPaneViews>(effects));
         Assert.Equal(2, saved.TopFirst.Length);
         Assert.True(saved.TopFirst[0].ShowHidden);
         Assert.False(saved.TopFirst[1].ShowHidden);
@@ -2292,7 +2331,7 @@ git commit -m "Show two panes: Ctrl+W, Tab, click to focus, o, Shift+O, c and m"
 
         var (_, effects) = Transition.Apply(hidden, new Msg.SwapPanes());
 
-        var saved = Assert.Single(effects.OfType<Effect.SetPaneViews>());
+        var saved = Assert.Single(TestEffects.Of<Effect.SetPaneViews>(effects));
         Assert.False(saved.TopFirst[0].ShowHidden);
         Assert.True(saved.TopFirst[1].ShowHidden);
     }
@@ -2344,7 +2383,8 @@ Replace `Effect.SetViewOptions` with:
     public sealed record SetPaneViews(ImmutableArray<ViewOptions> TopFirst) : Effect;
 ```
 
-In Transition add `private static Effect.SetPaneViews PaneViews(AppState s) => new([.. s.Panes.Select(p => p.View)]);`.
+In Transition add a `PaneViews(AppState)` helper that builds the array with an explicit loop over
+`state.Panes` (`ImmutableArray.CreateBuilder<ViewOptions>`); `Select` is banned solution-wide.
 `Rederive(..., remember: true)` emits `PaneViews(next)`; `SwapPanes` and `ToggleSplit` emit
 `PaneViews(next)` too (so their handler return types become `(AppState, IReadOnlyList<Effect>)`).
 `EffectRouting`: `Effect.SetPaneViews => EffectTarget.Runtime` (remove `SetViewOptions`).
@@ -2510,7 +2550,8 @@ public class SplitE2ETests
             loop.Dispatch(new Msg.Refresh());
             DrainUntil(
                 loop, queue,
-                () => loop.State.Panes.All(p => p.Columns[0].Load == LoadState.Loaded)
+                () => loop.State.Panes[0].Columns[0].Load == LoadState.Loaded
+                    && loop.State.Panes[1].Columns[0].Load == LoadState.Loaded
                     && loop.State.Panes[0].Columns[0].CursorName == "hello.txt",
                 TimeSpan.FromSeconds(10));
 
@@ -2518,7 +2559,7 @@ public class SplitE2ETests
 
             DrainUntil(
                 loop, queue,
-                () => loop.State.Panes[1].Columns[0].Entries.Any(e => e.Name == "hello.txt"),
+                () => HasEntry(loop.State.Panes[1].Columns[0], "hello.txt"),
                 TimeSpan.FromSeconds(15));
             Assert.True(File.Exists(Path.Combine(source, "hello.txt")), "a copy leaves the source in place");
         }
@@ -2529,6 +2570,20 @@ public class SplitE2ETests
             TempDirectory.Delete(source);
             TempDirectory.Delete(dest);
         }
+    }
+
+    /// <summary>Whether <paramref name="column"/> lists an entry called <paramref name="name"/>. A loop: LINQ is banned.</summary>
+    private static bool HasEntry(Column column, string name)
+    {
+        foreach (var entry in column.Entries)
+        {
+            if (entry.Name == name)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
 ```
