@@ -357,4 +357,85 @@ public class SplitTests
         Assert.Same(state, next);
         Assert.Empty(effects);
     }
+
+    private static Column Mixed(string path, int cursor) => new(
+        new Location.RealDirectory(path),
+        [new Entry("sub", EntryKind.Directory), new Entry("f.txt", EntryKind.File)],
+        Cursor: cursor, Load: LoadState.Loaded);
+
+    [Fact]
+    public void Copies_the_cursor_entry_into_the_folder_under_the_other_cursor()
+    {
+        var state = SplitWith(Mixed(@"C:\src", cursor: 1), Mixed(@"D:\dst", cursor: 0));
+
+        var (next, effects) = Transition.Apply(state, new Msg.CopyToOtherPane(IsMove: false));
+
+        var job = Assert.Single(TestEffects.Of<Effect.RunFileJob>(effects));
+        Assert.Equal(@"D:\dst\sub", job.DestDir);
+        Assert.Equal([@"C:\src\f.txt"], job.Sources);
+        Assert.Equal(JobKind.Copy, job.Kind);
+        Assert.Single(next.Jobs);
+    }
+
+    [Fact]
+    public void Uses_the_other_columns_own_location_when_its_cursor_is_on_a_file()
+    {
+        var state = SplitWith(Mixed(@"C:\src", cursor: 1), Mixed(@"D:\dst", cursor: 1));
+
+        var (_, effects) = Transition.Apply(state, new Msg.CopyToOtherPane(IsMove: true));
+
+        var job = Assert.Single(TestEffects.Of<Effect.RunFileJob>(effects));
+        Assert.Equal(@"D:\dst", job.DestDir);
+        Assert.Equal(JobKind.Move, job.Kind);
+    }
+
+    [Fact]
+    public void Marked_entries_are_copied_instead_of_the_cursor_entry()
+    {
+        var source = Mixed(@"C:\src", cursor: 1);
+        source = source.WithAllEntries(
+            [new Entry("sub", EntryKind.Directory, IsMarked: true), new Entry("f.txt", EntryKind.File)],
+            ViewOptions.Default);
+        var state = SplitWith(source, Mixed(@"D:\dst", cursor: 1));
+
+        var (_, effects) = Transition.Apply(state, new Msg.CopyToOtherPane(IsMove: false));
+
+        Assert.Equal([@"C:\src\sub"], Assert.Single(TestEffects.Of<Effect.RunFileJob>(effects)).Sources);
+    }
+
+    [Fact]
+    public void Refuses_with_a_notice_when_not_split()
+    {
+        var (next, effects) = Transition.Apply(Browsing(), new Msg.CopyToOtherPane(IsMove: false));
+
+        Assert.Empty(effects);
+        Assert.NotNull(next.Notice);
+    }
+
+    [Fact]
+    public void Refuses_the_drive_list_as_a_destination()
+    {
+        // With the cursor on a drive row the folder under it (the drive) is a fine destination; an
+        // empty drive list leaves only the drive list itself, which is not a directory.
+        var emptyDrives = new Column(Location.Drives.Instance, [], Cursor: -1, Load: LoadState.Loaded);
+        var state = SplitWith(Mixed(@"C:\src", cursor: 1), emptyDrives);
+
+        var (next, effects) = Transition.Apply(state, new Msg.CopyToOtherPane(IsMove: false));
+
+        Assert.Empty(effects);
+        Assert.NotNull(next.Notice);
+    }
+
+    [Fact]
+    public void Refuses_copying_a_folder_into_itself()
+    {
+        var source = Mixed(@"C:\src", cursor: 0);                  // cursor on C:\src\sub
+        var inside = Mixed(@"C:\src\sub", cursor: 1);               // other pane is inside it
+        var state = SplitWith(source, inside);
+
+        var (next, effects) = Transition.Apply(state, new Msg.CopyToOtherPane(IsMove: true));
+
+        Assert.Empty(TestEffects.Of<Effect.RunFileJob>(effects));
+        Assert.NotNull(next.Notice);
+    }
 }

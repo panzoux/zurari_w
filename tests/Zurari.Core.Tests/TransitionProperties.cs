@@ -188,7 +188,8 @@ public class TransitionProperties
         Gen.Const<Msg>(new Msg.ToggleSplit()),
         GenPaneId.Select(p => (Msg)new Msg.FocusPane(p)),
         Gen.Const<Msg>(new Msg.SwapPanes()),
-        Gen.Const<Msg>(new Msg.SyncToOtherPane()));
+        Gen.Const<Msg>(new Msg.SyncToOtherPane()),
+        GenIsMove.Select(m => (Msg)new Msg.CopyToOtherPane(m)));
 
     [Fact]
     public void Any_msg_sequence_yields_valid_state_and_effects()

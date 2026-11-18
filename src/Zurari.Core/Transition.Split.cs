@@ -78,6 +78,98 @@ public static partial class Transition
         return (synced with { Rename = null, InputMode = InputMode.Normal }, effects);
     }
 
+    private static (AppState, IReadOnlyList<Effect>) CopyToOtherPane(AppState state, bool isMove)
+    {
+        if (state.Panes.Length != 2)
+        {
+            return (state with { Notice = "分割していません (Ctrl+W で分割)" }, NoEffects);
+        }
+
+        var mine = state.Focused;
+        if (mine.FocusedColumnOrNull is not { } column)
+        {
+            return (state, NoEffects);
+        }
+
+        var sources = OperationTargets(column);
+        if (sources.IsEmpty)
+        {
+            return (state, NoEffects);
+        }
+
+        var other = state.Panes[1 - state.FocusedPane];
+        if (DirectoryUnderCursor(other) is not { } dest)
+        {
+            return (state with { Notice = "ドライブ一覧にはコピー・移動できません" }, NoEffects);
+        }
+
+        foreach (var source in sources)
+        {
+            if (IsSameOrInside(dest, source))
+            {
+                return (state with { Notice = "フォルダーをそれ自身の中へコピー・移動することはできません" }, NoEffects);
+            }
+        }
+
+        return PasteRequested(state, mine.FocusedRef, sources, isMove, destOverride: dest);
+    }
+
+    /// <summary>The marked entries' paths, or the cursor entry's when nothing is marked. Headers and drives never.</summary>
+    private static ImmutableArray<string> OperationTargets(Column column)
+    {
+        var marked = ImmutableArray.CreateBuilder<string>();
+        foreach (var entry in column.Entries)
+        {
+            if (entry.IsMarked && entry.Kind is EntryKind.File or EntryKind.Directory
+                && EntryPath(column, entry) is { } markedPath)
+            {
+                marked.Add(markedPath);
+            }
+        }
+
+        if (marked.Count > 0)
+        {
+            return marked.ToImmutable();
+        }
+
+        return column.Cursor >= 0 && column.Cursor < column.Entries.Length
+            && column.Entries[column.Cursor] is { Kind: EntryKind.File or EntryKind.Directory } cursorEntry
+            && EntryPath(column, cursorEntry) is { } path
+                ? [path]
+                : [];
+    }
+
+    /// <summary>
+    /// zrr's ResolvePaneDirectory: the folder under <paramref name="pane"/>'s cursor, else its focused
+    /// column's own location. <c>null</c> when that is not a real directory (the drive list).
+    /// </summary>
+    /// <remarks>
+    /// Not simply the column's location: the path bar shows the folder under the cursor, and zrr
+    /// shipped a bug where copying went one level above what the screen said.
+    /// </remarks>
+    private static string? DirectoryUnderCursor(Pane pane)
+    {
+        if (pane.FocusedColumnOrNull is not { } column)
+        {
+            return null;
+        }
+
+        if (ChildOfCursor(column) is { FilesystemPath: { } child })
+        {
+            return child;
+        }
+
+        return column.Location.FilesystemPath;
+    }
+
+    private static bool IsSameOrInside(string dest, string source)
+    {
+        var d = PathComparisonKey(dest);
+        var s = PathComparisonKey(source);
+        return string.Equals(d, s, StringComparison.OrdinalIgnoreCase)
+            || d.StartsWith(s + "\\", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static ImmutableArray<Entry> WithoutMarks(ImmutableArray<Entry> entries)
     {
         var cleared = ImmutableArray.CreateBuilder<Entry>(entries.Length);

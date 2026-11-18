@@ -250,6 +250,7 @@ public static partial class Transition
             Msg.FocusPane m => (FocusPane(state, m.Pane), NoEffects),
             Msg.SwapPanes => (SwapPanes(state), NoEffects),
             Msg.SyncToOtherPane => SyncToOtherPane(state),
+            Msg.CopyToOtherPane m => CopyToOtherPane(state, m.IsMove),
             _ => (state, NoEffects),
         };
     }
@@ -1282,14 +1283,14 @@ public static partial class Transition
     }
 
     private static (AppState, IReadOnlyList<Effect>) PasteRequested(
-        AppState state, ColumnRef at, ImmutableArray<string> sources, bool isMove)
+        AppState state, ColumnRef at, ImmutableArray<string> sources, bool isMove, string? destOverride = null)
     {
         if (state.ColumnAt(at) is not { } column)
         {
             return (state, NoEffects);
         }
 
-        if (column.Location.FilesystemPath is not { } destDir || sources.IsDefaultOrEmpty)
+        if ((destOverride ?? column.Location.FilesystemPath) is not { } destDir || sources.IsDefaultOrEmpty)
         {
             return (state, NoEffects);
         }

@@ -360,6 +360,16 @@ public abstract record Msg
     public sealed record SyncToOtherPane : Msg;
 
     /// <summary>
+    /// <c>c</c> / <c>m</c>. Copies (or moves, when <paramref name="IsMove"/>) the focused column's
+    /// marked entries - or, with none marked, the entry under its cursor - into the other pane's
+    /// "directory under the cursor": the folder the other cursor is on, else that column's own
+    /// location. Refused with a notice when there is no second pane, when that directory is the
+    /// drive list, or when it is one of the sources or inside one. Otherwise exactly
+    /// <see cref="PasteRequested"/>.
+    /// </summary>
+    public sealed record CopyToOtherPane(bool IsMove) : Msg;
+
+    /// <summary>
     /// Collapse or expand the section headed by <paramref name="EntryIndex"/>, from the mouse rather
     /// than the cursor. Ignored unless that row is a header with a section to toggle.
     /// </summary>
