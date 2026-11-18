@@ -1,10 +1,12 @@
 ---
 id: 10
 title: '7a.10 App: ペイン単位の投影、PaneView抽出'
-status: in-progress
+status: done
 priority: high
 created: 2026-09-19T20:04:40.9882945+09:00
-updated: 2026-11-19T04:56:10.9663264+09:00
+updated: 2026-11-19T05:34:00.4406781+09:00
+started: 2026-11-19T05:34:00.4427427+09:00
+completed: 2026-11-19T05:34:00.4427427+09:00
 tags:
     - phase7a
 depends_on:

@@ -15,7 +15,7 @@
 
 # Status
 
-955 tests, `scripts/check.ps1` green.
+967 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`; do not edit it by hand. Write `(this commit)`
 in a row's commit cell (no backticks) and `status.ps1` fills in the hash after the commit lands.</sub>
@@ -34,7 +34,7 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
 | 7a.8 | `CopyToOtherPane` (`c` / `m`) | `[x]` | `60fc9f5` `4a8c14a` |
 | 7a.8b | Two-pane correctness follow-ups (from the 7a.2-7a.7 reviews): scoped reveal, `ShellOpCompleted` rereads, sections in every drive pane, rename pinned to its folder | `[x]` | `f15b1dc` `2a42b22` `3a8d0a1` `f0b6278` `e8bc06c` |
 | 7a.9 | Runtime: one preview slot per pane | `[x]` | `479a15e` `53cbc2b` `d4350ce` |
-| 7a.10 | App: coalescing gates and projection cache per pane; `PaneView` extracted (still one row) | `[ ]` | |
+| 7a.10 | App: coalescing gates and projection cache per pane; `PaneView` extracted (still one row) | `[x]` | `04307fa` `c6301eb` `efab33d` `15c75f1` `719623c` `bc437a5` |
 | 7a.11 | App: second row, splitter, focus routing, dimming, keys | `[ ]` | |
 | 7a.12 | Persistence: split open/ratio, per-position view options | `[ ]` | |
 | 7a.13 | Headless E2E: split, copy top → bottom | `[ ]` | |
@@ -2485,6 +2485,45 @@ which pane it describes.
 `RetryRequested` from row `r` → `Dispatch(new Msg.RetryPreview(PaneInRow(r)))`.
 `PreviewWidthChanged` from either → set the other's `PreviewWidth` to match and save (decision 8).
 
+- [ ] **Step 4b: A row is not a pane (7a.10 review - required before anything else here works)**
+
+After 7a.10 the render guard (`lastRendered`) and `PaneView`'s image-decode cache are keyed by
+`PaneId`, but what changes on screen is the *row*. `SwapPanes` moves pane 1 into row 0 with its
+`Columns` reference unchanged, so row 0's guard sees "pane 1, unchanged" and never redraws - it keeps
+showing pane 0. Closing the split with the bottom pane focused moves pane 1 into row 0 the same way.
+And `Preview.Generation` is per pane, so after a swap the decode cache can skip decoding and show the
+old pane's image under the new pane's file name.
+
+- Key the render guard by row (or keep it on the `PaneView`) and include the `PaneId` in the key
+  (`StateProjection.RenderKey`, introduced in the 7a.10 follow-up, gains `PaneId`).
+- `PaneView.RenderPreview` takes the pane id; reset `lastDecodedImageGeneration` when it changes (or
+  key the cache on `(PaneId, Generation)`).
+- Apply the restored `PreviewWidth` to *both* rows at startup (the constructor only sets the top).
+  Mirror width changes *from the sender*, never from a collapsed row (whose `ActualWidth` is 0).
+  Consider `EventHandler<double>` for `PreviewWidthChanged` so no cast is needed.
+- The drag fallback source (`sender ?? TopPane.ColumnBrowser`) uses the sender's row.
+- Wire both rows through one `WirePane(PaneView view, int row)` method instead of duplicating the
+  thirteen subscriptions.
+- One debounce timer per pane, not one shared per effect kind: with a shared timer, steady cursor
+  movement in pane A restarts it and pane B's held preview or speculative read (from a job reread, a
+  watcher event, F5) is delayed for as long as A stays busy. Fold `PendingEffectGate` and a
+  `DispatcherTimer` into a small `DebouncedGate<T>` kept in `Dictionary<PaneId, ...>`; stop its timer
+  in `DropGonePanes`.
+
+Make the decisions testable while moving them (7a.10 review): `StateProjection.ProjectRename(state,
+pane)` returning shown / hidden / stale (pane ownership, moved location, missing row), and
+`StateProjection.WatchedPaths(state)` (all panes, de-duplicated, virtual locations excluded), each
+with tests. Move `ShellSelection` into Core as `Column.ShellSelection()` next to `PathsToActOn`,
+with remarks pointing at each other, and a test that pins the intended difference (a recycle-bin
+column with two marked rows: `ShellSelection` 2, `PathsToActOn` 0); also include the bin row in the
+drive list, which `PathOf` misses (use the shell parsing name as `ResolveShellName` does).
+`MainWindow.xaml.cs` is ~1450 lines and this task adds row wiring: extract the debounce gates and,
+if it stays readable, the job-strip reconcile and the clipboard copy/paste into their own files.
+
+Manual check for this step: open the split, browse different folders in each row, Shift+O swap -
+both rows redraw with each other's content and previews; focus the bottom, Ctrl+W - the top row now
+shows what the bottom had.
+
 - [ ] **Step 5: Status-bar hints**
 
 Where 6e.7's context hints are built (`StateProjection.ProjectStatusBar`), when
@@ -2629,6 +2668,12 @@ and these members on the record:
         return this with { PaneViews = merged };
     }
 ```
+
+**Preview width in state? (7a.10 review, optional).** Decision 8 shares one preview width; it is
+saved from the UI thread on `DragCompleted` (with a lock since the 7a.10 follow-up). Putting the
+width in `AppState` would make mirroring a projection and saving an effect like `SetPaneViews`,
+and take file I/O off the UI thread. Do it here if 7a.11's mirroring turned out awkward;
+otherwise leave it.
 
 **Collapsed-section restore (7a.8b review).** Since 7a.8b every drive list in every pane shares one
 collapsed set (an invariant), so `CollapsedGroupsRestored`'s `At` only gates the restore: if that one
@@ -2822,6 +2867,24 @@ git commit -m "E2E: copy from the top pane lands in the bottom pane's directory"
   7. Drag the pane splitter; restart: split, ratio and both panes' sort/hidden settings are restored; both start at the drive list.
   8. Drag a file from one pane to the other (existing shell DnD) copies/moves it.
   9. Single-pane use is unchanged from before 7a.
+  10. Single pane, checks collected from 7a.10 (PaneView extraction; only smoke-launched by the agents):
+      - Previews: a text file, an image, a drive's capacity, the recycle bin (figures, no bar).
+      - A deleted file in the bin: its header lines are shortened from the middle and re-fit when the
+        preview splitter moves.
+      - The retry link under a timed-out video preview retries.
+      - Drag the preview splitter, then press arrow keys: the cursor still moves (the splitter must
+        not take focus). Restart: the width is kept.
+      - F2: the editor appears on the right row; Enter and Esc work; if the folder changes under it the
+        editor disappears at once and the status bar shows no stale rename line.
+      - Ctrl+X on a file: rows dim immediately; Ctrl+C clears it immediately. Ctrl+C then Ctrl+V works.
+      - Drag a marked set out to Explorer.
+      - Right-click: on a marked row the menu covers all marks; on an unmarked row only that row. In the
+        recycle bin, mark several deleted files and restore them through the menu - all are restored.
+        In the drive list, a multi-row menu covers the marked set. The Apps key menu appears over the
+        cursor row.
+      - Left, Backspace and Right still move the strong-cursor highlight between columns.
+      - Drag the preview splitter while a folder is loading or a sort is changing: after a restart the
+        width and the sort are both kept.
 - [ ] **Step 2: Docs**
   - Design doc: in "7a 後段", change the `SyncToOtherPane` row to "copies the other pane's column
     chain (re-derived under this pane's view); `JumpTo` moves to 7c", and the Msg field name to `At`.
@@ -3015,3 +3078,23 @@ anticipate. Stop and ask rather than deciding unilaterally when something contra
   `ExecuteForTest` seam). A cancel that arrives before its load now fences that load.
 - Runtime tests stable over three consecutive runs at each commit. 955 tests, `check.ps1` green.
 - Backlog: extracting the preview scheduling into a `PreviewScheduler` (kanban #19).
+
+## 7a.10 (2026-11-19)
+
+- First App task; one pane still on screen. Four commits: a shared `TwoPanes` test builder and `c`
+  keeping the Ctrl+X look (`04307fa`); projection per pane, the unfocused one showing no focused
+  column (`c6301eb`); per-pane coalescing gates, projection caches and render change detection, the
+  MainWindow helpers addressed by `ColumnRef`, and Ctrl+C/X and drag on `Column.PathsToActOn()`
+  (`efab33d`); `PaneView` extracted with its XAML moved verbatim (`15c75f1`). The preview width is now
+  saved when the splitter drag ends rather than at window close.
+- Spec review found the shell context menu had lost multi-selection in the recycle bin and drive
+  list (`PathsToActOn` is empty there by design), which is how several deleted files are restored at
+  once. Fixed by giving the menu its own rule (`ShellSelection`), and a stale rename's cancel is now
+  posted instead of dispatched from inside `Render` (`719623c`).
+- Quality review found nothing critical for one pane, but that the render guard and the image cache
+  are keyed by pane while the screen changes by row - after a swap or a close from the bottom, a row
+  would keep drawing the other pane. That is now Step 4b of 7a.11. Fixed in the follow-up: the guard
+  ignored `CutPending`, so Ctrl+X dimming appeared only after the cursor moved (pre-existing); hiding
+  the rename editor from code raised `Cancelled` and undid the posted cancel; settings writes from the
+  UI and worker threads were unsynchronised.
+- Only smoke-launched (the window opens). The visual checks are listed for the user under 7a.14.
