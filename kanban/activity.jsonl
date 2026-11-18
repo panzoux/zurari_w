@@ -26,3 +26,5 @@
 {"timestamp":"2026-09-20T11:17:44.9792425+09:00","action":"move","task_id":4,"detail":"todo -\u003e in-progress"}
 {"timestamp":"2026-11-19T01:17:20.4438277+09:00","action":"move","task_id":4,"detail":"in-progress -\u003e done"}
 {"timestamp":"2026-11-19T01:17:20.6262399+09:00","action":"move","task_id":5,"detail":"todo -\u003e in-progress"}
+{"timestamp":"2026-11-19T01:44:27.7982766+09:00","action":"move","task_id":5,"detail":"in-progress -\u003e done"}
+{"timestamp":"2026-11-19T01:44:27.9485172+09:00","action":"move","task_id":6,"detail":"todo -\u003e in-progress"}

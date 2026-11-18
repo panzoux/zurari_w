@@ -15,19 +15,19 @@
 
 # Status
 
-877 tests, `scripts/check.ps1` green.
+883 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`; do not edit it by hand. Write `(this commit)`
 in a row's commit cell (no backticks) and `status.ps1` fills in the hash after the commit lands.</sub>
 
 | | Item | Status | Commit |
 |---|---|---|---|
-| **7a-front** | **Pane extraction (no visible change)** | `[ ]` | |
+| **7a-front** | **Pane extraction (no visible change)** — code done; hands-on "behaves as before" check pending (user) | `[~]` | `55770c0`..`8ec0f31` |
 | 7a.1 | `PaneId` / `ColumnRef` / `Pane`; state moves into `Pane` behind a compatibility shim | `[x]` | `55770c0` `05460e3` |
 | 7a.2 | Column-addressed Msgs and Effects carry `ColumnRef` | `[x]` | `267963f` `b022607` |
 | 7a.3 | Preview Msgs/Effects carry `PaneId`; post-steps run per pane; `ViewRestored` per pane | `[x]` | `6afba7f` `e4c72bc` |
 | 7a.4 | Remove the compatibility shim | `[x]` | `c0024a9` `537a62d` |
-| 7a.5 | Property tests: refs to panes that do not exist; per-pane invariants | `[ ]` | |
+| 7a.5 | Property tests: refs to panes that do not exist; per-pane invariants | `[x]` | `d35a7ca` `8ec0f31` |
 | **7a-back** | **Split UI** | `[ ]` | |
 | 7a.6 | `ToggleSplit` / `FocusPane` | `[ ]` | |
 | 7a.7 | `SwapPanes` / `SyncToOtherPane` | `[ ]` | |
@@ -1421,12 +1421,50 @@ Wire them in `ApplyCore`:
 
 (`SetPaneViews` is emitted from 7a.12 on; not here.)
 
-- [ ] **Step 4: GenMsg**
+- [ ] **Step 4: GenMsg, and make the property tests reach two panes (7a.5 review)**
 
 ```csharp
         Gen.Const<Msg>(new Msg.ToggleSplit()),
         GenPaneId.Select(p => (Msg)new Msg.FocusPane(p)),
 ```
+
+With `ToggleSplit` in `GenMsg` the sequence property finally sees two panes - but closing keeps the
+*focused* pane and reopening takes `NextPaneId`, so after one close-and-reopen the live ids are 0
+and 2 (or just 1). `GenPaneId = {0, 1, 7}` would then never address the live bottom pane again.
+Widen and weight it, and rewrite its doc comment to say why:
+
+```csharp
+    /// <summary>
+    /// Ids a generated message may address. ToggleSplit hands out NextPaneId on every open and keeps
+    /// the focused pane on close, so after a few toggles the live panes can be any small id; 7 is
+    /// never reached in a 50-message sequence and exercises the closed-pane path. Pane 0 is weighted
+    /// up so chains of messages to the one pane that always exists at the start stay common.
+    /// </summary>
+    private static Gen<PaneId> GenPaneId => Gen.Frequency(
+        (3, Gen.Const(new PaneId(0))),
+        (1, Gen.Const(new PaneId(1))),
+        (1, Gen.Const(new PaneId(2))),
+        (1, Gen.Const(new PaneId(3))),
+        (1, Gen.Const(new PaneId(7))));
+```
+
+(If CsCheck's `Gen.Frequency` signature differs, use its equivalent; keep the weights.)
+
+Make `Apply_is_deterministic` multi-step: generate a prefix `GenMsg.List[0, 20]`, run it from
+`AppState.Initial` to reach `s`, then apply one generated message to `s` twice and compare with
+`AssertStatesEqual`. Today it applies one message to `Initial`, so jobs, cursor memory, collapsed
+sections and two panes are almost never present and most of the comparator is never exercised.
+Effects are compared with `Assert.Equal(first.Effects, second.Effects)`, i.e. record equality, which
+compares array members (`StartJob.Sources`, `SetCollapsedGroups.Groups`, delete `Targets`, paste
+`Paths`) by reference. Two runs from the same `s` share the generated message's arrays but build
+new ones in Core, so add a small structural comparison for effects with array members (blank with
+`with { X = default }` and compare `X` element-wise), the same way `AssertStatesEqual` does.
+
+Add a closed-pane property: over arbitrary prefix states, a cursor or preview message addressed to
+`PaneId(7)` (`CursorUp/Down/To`, `EnterDirectory`, `PreviewLoaded`, `PreviewFailed`, `RetryPreview`)
+returns the identical state instance (`Assert.Same`) and no effects. Restricted to pane-addressed
+messages on purpose: messages that fan out to every pane (`Refresh`, `ExternalDirectoryChanged`,
+job results) legitimately change state regardless of the pane id they carry.
 
 - [ ] **Step 5: Run, check, commit**
 
@@ -2227,6 +2265,12 @@ speculative read inside the debounce window replaces pane A's and A's child colu
 "loading" forever. `Render` passes `For(projectionCaches, pane.Id)`. When a pane disappears from
 `state.Panes`, remove its three entries.
 
+**Shared two-pane builder (7a.5 review).** Move `TwoPanes(top, bottom, focused = 0)` from
+`PaneTests` into `tests/TestSupport/TestPanes.cs` (public, same signature) and use it in
+`PaneTests`, `StatusBarProjectionTests` (which builds one by hand) and every App test this task and
+7a.11 add. Add a `FocusedPane = 1` case for `InputTrace.State` and for whatever `Render`-side
+projection this task introduces: they are the two focus-sensitive sites 7a.5 left without one.
+
 **Address by pane, not by focus (from the 7a.2 review).** The MainWindow helpers that take a bare
 column index and read the focused pane - `OnEntryDragRequested`, `ResolveFullPath`, `IsEntryMarked`,
 `ResolveMarkedFullPaths`, `ShowContextMenu`, `ResolveShellName`, `RenderRename` - take a `ColumnRef` instead and resolve
@@ -2790,3 +2834,25 @@ anticipate. Stop and ask rather than deciding unilaterally when something contra
   and `AssertStatesEqual` had drifted behind the records - both into 7a.5, with a `WithFocused` test
   helper; `ResolveShellName` joins 7a.10's list of helpers to address by pane; the menu key's
   context-menu position, the window's initial `Focus()` and a pane id in the input trace into 7a.11.
+
+## 7a.5 (2026-11-19)
+
+- Tests only. `GenPaneId`/`GenColumnRef` address other and nonexistent panes; per-pane generation
+  monotonicity; five `PaneTests` (same generation in both panes, `CancelPreview` names its pane,
+  `Refresh` leaves previews alone, sort and cursor memory with the *bottom* pane focused); a
+  status-bar test with `FocusedPane = 1`; `WithFocused` test helper; `AssertStatesEqual` rewritten to
+  compare records with collection members blanked, so new scalar fields are covered automatically.
+  No src/ bug exposed. 883 tests, `check.ps1` green.
+- Two of the plan's example tests were wrong as written: the cursor started on a file whose preview
+  was still `None`, so the move was a no-op (one failed, one would have passed only because both
+  generations were 0). The implementer moved the cursor to index 1 first and asserted the
+  precondition; the spec review confirmed the intent survived.
+- Quality review follow-up: jobs compared element-wise in `AssertStatesEqual` (`Job.Sources` is an
+  array, compared by reference inside record equality - a false failure waiting for the first
+  reachable paste), and the remaining `WithPane(x.Focused with …)` sites converted.
+- Deferred (plan updated): widening and weighting `GenPaneId` once `ToggleSplit` makes ids beyond 1
+  live, a multi-step determinism property with structural effect comparison, and a closed-pane
+  property (7a.6); a shared `TwoPanes` builder in TestSupport and `FocusedPane = 1` cases for the
+  input trace and `Render` (7a.10).
+- Found, not fixed here: a literal BEL (0x07) inside a test path string in `GenEntry`, present since
+  before Phase 7 (`e7a4e27`). Suggested as a separate task.
