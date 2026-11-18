@@ -1,10 +1,10 @@
 ---
 id: 18
 title: 7a.8b 2ペイン時の正しさ(reveal範囲・再読込・セクション)
-status: todo
+status: in-progress
 priority: high
 created: 2026-09-19T21:24:19.1785107+09:00
-updated: 2026-09-19T21:24:19.1785107+09:00
+updated: 2026-11-19T04:03:32.1625223+09:00
 tags:
     - phase7a
 depends_on:

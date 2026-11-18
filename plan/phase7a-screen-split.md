@@ -15,7 +15,7 @@
 
 # Status
 
-907 tests, `scripts/check.ps1` green.
+928 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`; do not edit it by hand. Write `(this commit)`
 in a row's commit cell (no backticks) and `status.ps1` fills in the hash after the commit lands.</sub>
@@ -31,7 +31,7 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
 | **7a-back** | **Split UI** | `[ ]` | |
 | 7a.6 | `ToggleSplit` / `FocusPane` | `[x]` | `7aef49d` `50797e3` |
 | 7a.7 | `SwapPanes` / `SyncToOtherPane` | `[x]` | `fe89b27` `7aed1c6` `ecd5c12` `274cf9b` |
-| 7a.8 | `CopyToOtherPane` (`c` / `m`) | `[ ]` | |
+| 7a.8 | `CopyToOtherPane` (`c` / `m`) | `[x]` | `60fc9f5` `4a8c14a` |
 | 7a.8b | Two-pane correctness follow-ups (from the 7a.2-7a.7 reviews): scoped reveal, `ShellOpCompleted` rereads, sections in every drive pane, rename pinned to its folder | `[ ]` | |
 | 7a.9 | Runtime: one preview slot per pane | `[ ]` | |
 | 7a.10 | App: coalescing gates and projection cache per pane; `PaneView` extracted (still one row) | `[ ]` | |
@@ -1987,6 +1987,13 @@ Replace its staleness early-return with the check inside the predicate:
 it with `WithCollapsedGroups(set, pane.View)` to every `Location.Drives` column in every pane, and
 still emits one `SetCollapsedGroups`. `CollapsedGroupsRestored` does the same with the restored set.
 
+- [ ] **Step 5a: Compare paths the same way everywhere (7a.8 review)**
+
+`PathComparisonKey` only trims trailing separators. Make it also turn `/` into `\` (pure string
+work), so a favorite target written with forward slashes still compares equal in `IsSameOrInside`,
+`FilterDropSources` and `IsAffectedDirectory`. `\\?\` prefixes, 8.3 names and junction aliases are
+out of scope (they need the filesystem); note that in the method's remarks. Tests: `C:/a` vs `C:\a\`.
+
 - [ ] **Step 5: A rename remembers the folder it is in (7a.7 review)**
 
 `RenameState(ColumnRef At, string EntryName, string? Error)` stores no `Location`. If the column at
@@ -2302,11 +2309,26 @@ speculative read inside the debounce window replaces pane A's and A's child colu
 "loading" forever. `Render` passes `For(projectionCaches, pane.Id)`. When a pane disappears from
 `state.Panes`, remove its three entries.
 
+**One rule for what an operation acts on (7a.8 review).** Core has `Column.PathsToActOn()`:
+visible marked File/Directory entries, else the cursor entry if it is one, and nothing in a column
+with no filesystem path (drive list, recycle bin). The App's Ctrl+C path (`ResolveMarkedFullPaths`,
+`ResolveFullPath`, `TryCopyToClipboard`) and the drag and context-menu callers that build "the
+selection" compute their own version, which already differs in which kinds count. Switch them to
+`PathsToActOn()` while converting them to `ColumnRef` below, so `c` and Ctrl+C+Ctrl+V can never act
+on different sets. (The context menu on a single right-clicked row keeps acting on that row.)
+
 **Shared two-pane builder (7a.5 review).** Move `TwoPanes(top, bottom, focused = 0)` from
 `PaneTests` into `tests/TestSupport/TestPanes.cs` (public, same signature) and use it in
 `PaneTests`, `StatusBarProjectionTests` (which builds one by hand) and every App test this task and
 7a.11 add. Add a `FocusedPane = 1` case for `InputTrace.State` and for whatever `Render`-side
 projection this task introduces: they are the two focus-sensitive sites 7a.5 left without one.
+
+**`c` must not clear the Ctrl+X look (7a.8 review).** `PasteRequested` clears `CutPending` because a
+paste consumes the clipboard; `CopyToOtherPane` goes through it but does not touch the clipboard, so
+Ctrl+X then `c` drops the dimming while a later Ctrl+V still moves. When 7a.11 binds `c`/`m`, keep
+`CutPending` when `PasteRequested` is called with a `destOverride` (pass a flag or split out a
+`StartJob` helper both callers use). Test: Ctrl+X state, then `CopyToOtherPane`, `CutPending`
+unchanged.
 
 **Address by pane, not by focus (from the 7a.2 review).** The MainWindow helpers that take a bare
 column index and read the focused pane - `OnEntryDragRequested`, `ResolveFullPath`, `IsEntryMarked`,
@@ -2926,3 +2948,20 @@ anticipate. Stop and ask rather than deciding unilaterally when something contra
   property tests, and `check.ps1` now fails on C0 control bytes in source and plan files.
 - Deferred (plan updated): `RenameState` stores no folder, so a rename whose column moved could rename
   a same-named file in the wrong folder - pinned to its location in 7a.8b.
+
+## 7a.8 (2026-11-19)
+
+- `CopyToOtherPane` (`c`/`m`, keys bound in 7a.11): sources are the visible marks or the cursor entry;
+  the destination is the other pane's folder under the cursor (zrr `ResolvePaneDirectory`); refusals
+  carry a Notice; the rest is `PasteRequested` with a `destOverride`. Spec compliant.
+- Quality review found a data-handling hole: in the recycle bin a row's path is the raw `$R…` item,
+  so `c`/`m` would have copied or moved bin internals, and a deleted folder in the other pane looked
+  like a valid destination - both of which Ctrl+C/Ctrl+V already refuse. The follow-up refuses any
+  column without a real folder on either side ("ここにはコピー・移動できません"); as a consequence a
+  drive row in the drive list is no longer a destination either, matching Ctrl+V.
+- The "marks, else cursor" rule existed twice (Core and the App's Ctrl+C) and the copies already
+  differed in which kinds counted; it is now `Column.PathsToActOn()` in Core, and the App switches to
+  it in 7a.10. A copy into the folder the sources are already in now says so instead of doing nothing
+  (the normal state right after `o`).
+- Deferred (plan updated): the App's Ctrl+C and drag selection onto `PathsToActOn` (7a.10); `c` must
+  keep the Ctrl+X dimming (7a.11); `/` normalised in path comparison (7a.8b).
