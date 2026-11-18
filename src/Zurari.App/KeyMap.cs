@@ -13,7 +13,16 @@ namespace Zurari.App;
 /// field (choosing the one in use again flips it, so <c>S N</c> twice reverses name order), Shift
 /// with a field for descending, or <c>D</c> for folders first. Any of those closes the mode
 /// (Transition does that, not this map). Esc closes it too, and so does any other key, which then
-/// goes where it would have gone.
+/// goes where it would have gone - navigation keys, <c>o</c>, Ctrl+W and so on.
+/// </para>
+/// <para>
+/// The exception is a key whose normal meaning starts a job or deletes (<c>c</c>, <c>m</c> is a sort
+/// key so it stays one, Delete, Shift+Delete, Ctrl+V): it closes the mode and is swallowed
+/// (<see cref="SortKeyOutcome.CloseAndSwallow"/>). "Close and carry on" was meant for navigation; a
+/// wrong guess among the sort letters must never copy or delete files.
+/// </para>
+/// <para>
+/// Tab and Shift+Tab are owned only while split, and both focus the other pane.
 /// </para>
 /// <para>
 /// The plain letters claimed in normal mode are <c>S</c> (sort), and <c>o</c>, <c>c</c> and <c>m</c>
@@ -37,7 +46,7 @@ internal static class KeyMap
             (Key.S, ModifierKeys.None) => new Msg.EnterSortMode(),
             (Key.OemPeriod, ModifierKeys.Control | ModifierKeys.Shift) => new Msg.ToggleHiddenFiles(),
             (Key.W, ModifierKeys.Control) => new Msg.ToggleSplit(),
-            (Key.Tab, ModifierKeys.None) when state.Panes.Length == 2 =>
+            (Key.Tab, ModifierKeys.None or ModifierKeys.Shift) when state.Panes.Length == 2 =>
                 new Msg.FocusPane(state.Panes[1 - state.FocusedPane].Id),
             (Key.O, ModifierKeys.Shift) => new Msg.SwapPanes(),
             (Key.O, ModifierKeys.None) => new Msg.SyncToOtherPane(),
@@ -63,6 +72,13 @@ internal static class KeyMap
                 modifiers == ModifierKeys.Shift ? new Msg.SetSortDescending(field) : new Msg.SetSortMode(field));
         }
 
+        // A key that would start a job or delete must not act as a side effect of closing the mode:
+        // someone typing sort letters who guesses a wrong one should not copy or delete files.
+        if (StartsJobOrDeletes(key, modifiers))
+        {
+            return new SortKeyOutcome.CloseAndSwallow();
+        }
+
         return (key, modifiers) switch
         {
             (Key.D, ModifierKeys.None) => new SortKeyOutcome.Act(new Msg.ToggleDirectoriesFirst()),
@@ -70,6 +86,11 @@ internal static class KeyMap
             _ => new SortKeyOutcome.Close(),
         };
     }
+
+    private static bool StartsJobOrDeletes(Key key, ModifierKeys modifiers) =>
+        ResolveNormal(key, modifiers, AppState.Initial) is Msg.CopyToOtherPane
+        || (key == Key.Delete && modifiers is ModifierKeys.None or ModifierKeys.Shift)
+        || (key == Key.V && modifiers == ModifierKeys.Control);
 
     private static SortMode? FieldFor(Key key) => key switch
     {
@@ -95,5 +116,11 @@ internal static class KeyMap
 
         /// <summary>Not a sort key: close the mode, then let the key go where it would have gone.</summary>
         public sealed record Close : SortKeyOutcome;
+
+        /// <summary>
+        /// Close the mode and do nothing else: the key's normal meaning would start a job or delete
+        /// (<c>c</c>/<c>m</c> copy or move, Delete, Ctrl+V).
+        /// </summary>
+        public sealed record CloseAndSwallow : SortKeyOutcome;
     }
 }

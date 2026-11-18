@@ -87,7 +87,7 @@ public class KeyMapTests
     [InlineData(Key.C, ModifierKeys.Control)]
     [InlineData(Key.X, ModifierKeys.Control)]
     [InlineData(Key.V, ModifierKeys.Control)]
-    [InlineData(Key.Tab, ModifierKeys.Shift)]
+    [InlineData(Key.Tab, ModifierKeys.Control)]
     [InlineData(Key.O, ModifierKeys.Control)]
     [InlineData(Key.W, ModifierKeys.None)]
     public void Chords_that_look_like_split_keys_are_left_alone(Key key, ModifierKeys modifiers)
@@ -95,6 +95,37 @@ public class KeyMapTests
         var (split, _) = Transition.Apply(AppState.Initial, new Msg.ToggleSplit());
 
         Assert.Null(KeyMap.ResolveNormal(key, modifiers, split));
+    }
+
+    [Fact]
+    public void Shift_Tab_focuses_the_other_pane_only_when_split()
+    {
+        var single = AppState.Initial;
+        var (split, _) = Transition.Apply(single, new Msg.ToggleSplit());
+
+        Assert.Null(KeyMap.ResolveNormal(Key.Tab, ModifierKeys.Shift, single));
+        Assert.Equal(new Msg.FocusPane(split.Panes[1].Id), KeyMap.ResolveNormal(Key.Tab, ModifierKeys.Shift, split));
+    }
+
+    /// <summary>A guess among the sort letters must never start a job or delete.</summary>
+    [Theory]
+    [InlineData(Key.C, ModifierKeys.None)]
+    [InlineData(Key.Delete, ModifierKeys.None)]
+    [InlineData(Key.Delete, ModifierKeys.Shift)]
+    [InlineData(Key.V, ModifierKeys.Control)]
+    public void In_sort_mode_keys_that_start_a_job_or_delete_close_the_mode_and_do_nothing(Key key, ModifierKeys modifiers)
+    {
+        Assert.Equal(new KeyMap.SortKeyOutcome.CloseAndSwallow(), KeyMap.ResolveSortMode(key, modifiers));
+    }
+
+    [Theory]
+    [InlineData(Key.Down, ModifierKeys.None)]
+    [InlineData(Key.O, ModifierKeys.None)]
+    [InlineData(Key.Tab, ModifierKeys.None)]
+    [InlineData(Key.W, ModifierKeys.Control)]
+    public void In_sort_mode_other_keys_still_close_and_carry_on(Key key, ModifierKeys modifiers)
+    {
+        Assert.Equal(new KeyMap.SortKeyOutcome.Close(), KeyMap.ResolveSortMode(key, modifiers));
     }
 
     [Theory]

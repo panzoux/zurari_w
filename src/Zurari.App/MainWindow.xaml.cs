@@ -241,6 +241,18 @@ public sealed partial class MainWindow : Window, IDisposable
         browser.RenameSubmitted += (_, e) => Dispatch(new Msg.RenameSubmitted(e.NewName));
         browser.RenameCancelled += (_, _) => Dispatch(new Msg.RenameCancelled());
 
+        // Keyboard focus and the highlighted pane must not part: whatever moves the keyboard into
+        // this row (Shift+Tab through WPF, a click in the preview text, a scrollbar) focuses its pane.
+        // No loop: FocusPaneOf does nothing for the focused pane, FocusRow nothing when focus is within.
+        view.IsKeyboardFocusWithinChanged += (_, e) =>
+        {
+            if (e.NewValue is true)
+            {
+                FocusPaneOf(row);
+            }
+        };
+        view.PreviewMouseDown += (_, _) => FocusPaneOf(row);
+
         view.PreviewWidthChanged += OnPreviewWidthChanged;
         view.RetryRequested += (_, _) => Dispatch(new Msg.RetryPreview(PaneInRow(row)));
     }
@@ -875,6 +887,10 @@ public sealed partial class MainWindow : Window, IDisposable
                 break;
             case KeyMap.SortKeyOutcome.Close:
                 Dispatch(new Msg.ExitSortMode());
+                break;
+            case KeyMap.SortKeyOutcome.CloseAndSwallow:
+                Dispatch(new Msg.ExitSortMode());
+                e.Handled = true;
                 break;
         }
     }
