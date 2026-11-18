@@ -338,6 +338,19 @@ public abstract record Msg
     public sealed record PlacesChanged : Msg;
 
     /// <summary>
+    /// Ctrl+W. With one pane, adds a second below it, showing the focused column's location and
+    /// with <paramref name="NewPaneView"/> (or, when null, a copy of the focused pane's view). Focus
+    /// stays where it was. With two, closes the one that does not have focus.
+    /// </summary>
+    public sealed record ToggleSplit(ViewOptions? NewPaneView = null) : Msg;
+
+    /// <summary>
+    /// Gives <paramref name="Pane"/> keyboard focus. Ignored for a pane that does not exist. Ends
+    /// sort mode and any rename, which belong to the pane being left.
+    /// </summary>
+    public sealed record FocusPane(PaneId Pane) : Msg;
+
+    /// <summary>
     /// Collapse or expand the section headed by <paramref name="EntryIndex"/>, from the mouse rather
     /// than the cursor. Ignored unless that row is a header with a section to toggle.
     /// </summary>

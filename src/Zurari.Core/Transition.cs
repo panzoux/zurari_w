@@ -246,8 +246,42 @@ public static class Transition
             Msg.ToggleSection m => ToggleSection(state, m.At, m.EntryIndex),
             Msg.RetryPreview m => RetryPreview(state, m.Pane),
             Msg.CollapsedGroupsRestored m => (RestoreCollapsedGroups(state, m.At, m.Groups), NoEffects),
+            Msg.ToggleSplit m => ToggleSplit(state, m.NewPaneView),
+            Msg.FocusPane m => (FocusPane(state, m.Pane), NoEffects),
             _ => (state, NoEffects),
         };
+    }
+
+    private static (AppState, IReadOnlyList<Effect>) ToggleSplit(AppState state, ViewOptions? newPaneView)
+    {
+        if (state.Panes.Length == 2)
+        {
+            var kept = state.Focused;
+            return (state with { Panes = [kept], FocusedPane = 0, Rename = null, InputMode = InputMode.Normal }, NoEffects);
+        }
+
+        var source = state.Focused.FocusedColumnOrNull;
+        if (source is null)
+        {
+            return (state, NoEffects);
+        }
+
+        var id = new PaneId(state.NextPaneId);
+        var column = new Column(source.Location, Entries: [], Cursor: -1, Load: LoadState.Loading);
+        var pane = new Pane(id, [column], 0) { View = newPaneView ?? state.Focused.View };
+        var next = state with { Panes = state.Panes.Add(pane), NextPaneId = state.NextPaneId + 1 };
+        return (next, [new Effect.ReadDirectory(pane.Ref(0), source.Location)]);
+    }
+
+    private static AppState FocusPane(AppState state, PaneId id)
+    {
+        var index = state.IndexOfPane(id);
+        if (index < 0 || index == state.FocusedPane)
+        {
+            return state;
+        }
+
+        return state with { FocusedPane = index, Rename = null, InputMode = InputMode.Normal };
     }
 
     private static AppState LeaveSortMode(AppState state) =>

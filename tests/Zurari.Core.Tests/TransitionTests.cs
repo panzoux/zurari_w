@@ -2717,10 +2717,17 @@ public class TransitionProperties
     private static Gen<int> GenColumnIndex => Gen.Int[-2, 4];
 
     /// <summary>
-    /// Pane 0 exists from the start; 1 exists once a split is opened (7a.6 adds ToggleSplit to
-    /// GenMsg); 7 never does, so results addressed to it exercise the closed-pane path.
+    /// Ids a generated message may address. ToggleSplit hands out NextPaneId on every open and keeps
+    /// the focused pane on close, so after a few toggles the live panes can be any small id; 7 is
+    /// never reached in a 50-message sequence and exercises the closed-pane path. Pane 0 is weighted
+    /// up so chains of messages to the one pane that always exists at the start stay common.
     /// </summary>
-    private static Gen<PaneId> GenPaneId => Gen.OneOfConst(new PaneId(0), new PaneId(1), new PaneId(7));
+    private static Gen<PaneId> GenPaneId => Gen.FrequencyConst(
+        (3, new PaneId(0)),
+        (1, new PaneId(1)),
+        (1, new PaneId(2)),
+        (1, new PaneId(3)),
+        (1, new PaneId(7)));
 
     private static Gen<ColumnRef> GenColumnRef =>
         Gen.Select(GenPaneId, GenColumnIndex).Select(t => new ColumnRef(t.Item1, t.Item2));
@@ -2877,7 +2884,9 @@ public class TransitionProperties
             .Select(t => (Msg)new Msg.ViewRestored(t.Item1, new ViewOptions(new SortOrder(t.Item2, t.Item3, t.Item4)))),
         Gen.Select(GenPaneId, GenJobId).Select(t => (Msg)new Msg.PreviewCapacityLoaded(
             t.Item1, t.Item2, new PreviewCapacity("vol", "kind", UsedBytes: 1, TotalBytes: 2))),
-        Gen.Const<Msg>(new Msg.PlacesChanged()));
+        Gen.Const<Msg>(new Msg.PlacesChanged()),
+        Gen.Const<Msg>(new Msg.ToggleSplit()),
+        GenPaneId.Select(p => (Msg)new Msg.FocusPane(p)));
 
     [Fact]
     public void Any_msg_sequence_yields_valid_state_and_effects()
@@ -2909,14 +2918,99 @@ public class TransitionProperties
     [Fact]
     public void Apply_is_deterministic()
     {
-        GenMsg.Sample(msg =>
+        // A prefix first, so jobs, cursor memory, collapsed sections and two panes are present for
+        // the comparator to look at; from Initial alone most of it is never exercised.
+        Gen.Select(GenMsg.List[0, 20], GenMsg).Sample(t =>
         {
-            var first = Transition.Apply(AppState.Initial, msg);
-            var second = Transition.Apply(AppState.Initial, msg);
+            var s = AppState.Initial;
+            foreach (var prefixMsg in t.Item1)
+            {
+                s = Transition.Apply(s, prefixMsg).State;
+            }
+
+            var first = Transition.Apply(s, t.Item2);
+            var second = Transition.Apply(s, t.Item2);
 
             AssertStatesEqual(first.State, second.State);
-            Assert.Equal(first.Effects, second.Effects);
+            AssertEffectsEqual(first.Effects, second.Effects);
         });
+    }
+
+    /// <summary>
+    /// A cursor or preview message for a pane that is not open changes nothing: same instance, no
+    /// effects. Restricted to pane-addressed messages on purpose - those that fan out to every pane
+    /// (Refresh, ExternalDirectoryChanged, job results) legitimately change state whatever pane id
+    /// they carry.
+    /// </summary>
+    [Fact]
+    public void A_message_for_a_closed_pane_changes_nothing()
+    {
+        var closed = new PaneId(7);
+        var gone = new ColumnRef(closed, 0);
+        var closedMsgs = Gen.OneOf(
+            Gen.Const<Msg>(new Msg.CursorUp(gone)),
+            Gen.Const<Msg>(new Msg.CursorDown(gone)),
+            Gen.Int[-2, 4].Select(i => (Msg)new Msg.CursorTo(gone, i)),
+            Gen.Select(Gen.Int[-2, 4], GenIsMove).Select(t => (Msg)new Msg.EnterDirectory(gone, t.Item1, t.Item2)),
+            Gen.Select(GenJobId, GenPreviewKind)
+                .Select(t => (Msg)new Msg.PreviewLoaded(closed, t.Item1, t.Item2, "text", [], "label", null)),
+            GenJobId.Select(i => (Msg)new Msg.PreviewFailed(closed, i, "error")),
+            Gen.Const<Msg>(new Msg.RetryPreview(closed)));
+
+        Gen.Select(GenMsg.List[0, 20], closedMsgs).Sample(t =>
+        {
+            var s = AppState.Initial;
+            foreach (var prefixMsg in t.Item1)
+            {
+                s = Transition.Apply(s, prefixMsg).State;
+            }
+
+            if (s.IndexOfPane(closed) >= 0)
+            {
+                return; // Seven opens in twenty messages: not the closed-pane case after all.
+            }
+
+            var (next, effects) = Transition.Apply(s, t.Item2);
+
+            Assert.Same(s, next);
+            Assert.Empty(effects);
+        });
+    }
+
+    // Record equality compares ImmutableArray members by reference. Two runs from one state share the
+    // generated message's arrays but build new ones inside Core, so effects carrying an array are
+    // compared with the array blanked and then element by element.
+    private static void AssertEffectsEqual(IReadOnlyList<Effect> expected, IReadOnlyList<Effect> actual)
+    {
+        Assert.Equal(expected.Count, actual.Count);
+        for (var i = 0; i < expected.Count; i++)
+        {
+            switch (expected[i])
+            {
+                case Effect.DeleteToRecycleBin e:
+                    var d = Assert.IsType<Effect.DeleteToRecycleBin>(actual[i]);
+                    Assert.Equal(e with { Targets = default }, d with { Targets = default });
+                    Assert.Equal(e.Targets, d.Targets);
+                    break;
+                case Effect.ShellCopyOrMove e:
+                    var c = Assert.IsType<Effect.ShellCopyOrMove>(actual[i]);
+                    Assert.Equal(e with { Paths = default }, c with { Paths = default });
+                    Assert.Equal(e.Paths, c.Paths);
+                    break;
+                case Effect.RunFileJob e:
+                    var r = Assert.IsType<Effect.RunFileJob>(actual[i]);
+                    Assert.Equal(e with { Sources = default }, r with { Sources = default });
+                    Assert.Equal(e.Sources, r.Sources);
+                    break;
+                case Effect.SetCollapsedGroups e:
+                    var g = Assert.IsType<Effect.SetCollapsedGroups>(actual[i]);
+                    Assert.Equal(e.Groups, g.Groups);
+                    break;
+                default:
+                    Assert.Equal(expected[i], actual[i]);
+                    break;
+            }
+        }
     }
 
     // ImmutableArray<T> and ImmutableHashSet<T> compare by reference under record equality, so two
