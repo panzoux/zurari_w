@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using Zurari.Controls;
 
@@ -72,6 +73,75 @@ public class RenameEditorTests
         TestWindow.DoEvents();
 
         Assert.Equal(1, CountTextBoxes(browser));
+    }
+
+    private static TextBox? FindTextBox(DependencyObject root)
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is TextBox box)
+            {
+                return box;
+            }
+
+            if (FindTextBox(child) is { } nested)
+            {
+                return nested;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Taking the editor away from code moves keyboard focus off it; that must not read as the user
+    /// giving up, or every rename the state ends would cancel itself back through the state.
+    /// </summary>
+    [StaFact]
+    public void Hiding_a_focused_editor_from_code_does_not_raise_cancelled()
+    {
+        var browser = new ColumnBrowser { Columns = [Column("a.txt")] };
+        using var host = new TestWindow(browser);
+        TestWindow.DoEvents();
+        var cancelled = 0;
+        browser.RenameCancelled += (_, _) => cancelled++;
+
+        browser.SyncRenameEditor(0, 0, "a.txt", null);
+        TestWindow.DoEvents();
+        var box = FindTextBox(browser);
+        Assert.NotNull(box);
+        box.Focus();
+        Keyboard.Focus(box);
+        TestWindow.DoEvents();
+
+        browser.SyncRenameEditor(-1, -1, null, null);
+        TestWindow.DoEvents();
+
+        Assert.Equal(0, CountTextBoxes(browser));
+        Assert.Equal(0, cancelled);
+    }
+
+    [StaFact]
+    public void Escape_in_the_editor_still_raises_cancelled()
+    {
+        var browser = new ColumnBrowser { Columns = [Column("a.txt")] };
+        using var host = new TestWindow(browser);
+        TestWindow.DoEvents();
+        var cancelled = 0;
+        browser.RenameCancelled += (_, _) => cancelled++;
+
+        browser.SyncRenameEditor(0, 0, "a.txt", null);
+        TestWindow.DoEvents();
+        var box = FindTextBox(browser);
+        Assert.NotNull(box);
+
+        box.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(box), 0, Key.Escape)
+        {
+            RoutedEvent = UIElement.PreviewKeyDownEvent,
+        });
+
+        Assert.Equal(1, cancelled);
     }
 
     [StaFact]

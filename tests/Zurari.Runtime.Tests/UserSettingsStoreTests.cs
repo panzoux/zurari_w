@@ -216,6 +216,52 @@ public class UserSettingsStoreTests
         }
     }
 
+    /// <summary>
+    /// The UI thread and the workers share one store. Updates from several threads must each land:
+    /// a read-modify-write increment loses counts if two of them read the same file.
+    /// </summary>
+    [Fact]
+    public void Concurrent_updates_lose_nothing()
+    {
+        const int threads = 6;
+        const int perThread = 20;
+        var dir = CreateTempDir();
+        try
+        {
+            var store = new UserSettingsStore(Path.Combine(dir, "settings"));
+            store.Save(new UserSettings(PreviewWidth: 0));
+            var workers = new Thread[threads];
+            for (var t = 0; t < threads; t++)
+            {
+                var id = t;
+                workers[t] = new Thread(() =>
+                {
+                    for (var i = 0; i < perThread; i++)
+                    {
+                        store.Update(s => s with { PreviewWidth = (s.PreviewWidth ?? 0) + 1 });
+                    }
+
+                    store.Update(s => id % 2 == 0 ? s with { ShowHidden = true } : s with { DirectoriesFirst = true });
+                });
+                workers[t].Start();
+            }
+
+            foreach (var worker in workers)
+            {
+                worker.Join();
+            }
+
+            var settings = store.Load();
+            Assert.Equal(threads * perThread, settings.PreviewWidth);
+            Assert.True(settings.ShowHidden);
+            Assert.True(settings.DirectoriesFirst);
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
+
     [Fact]
     public void Once_the_new_directory_has_settings_the_legacy_ones_are_ignored()
     {

@@ -57,18 +57,7 @@ public sealed partial class MainWindow : Window, IDisposable
     /// do not force <see cref="Controls.ColumnBrowser"/> to rebuild/re-sync every column, which
     /// otherwise yanks back any in-progress user scrolling (Phase 5 bug B3).
     /// </summary>
-    private readonly Dictionary<PaneId, RenderedPane> lastRendered = [];
-
-    /// <summary>
-    /// The inputs of one pane's last projection. <c>Columns</c> is compared by the underlying array
-    /// reference (see <see cref="ImmutableArray{T}"/>'s equality). <c>FocusedColumn</c>: focus-only
-    /// changes (<see cref="Msg.GoToParent"/>, <see cref="Msg.FocusColumn"/>) leave the array
-    /// untouched, so without it the strong-cursor highlight silently stopped following focus
-    /// (Left/Backspace looked like a no-op). <c>PaneFocused</c>: moving focus between panes changes
-    /// what each projects (the unfocused one draws no focused column) with neither of the others
-    /// changing.
-    /// </summary>
-    private readonly record struct RenderedPane(ImmutableArray<Column> Columns, int FocusedColumn, bool PaneFocused);
+    private readonly Dictionary<PaneId, StateProjection.RenderKeyValue> lastRendered = [];
 
     /// <summary>
     /// How many items <see cref="TrashPlaceRow"/> last saw in the recycle bin. Only
@@ -348,14 +337,6 @@ public sealed partial class MainWindow : Window, IDisposable
         directoryWatcher.Dispose();
     }
 
-    /// <summary>
-    /// Routes an <see cref="Effect"/> to the executor that can perform it: filesystem effects go
-    /// to <see cref="WorkerRuntime"/>, shell effects go to <see cref="ShellEffectExecutor"/>. Pure
-    /// dispatch by effect type — no decisions beyond "which executor", with one exception:
-    /// <see cref="Effect.LoadPreview"/> is debounced (see <see cref="SchedulePreviewLoad"/>) rather
-    /// than submitted immediately, since it is the one effect a fast cursor can otherwise flood
-    /// the worker pool with (Phase 5 fix P1). Every other effect still flows straight through.
-    /// </summary>
     /// <summary>
     /// Hands each effect to its executor. The routing decision lives in
     /// <see cref="EffectRouting"/> so it can be tested - see its remarks for what a silently
@@ -1206,7 +1187,7 @@ public sealed partial class MainWindow : Window, IDisposable
         // reassignment in that case is what stops Controls.ColumnBrowser.RebuildColumns and
         // ColumnView.SyncFromColumn from running - and yanking back user scroll/hover state - on
         // renders that have nothing to do with the browsed columns (Phase 5 bug B3).
-        var rendered = new RenderedPane(pane.Columns, pane.FocusedColumn, pane.Id == state.Focused.Id);
+        var rendered = StateProjection.RenderKey(state, pane);
         if (lastRendered.TryGetValue(pane.Id, out var last) && last == rendered)
         {
             return false;

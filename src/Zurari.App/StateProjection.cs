@@ -15,6 +15,32 @@ public static class StateProjection
     private static readonly string[] SizeUnits = ["KB", "MB", "GB", "TB", "PB"];
 
     /// <summary>
+    /// Everything <see cref="Project"/> reads, as a value two renders can compare: when the key is
+    /// unchanged the projection would be too, so the render skips handing the browser new rows (which
+    /// would yank back the user's scroll position - Phase 5 bug B3).
+    /// </summary>
+    /// <remarks>
+    /// The key must cover everything <see cref="Project"/> reads: the pane's columns (by array
+    /// reference) and focused column, whether the pane is the focused one (an unfocused pane draws no
+    /// focused column), and <see cref="AppState.CutPending"/> (by array reference; it dims rows).
+    /// Add to it whenever <see cref="Project"/> starts reading something else.
+    /// </remarks>
+    public static RenderKeyValue RenderKey(AppState state, Pane pane)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(pane);
+
+        return new RenderKeyValue(pane.Columns, pane.FocusedColumn, pane.Id == state.Focused.Id, state.CutPending);
+    }
+
+    /// <summary>See <see cref="RenderKey"/>. Arrays compare by reference, which is the point.</summary>
+    public readonly record struct RenderKeyValue(
+        System.Collections.Immutable.ImmutableArray<Column> Columns,
+        int FocusedColumn,
+        bool PaneFocused,
+        System.Collections.Immutable.ImmutableArray<string> CutPending);
+
+    /// <summary>
     /// Projects every column of <paramref name="pane"/> into a <see cref="Controls.ColumnVm"/>.
     /// Only the focused pane's focused column is drawn as focused; an unfocused pane projects none,
     /// so its cursor rows get the weak highlight unfocused columns already use (dimming).

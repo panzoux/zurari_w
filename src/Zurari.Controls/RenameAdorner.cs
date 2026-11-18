@@ -36,6 +36,22 @@ internal sealed class RenameAdorner : Adorner
     /// <summary>Raised when the user gives up - Escape, or focus going elsewhere.</summary>
     public event EventHandler? Cancelled;
 
+    private bool silenced;
+
+    /// <summary>
+    /// Stops <see cref="Cancelled"/> being raised. Called when the editor is taken away from code:
+    /// removing it makes the box lose keyboard focus, and that must not read as the user giving up.
+    /// </summary>
+    public void Silence() => silenced = true;
+
+    private void RaiseCancelled()
+    {
+        if (!silenced)
+        {
+            Cancelled?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
     public RenameAdorner(FrameworkElement adornedElement, string initialName, string? initialError)
         : base(adornedElement)
     {
@@ -68,7 +84,7 @@ internal sealed class RenameAdorner : Adorner
         visuals.Add(frame);
 
         editor.PreviewKeyDown += OnEditorKeyDown;
-        editor.LostKeyboardFocus += (_, _) => Cancelled?.Invoke(this, EventArgs.Empty);
+        editor.LostKeyboardFocus += (_, _) => RaiseCancelled();
 
         ShowError(initialError);
     }
@@ -117,7 +133,7 @@ internal sealed class RenameAdorner : Adorner
         else if (e.Key == Key.Escape)
         {
             e.Handled = true;
-            Cancelled?.Invoke(this, EventArgs.Empty);
+            RaiseCancelled();
         }
     }
 

@@ -46,6 +46,39 @@ public class StateProjectionTests
     }
 
     [Fact]
+    public void Changing_CutPending_changes_the_render_key()
+    {
+        var state = TwoPanes(Listing(@"C:\a", "x"), Listing(@"C:\b", "p"));
+        var cut = state with { CutPending = [@"C:\a\x"] };
+
+        Assert.NotEqual(StateProjection.RenderKey(state, state.Panes[0]), StateProjection.RenderKey(cut, cut.Panes[0]));
+    }
+
+    [Fact]
+    public void An_unrelated_change_does_not_change_the_render_key()
+    {
+        var state = TwoPanes(Listing(@"C:\a", "x"), Listing(@"C:\b", "p"));
+        var other = state with
+        {
+            Notice = "something",
+            Jobs = state.Jobs.Add(new Job(1, JobKind.Copy, [@"C:\a\x"], @"C:\b")),
+            NextJobId = 2,
+        };
+
+        Assert.Equal(StateProjection.RenderKey(state, state.Panes[0]), StateProjection.RenderKey(other, other.Panes[0]));
+    }
+
+    [Fact]
+    public void Moving_focus_between_panes_changes_each_panes_render_key()
+    {
+        var state = TwoPanes(Listing(@"C:\a", "x"), Listing(@"C:\b", "p"));
+        var moved = state with { FocusedPane = 1 };
+
+        Assert.NotEqual(StateProjection.RenderKey(state, state.Panes[0]), StateProjection.RenderKey(moved, moved.Panes[0]));
+        Assert.NotEqual(StateProjection.RenderKey(state, state.Panes[1]), StateProjection.RenderKey(moved, moved.Panes[1]));
+    }
+
+    [Fact]
     public void Project_rejects_null_state()
     {
         Assert.Throws<ArgumentNullException>(() => StateProjection.Project(null!, null!));

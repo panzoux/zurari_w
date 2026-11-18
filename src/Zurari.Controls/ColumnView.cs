@@ -1346,6 +1346,9 @@ public sealed class ColumnView : Control
             return;
         }
 
+        // The state said there is no editor, so this is not the user giving up: tearing it down
+        // moves keyboard focus, and that must not come back as a RenameCancelled.
+        renameAdorner.Silence();
         AdornerLayer.GetAdornerLayer(renameAdorner.AdornedElement)?.Remove(renameAdorner);
         renameAdorner = null;
         List?.Focus();

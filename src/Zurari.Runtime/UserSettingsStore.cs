@@ -53,6 +53,14 @@ public sealed class UserSettingsStore
     private readonly string? legacyDirectory;
 
     /// <summary>
+    /// Serialises <see cref="Update"/>'s read-modify-write and <see cref="Save"/>'s write. The UI
+    /// thread (preview width) and worker threads (view options, collapsed groups, pins) share one
+    /// store; without this two updates could lose one another's field, and both write the same
+    /// <c>.tmp</c> file.
+    /// </summary>
+    private readonly object gate = new();
+
+    /// <summary>
     /// Creates a store over <paramref name="directory"/>, defaulting to <c>%APPDATA%\zurari_w</c>.
     /// </summary>
     /// <param name="directory">Where settings are read and written.</param>
@@ -134,7 +142,10 @@ public sealed class UserSettingsStore
     public void Update(Func<UserSettings, UserSettings> change)
     {
         ArgumentNullException.ThrowIfNull(change);
-        Save(change(Load()));
+        lock (gate)
+        {
+            Save(change(Load()));
+        }
     }
 
     /// <summary>
@@ -154,20 +165,23 @@ public sealed class UserSettingsStore
             return;
         }
 
-        try
+        lock (gate)
         {
-            Directory.CreateDirectory(directory!);
+            try
+            {
+                Directory.CreateDirectory(directory!);
 
-            // Written alongside and moved into place. A crash or a full disk partway through a
-            // direct write leaves a truncated file, which loads as defaults - silently discarding
-            // every preference the user had rather than the one being saved.
-            var temp = path + ".tmp";
-            File.WriteAllText(temp, JsonSerializer.Serialize(settings, Options));
-            File.Move(temp, path, overwrite: true);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
-        {
-            // Preferences are best-effort; losing one save is acceptable.
+                // Written alongside and moved into place. A crash or a full disk partway through a
+                // direct write leaves a truncated file, which loads as defaults - silently discarding
+                // every preference the user had rather than the one being saved.
+                var temp = path + ".tmp";
+                File.WriteAllText(temp, JsonSerializer.Serialize(settings, Options));
+                File.Move(temp, path, overwrite: true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+            {
+                // Preferences are best-effort; losing one save is acceptable.
+            }
         }
     }
 }
