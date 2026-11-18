@@ -2802,6 +2802,9 @@ public class TransitionProperties
     private static Gen<ImmutableArray<Entry>> GenEntries =>
         GenEntry.List[0, 3].Select(list => list.ToImmutableArray());
 
+    private static AppState Start(bool split) =>
+        split ? Transition.Apply(AppState.Initial, new Msg.ToggleSplit()).State : AppState.Initial;
+
     private static Gen<Msg> GenMsg => Gen.OneOf(
         Gen.Const<Msg>(new Msg.Noop()),
         GenColumnRef.Select(r => (Msg)new Msg.CursorUp(r)),
@@ -2891,9 +2894,10 @@ public class TransitionProperties
     [Fact]
     public void Any_msg_sequence_yields_valid_state_and_effects()
     {
-        GenMsg.List[0, 50].Sample(msgs =>
+        Gen.Select(Gen.Bool, GenMsg.List[0, 50]).Sample(t =>
         {
-            var state = AppState.Initial;
+            var msgs = t.Item2;
+            var state = Start(t.Item1);
             foreach (var msg in msgs)
             {
                 var (next, effects) = Transition.Apply(state, msg);
@@ -2920,16 +2924,18 @@ public class TransitionProperties
     {
         // A prefix first, so jobs, cursor memory, collapsed sections and two panes are present for
         // the comparator to look at; from Initial alone most of it is never exercised.
-        Gen.Select(GenMsg.List[0, 20], GenMsg).Sample(t =>
+        // Half the runs start from an open split: ToggleSplit is one of ~60 alternatives, so left to
+        // chance most cases never have two panes.
+        Gen.Select(Gen.Bool, GenMsg.List[0, 20], GenMsg).Sample(t =>
         {
-            var s = AppState.Initial;
-            foreach (var prefixMsg in t.Item1)
+            var s = Start(t.Item1);
+            foreach (var prefixMsg in t.Item2)
             {
                 s = Transition.Apply(s, prefixMsg).State;
             }
 
-            var first = Transition.Apply(s, t.Item2);
-            var second = Transition.Apply(s, t.Item2);
+            var first = Transition.Apply(s, t.Item3);
+            var second = Transition.Apply(s, t.Item3);
 
             AssertStatesEqual(first.State, second.State);
             AssertEffectsEqual(first.Effects, second.Effects);
@@ -2937,43 +2943,61 @@ public class TransitionProperties
     }
 
     /// <summary>
-    /// A cursor or preview message for a pane that is not open changes nothing: same instance, no
-    /// effects. Restricted to pane-addressed messages on purpose - those that fan out to every pane
-    /// (Refresh, ExternalDirectoryChanged, job results) legitimately change state whatever pane id
-    /// they carry.
+    /// A message addressed to a pane that was open and has been closed changes nothing: same
+    /// instance, no effects. Restricted to pane-addressed messages on purpose - those that fan out
+    /// to every pane (Refresh, ExternalDirectoryChanged, job results, ShellOpCompleted) legitimately
+    /// change state whatever pane id they carry.
     /// </summary>
     [Fact]
     public void A_message_for_a_closed_pane_changes_nothing()
     {
-        var closed = new PaneId(7);
-        var gone = new ColumnRef(closed, 0);
-        var closedMsgs = Gen.OneOf(
-            Gen.Const<Msg>(new Msg.CursorUp(gone)),
-            Gen.Const<Msg>(new Msg.CursorDown(gone)),
-            Gen.Int[-2, 4].Select(i => (Msg)new Msg.CursorTo(gone, i)),
-            Gen.Select(Gen.Int[-2, 4], GenIsMove).Select(t => (Msg)new Msg.EnterDirectory(gone, t.Item1, t.Item2)),
-            Gen.Select(GenJobId, GenPreviewKind)
-                .Select(t => (Msg)new Msg.PreviewLoaded(closed, t.Item1, t.Item2, "text", [], "label", null)),
-            GenJobId.Select(i => (Msg)new Msg.PreviewFailed(closed, i, "error")),
-            Gen.Const<Msg>(new Msg.RetryPreview(closed)));
-
-        Gen.Select(GenMsg.List[0, 20], closedMsgs).Sample(t =>
+        Gen.Select(Gen.Bool, GenMsg.List[0, 20], Gen.Int[-2, 4], GenLocation, GenEntries).Sample(t =>
         {
-            var s = AppState.Initial;
-            foreach (var prefixMsg in t.Item1)
+            var s = Start(t.Item1);
+            foreach (var prefixMsg in t.Item2)
             {
                 s = Transition.Apply(s, prefixMsg).State;
             }
 
-            if (s.IndexOfPane(closed) >= 0)
+            // The smallest id that has been handed out and is no longer live.
+            PaneId? found = null;
+            for (var id = 0; id < s.NextPaneId && found is null; id++)
             {
-                return; // Seven opens in twenty messages: not the closed-pane case after all.
+                if (s.IndexOfPane(new PaneId(id)) < 0)
+                {
+                    found = new PaneId(id);
+                }
             }
 
-            var (next, effects) = Transition.Apply(s, t.Item2);
+            if (found is not { } closed)
+            {
+                return;
+            }
 
-            Assert.Same(s, next);
-            Assert.Empty(effects);
+            var at = new ColumnRef(closed, 0);
+            var n = t.Item3;
+            var late = new Msg[]
+            {
+                new Msg.CursorUp(at),
+                new Msg.CursorDown(at),
+                new Msg.CursorTo(at, n),
+                new Msg.EnterDirectory(at, n, FocusChild: n % 2 == 0),
+                new Msg.PreviewLoaded(closed, n, PreviewKind.Text, "text", [], "label", null),
+                new Msg.PreviewFailed(closed, n, "error"),
+                new Msg.RetryPreview(closed),
+                new Msg.DirectoryLoaded(at, t.Item4, t.Item5),
+                new Msg.DirectoryLoadFailed(at, t.Item4, "error"),
+                new Msg.PreviewCapacityLoaded(closed, n, new PreviewCapacity("vol", "kind", UsedBytes: 1, TotalBytes: 2)),
+                new Msg.ShellOpFailed(at, t.Item4, "error"),
+                new Msg.ViewRestored(closed, ViewOptions.Default),
+            };
+            foreach (var msg in late)
+            {
+                var (next, effects) = Transition.Apply(s, msg);
+
+                Assert.Same(s, next);
+                Assert.Empty(effects);
+            }
         });
     }
 
@@ -2985,6 +3009,7 @@ public class TransitionProperties
         Assert.Equal(expected.Count, actual.Count);
         for (var i = 0; i < expected.Count; i++)
         {
+            // When the determinism test fails on a new effect that carries an array, add a case here.
             switch (expected[i])
             {
                 case Effect.DeleteToRecycleBin e:
@@ -3004,6 +3029,7 @@ public class TransitionProperties
                     break;
                 case Effect.SetCollapsedGroups e:
                     var g = Assert.IsType<Effect.SetCollapsedGroups>(actual[i]);
+                    Assert.Equal(e with { Groups = default }, g with { Groups = default });
                     Assert.Equal(e.Groups, g.Groups);
                     break;
                 default:

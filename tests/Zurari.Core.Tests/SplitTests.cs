@@ -23,6 +23,15 @@ public class SplitTests
     private static AppState Browsing() =>
         AppState.SinglePane([Files(@"C:\a", "x.txt", "y.txt")]);
 
+    private static AppState Split() => Transition.Apply(Browsing(), new Msg.ToggleSplit()).State;
+
+    private static (AppState State, IReadOnlyList<Effect> Effects) StartRename(AppState state)
+    {
+        var result = Transition.Apply(state, new Msg.RenameRequested(state.Focused.FocusedRef));
+        Assert.NotNull(result.State.Rename);
+        return result;
+    }
+
     [Fact]
     public void Opening_adds_a_bottom_pane_at_the_focused_location_and_keeps_focus()
     {
@@ -70,6 +79,48 @@ public class SplitTests
     }
 
     [Fact]
+    public void Closing_ends_sort_mode_and_a_rename()
+    {
+        var (renaming, _) = StartRename(Split());
+        var (sorting, _) = Transition.Apply(Split(), new Msg.EnterSortMode());
+
+        var (closedRenaming, _) = Transition.Apply(renaming, new Msg.ToggleSplit());
+        var (closedSorting, _) = Transition.Apply(sorting, new Msg.ToggleSplit());
+
+        Assert.Null(closedRenaming.Rename);
+        Assert.Equal(InputMode.Normal, closedSorting.InputMode);
+    }
+
+    [Fact]
+    public void Closing_cancels_the_preview_still_loading_in_the_closed_pane()
+    {
+        var (focusedBottom, _) = Transition.Apply(Split(), new Msg.FocusPane(new PaneId(1)));
+        var bottomAt = new ColumnRef(new PaneId(1), 0);
+        var (loaded, _) = Transition.Apply(
+            focusedBottom,
+            new Msg.DirectoryLoaded(bottomAt, new Location.RealDirectory(@"C:\a"), [new Entry("x.txt", EntryKind.File), new Entry("y.txt", EntryKind.File)]));
+        var (moved, _) = Transition.Apply(loaded, new Msg.CursorDown(bottomAt));
+        var (focusedTop, _) = Transition.Apply(moved, new Msg.FocusPane(new PaneId(0)));
+        var bottom = focusedTop.PaneOf(new PaneId(1))!;
+        Assert.Equal(PreviewKind.Loading, bottom.Preview.Kind);
+
+        var (closed, effects) = Transition.Apply(focusedTop, new Msg.ToggleSplit());
+
+        var cancel = Assert.Single(TestEffects.Of<Effect.CancelPreview>(effects));
+        Assert.Equal(new PaneId(1), cancel.Pane);
+        Assert.Equal(bottom.Preview.Generation, cancel.Generation);
+        Assert.Single(closed.Panes);
+    }
+
+    [Fact]
+    public void Closing_with_nothing_loading_cancels_nothing()
+    {
+        var (_, effects) = Transition.Apply(Split(), new Msg.ToggleSplit());
+
+        Assert.Empty(effects);
+    }
+
+    [Fact]
     public void A_result_for_the_closed_pane_is_ignored()
     {
         var (split, _) = Transition.Apply(Browsing(), new Msg.ToggleSplit());
@@ -107,12 +158,25 @@ public class SplitTests
     [Fact]
     public void Focusing_the_other_pane_ends_sort_mode_and_a_rename()
     {
-        var (split, _) = Transition.Apply(Browsing(), new Msg.ToggleSplit());
+        var split = Split();
         var (sorting, _) = Transition.Apply(split, new Msg.EnterSortMode());
+        var (renaming, _) = StartRename(split);
 
-        var (moved, _) = Transition.Apply(sorting, new Msg.FocusPane(new PaneId(1)));
+        var (movedFromSort, _) = Transition.Apply(sorting, new Msg.FocusPane(new PaneId(1)));
+        var (movedFromRename, _) = Transition.Apply(renaming, new Msg.FocusPane(new PaneId(1)));
 
-        Assert.Equal(InputMode.Normal, moved.InputMode);
-        Assert.Null(moved.Rename);
+        Assert.Equal(InputMode.Normal, movedFromSort.InputMode);
+        Assert.Null(movedFromRename.Rename);
+    }
+
+    [Fact]
+    public void FocusPane_on_the_focused_pane_changes_nothing()
+    {
+        var split = Split();
+
+        var (same, effects) = Transition.Apply(split, new Msg.FocusPane(new PaneId(0)));
+
+        Assert.Same(split, same);
+        Assert.Empty(effects);
     }
 }

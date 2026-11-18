@@ -257,7 +257,14 @@ public static class Transition
         if (state.Panes.Length == 2)
         {
             var kept = state.Focused;
-            return (state with { Panes = [kept], FocusedPane = 0, Rename = null, InputMode = InputMode.Normal }, NoEffects);
+            var dropped = state.Panes[1 - state.FocusedPane];
+            var closed = state with { Panes = [kept], FocusedPane = 0, Rename = null, InputMode = InputMode.Normal };
+
+            // A preview still loading for the pane that is going would hold a worker until it times
+            // out, and nothing would ever consume its result: say so.
+            return dropped.Preview.Kind == PreviewKind.Loading
+                ? (closed, [new Effect.CancelPreview(dropped.Id, dropped.Preview.Generation)])
+                : (closed, NoEffects);
         }
 
         var source = state.Focused.FocusedColumnOrNull;
