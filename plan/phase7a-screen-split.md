@@ -15,7 +15,7 @@
 
 # Status
 
-883 tests, `scripts/check.ps1` green.
+895 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`; do not edit it by hand. Write `(this commit)`
 in a row's commit cell (no backticks) and `status.ps1` fills in the hash after the commit lands.</sub>
@@ -29,7 +29,7 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
 | 7a.4 | Remove the compatibility shim | `[x]` | `c0024a9` `537a62d` |
 | 7a.5 | Property tests: refs to panes that do not exist; per-pane invariants | `[x]` | `d35a7ca` `8ec0f31` |
 | **7a-back** | **Split UI** | `[ ]` | |
-| 7a.6 | `ToggleSplit` / `FocusPane` | `[ ]` | |
+| 7a.6 | `ToggleSplit` / `FocusPane` | `[x]` | `7aef49d` `50797e3` |
 | 7a.7 | `SwapPanes` / `SyncToOtherPane` | `[ ]` | |
 | 7a.8 | `CopyToOtherPane` (`c` / `m`) | `[ ]` | |
 | 7a.8b | Two-pane correctness follow-ups (from the 7a.2 review): scoped reveal, `ShellOpCompleted` rereads, sections in every drive pane | `[ ]` | |
@@ -1598,6 +1598,17 @@ Run → build FAILS.
 
 - [ ] **Step 4: GenMsg** — `Gen.Const<Msg>(new Msg.SwapPanes()), Gen.Const<Msg>(new Msg.SyncToOtherPane()),`
 
+**Rename invariant (7a.6 review).** Add to `CheckInvariants`: when `Rename` is not null, `Rename.At.Pane`
+names a live pane. (The stronger "is the focused pane" would need a focused-pane gate in
+`RenameRequested`, which `GenMsg` addresses to any pane; the weaker form is what swap, sync, close
+and focus must all preserve, and the property test then enforces it.) If it fails, the handler that
+let a rename outlive its pane is the bug.
+
+**File size (7a.6 review).** `Transition.cs` is ~1800 lines and `TransitionTests.cs` ~3060. Move the
+pane-level handlers (`ToggleSplit`, `FocusPane`, `SwapPanes`, `SyncToOtherPane`, and 7a.8's
+`CopyToOtherPane` when it lands) into a `partial` `Transition.Split.cs`, and the property-test class
+`TransitionProperties` into its own `TransitionProperties.cs`. Moves only, in their own commit.
+
 - [ ] **Step 5: Run, check, commit**
 
 ```bash
@@ -1928,6 +1939,12 @@ Found by the 7a.2 code review; each is invisible with one pane and wrong with tw
     }
 ```
 
+Also add a close-during-reread case (7a.6 review): a rename in the bottom pane sets the reveal, the
+split is closed before the reread's listing arrives, and a later `DirectoryLoaded` in the kept pane
+containing the same name must not jump its cursor - the reveal named a column that no longer exists.
+`DirectoryLoaded` should drop a `RevealTarget` whose `At.Pane` is gone (or `ToggleSplit`'s close
+should clear it when it names the dropped pane; pick one and test it).
+
 Run → the first, third and fourth FAIL (the second documents intended behaviour and may already pass).
 
 - [ ] **Step 2: Scope the reveal**
@@ -2069,6 +2086,8 @@ with one class and a dictionary, all guarded by the existing `_previewGate`:
     /// </summary>
     private readonly Dictionary<PaneId, PreviewSlot> _previewSlots = [];
 
+    // ToggleSplit's close emits CancelPreview(closedPane, gen) when that pane was loading (7a.6
+    // review follow-up); after cancelling, call ForgetSlotUnderLock for that pane so the slot goes.
     /// <summary>Forgets <paramref name="pane"/>'s slot once its work has unwound.</summary>
     /// <remarks>
     /// Closing and reopening the split hands out a fresh <see cref="PaneId"/> each time, so without
@@ -2856,3 +2875,19 @@ anticipate. Stop and ask rather than deciding unilaterally when something contra
   input trace and `Render` (7a.10).
 - Found, not fixed here: a literal BEL (0x07) inside a test path string in `GenEntry`, present since
   before Phase 7 (`e7a4e27`). Suggested as a separate task.
+
+## 7a.6 (2026-11-19)
+
+- `ToggleSplit` / `FocusPane` in Core. A new pane needs no setup code of its own: its pre-message
+  snapshot is null, so the existing per-pane post-step gives it a child column and a preview.
+  `GenPaneId` weighted and widened; `Apply_is_deterministic` made multi-step with a structural
+  effect comparison; a closed-pane property. Spec review compliant.
+- Quality review found the main goal only weakly met: `ToggleSplit` was one of ~62 equally weighted
+  messages, so only ~14% of property runs ever had two panes - "no bug found" meant little. The
+  follow-up commit starts half of all property runs from an open split, makes the closed-pane
+  property address an id that *was* live (not one that never existed) with the commonest late
+  results, cancels a closed pane's in-flight preview on close (it could hold a worker for 30 s, and
+  is 7a.9's slot-release signal), and fixes a rename assertion that passed vacuously.
+- Deferred (plan updated): a "`Rename` names a live pane" invariant and moving the split handlers
+  and the property tests into their own files (7a.7); a close-during-reread case for the reveal
+  (7a.8b); releasing a pane's preview slot on that cancel (7a.9).
