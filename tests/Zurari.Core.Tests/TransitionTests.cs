@@ -2889,7 +2889,9 @@ public class TransitionProperties
             t.Item1, t.Item2, new PreviewCapacity("vol", "kind", UsedBytes: 1, TotalBytes: 2))),
         Gen.Const<Msg>(new Msg.PlacesChanged()),
         Gen.Const<Msg>(new Msg.ToggleSplit()),
-        GenPaneId.Select(p => (Msg)new Msg.FocusPane(p)));
+        GenPaneId.Select(p => (Msg)new Msg.FocusPane(p)),
+        Gen.Const<Msg>(new Msg.SwapPanes()),
+        Gen.Const<Msg>(new Msg.SyncToOtherPane()));
 
     [Fact]
     public void Any_msg_sequence_yields_valid_state_and_effects()

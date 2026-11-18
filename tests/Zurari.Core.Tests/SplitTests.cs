@@ -179,4 +179,66 @@ public class SplitTests
         Assert.Same(split, same);
         Assert.Empty(effects);
     }
+
+    private static AppState SplitWith(Column top, Column bottom) => AppState.Initial with
+    {
+        Panes = [new Pane(new PaneId(0), [top], 0), new Pane(new PaneId(1), [bottom], 0)],
+        FocusedPane = 0,
+        NextPaneId = 2,
+    };
+
+    [Fact]
+    public void Swap_exchanges_the_panes_and_keeps_focus_on_the_same_position()
+    {
+        var state = SplitWith(Files(@"C:", "x"), Files(@"C:", "p"));
+
+        var (next, _) = Transition.Apply(state, new Msg.SwapPanes());
+
+        Assert.Equal(new PaneId(1), next.Panes[0].Id);
+        Assert.Equal(new PaneId(0), next.Panes[1].Id);
+        Assert.Equal(0, next.FocusedPane);
+    }
+
+    [Fact]
+    public void Swap_with_one_pane_does_nothing()
+    {
+        var state = Browsing();
+
+        var (next, effects) = Transition.Apply(state, new Msg.SwapPanes());
+
+        Assert.Same(state, next);
+        Assert.Empty(effects);
+    }
+
+    [Fact]
+    public void Sync_copies_the_other_panes_columns_without_reading_anything()
+    {
+        var other = Files(@"C:", "p", "q") with { Cursor = 1 };
+        var state = SplitWith(Files(@"C:", "x"), other);
+
+        var (next, effects) = Transition.Apply(state, new Msg.SyncToOtherPane());
+
+        Assert.Equal(new Location.RealDirectory(@"C:"), next.Panes[0].Columns[0].Location);
+        Assert.Equal("q", next.Panes[0].Columns[0].CursorName);
+        Assert.Equal(new PaneId(0), next.Panes[0].Id);
+        Assert.Empty(TestEffects.Of<Effect.ReadDirectory>(effects));
+    }
+
+    [Fact]
+    public void Sync_re_derives_the_copied_columns_under_this_panes_view()
+    {
+        var other = new Column(
+            new Location.RealDirectory(@"C:"),
+            [new Entry("big", EntryKind.File, SizeBytes: 9), new Entry("small", EntryKind.File, SizeBytes: 1)],
+            Cursor: 0, Load: LoadState.Loaded);
+        var state = SplitWith(Files(@"C:", "x"), other);
+        state = state.WithPane(state.Panes[0] with
+        {
+            View = ViewOptions.Default with { Sort = SortOrder.Default with { Mode = SortMode.Size } },
+        });
+
+        var (next, _) = Transition.Apply(state, new Msg.SyncToOtherPane());
+
+        Assert.Equal("small", next.Panes[0].Columns[0].Entries[0].Name);
+    }
 }

@@ -248,6 +248,8 @@ public static class Transition
             Msg.CollapsedGroupsRestored m => (RestoreCollapsedGroups(state, m.At, m.Groups), NoEffects),
             Msg.ToggleSplit m => ToggleSplit(state, m.NewPaneView),
             Msg.FocusPane m => (FocusPane(state, m.Pane), NoEffects),
+            Msg.SwapPanes => (SwapPanes(state), NoEffects),
+            Msg.SyncToOtherPane => (SyncToOtherPane(state), NoEffects),
             _ => (state, NoEffects),
         };
     }
@@ -289,6 +291,33 @@ public static class Transition
         }
 
         return state with { FocusedPane = index, Rename = null, InputMode = InputMode.Normal };
+    }
+
+    // A rename in progress belongs to a row on screen; swapping moves panes between rows and syncing
+    // replaces the columns it was typed into, so both end it (as FocusPane does).
+    private static AppState SwapPanes(AppState state) =>
+        state.Panes.Length == 2
+            ? state with { Panes = [state.Panes[1], state.Panes[0]], Rename = null, InputMode = InputMode.Normal }
+            : state;
+
+    private static AppState SyncToOtherPane(AppState state)
+    {
+        if (state.Panes.Length != 2)
+        {
+            return state;
+        }
+
+        var mine = state.Focused;
+        var other = state.Panes[1 - state.FocusedPane];
+        var columns = ImmutableArray.CreateBuilder<Column>(other.Columns.Length);
+        foreach (var column in other.Columns)
+        {
+            columns.Add(column.WithView(mine.View));
+        }
+
+        return state.WithPane(mine with { Columns = columns.MoveToImmutable(), FocusedColumn = other.FocusedColumn })
+            with
+        { Rename = null };
     }
 
     private static AppState LeaveSortMode(AppState state) =>

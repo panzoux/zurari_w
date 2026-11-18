@@ -350,6 +350,15 @@ public abstract record Msg
     /// </summary>
     public sealed record FocusPane(PaneId Pane) : Msg;
 
+    /// <summary>Shift+O. Exchanges the two panes; focus stays on the same position (top stays top).</summary>
+    public sealed record SwapPanes : Msg;
+
+    /// <summary>
+    /// <c>o</c>. Makes the focused pane show what the other pane shows - the same columns and focused
+    /// column, re-derived under this pane's own view. Nothing is read again.
+    /// </summary>
+    public sealed record SyncToOtherPane : Msg;
+
     /// <summary>
     /// Collapse or expand the section headed by <paramref name="EntryIndex"/>, from the mouse rather
     /// than the cursor. Ignored unless that row is a header with a section to toggle.
