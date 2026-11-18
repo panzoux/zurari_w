@@ -583,9 +583,9 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
-        // A marked row stands for the whole selection (Core's one rule, PathsToActOn); a row that is
+        // A marked row stands for the shell's whole selection (ShellSelection); a row that is
         // not marked is just itself, whatever else is marked.
-        var paths = IsEntryMarked(at, entryIndex) ? ResolveMarkedFullPaths(at) : [shellName];
+        var paths = IsEntryMarked(at, entryIndex) ? ShellSelection(at) : [shellName];
         if (paths.Count == 0)
         {
             paths = [shellName];
@@ -680,7 +680,7 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
-        var paths = IsEntryMarked(at, e.EntryIndex) ? ResolveMarkedFullPaths(at) : [fullPath];
+        var paths = IsEntryMarked(at, e.EntryIndex) ? DragSelection(at) : [fullPath];
         if (paths.Count == 0)
         {
             paths = [fullPath];
@@ -751,11 +751,35 @@ public sealed partial class MainWindow : Window, IDisposable
     }
 
     /// <summary>
-    /// The paths an operation on <paramref name="at"/> acts on - Core's one rule,
-    /// <see cref="Column.PathsToActOn"/>, so a drag, the shell menu and Ctrl+C can never act on
-    /// different sets than <c>c</c> does. Empty when the column is gone or is not a real folder.
+    /// What the shell context menu acts on: every marked row of the column, wherever the column
+    /// lives. Unlike <see cref="Column.PathsToActOn"/> (file operations by path: Ctrl+C/X, drag,
+    /// <c>c</c>/<c>m</c>, which yield nothing for the bin or drive list) the shell has its own
+    /// selection, so several marked bin rows can be restored at once.
     /// </summary>
-    private List<string> ResolveMarkedFullPaths(ColumnRef at)
+    private List<string> ShellSelection(ColumnRef at)
+    {
+        var result = new List<string>();
+        if (loop.State.ColumnAt(at) is not { } column)
+        {
+            return result;
+        }
+
+        foreach (var entry in column.Entries)
+        {
+            if (entry.IsMarked && column.PathOf(entry) is { } path)
+            {
+                result.Add(path);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// The paths a drag carries: Core's <see cref="Column.PathsToActOn"/>, the same set as Ctrl+C
+    /// and <c>c</c>. A drag is a file operation by path, so it needs real filesystem paths.
+    /// </summary>
+    private List<string> DragSelection(ColumnRef at)
     {
         var result = new List<string>();
         if (loop.State.ColumnAt(at) is { } column)
@@ -1357,6 +1381,11 @@ public sealed partial class MainWindow : Window, IDisposable
             || state.ColumnAt(rename.At) is not { } column)
         {
             browser.SyncRenameEditor(-1, -1, null, null);
+            if (state.Rename is null)
+            {
+                cancelPostedFor = null;
+            }
+
             return;
         }
 
@@ -1365,7 +1394,8 @@ public sealed partial class MainWindow : Window, IDisposable
         // occupies that index.
         if (column.Location != rename.Location)
         {
-            Dispatch(new Msg.RenameCancelled());
+            browser.SyncRenameEditor(-1, -1, null, null);
+            PostRenameCancel(rename);
             return;
         }
 
@@ -1382,10 +1412,39 @@ public sealed partial class MainWindow : Window, IDisposable
         if (index < 0)
         {
             // The row went away underneath the editor - a refresh, a delete from elsewhere.
-            Dispatch(new Msg.RenameCancelled());
+            browser.SyncRenameEditor(-1, -1, null, null);
+            PostRenameCancel(rename);
             return;
         }
 
+        cancelPostedFor = null;
         browser.SyncRenameEditor(rename.At.Index, index, column.Entries[index].Label, rename.Error);
+    }
+
+    /// <summary>The stale rename a cancel was last posted for, so a render posts it at most once.</summary>
+    private RenameState? cancelPostedFor;
+
+    /// <summary>
+    /// Cancels a rename that no longer matches the screen. Posted rather than dispatched: a nested
+    /// dispatch re-renders inside <see cref="Render"/>, and the outer render would then write its
+    /// older state over the newer one (a stale status line).
+    /// </summary>
+    private void PostRenameCancel(RenameState stale)
+    {
+        if (cancelPostedFor == stale)
+        {
+            return;
+        }
+
+        cancelPostedFor = stale;
+        Dispatcher.BeginInvoke(
+            () =>
+            {
+                if (loop.State.Rename == stale)
+                {
+                    Dispatch(new Msg.RenameCancelled());
+                }
+            },
+            DispatcherPriority.Background);
     }
 }
