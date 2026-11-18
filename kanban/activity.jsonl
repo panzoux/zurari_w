@@ -36,3 +36,6 @@
 {"timestamp":"2026-11-19T04:03:32.1691883+09:00","action":"move","task_id":18,"detail":"todo -\u003e in-progress"}
 {"timestamp":"2026-11-19T04:29:40.9525839+09:00","action":"move","task_id":18,"detail":"in-progress -\u003e done"}
 {"timestamp":"2026-11-19T04:29:41.0899415+09:00","action":"move","task_id":9,"detail":"todo -\u003e in-progress"}
+{"timestamp":"2026-11-19T04:50:40.7783539+09:00","action":"create","task_id":19,"detail":"WorkerRuntime のプレビュー制御を PreviewScheduler に切り出す"}
+{"timestamp":"2026-11-19T04:56:10.8140417+09:00","action":"move","task_id":9,"detail":"in-progress -\u003e done"}
+{"timestamp":"2026-11-19T04:56:10.9706052+09:00","action":"move","task_id":10,"detail":"todo -\u003e in-progress"}

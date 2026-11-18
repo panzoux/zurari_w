@@ -15,7 +15,7 @@
 
 # Status
 
-946 tests, `scripts/check.ps1` green.
+955 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`; do not edit it by hand. Write `(this commit)`
 in a row's commit cell (no backticks) and `status.ps1` fills in the hash after the commit lands.</sub>
@@ -33,7 +33,7 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
 | 7a.7 | `SwapPanes` / `SyncToOtherPane` | `[x]` | `fe89b27` `7aed1c6` `ecd5c12` `274cf9b` |
 | 7a.8 | `CopyToOtherPane` (`c` / `m`) | `[x]` | `60fc9f5` `4a8c14a` |
 | 7a.8b | Two-pane correctness follow-ups (from the 7a.2-7a.7 reviews): scoped reveal, `ShellOpCompleted` rereads, sections in every drive pane, rename pinned to its folder | `[x]` | `f15b1dc` `2a42b22` `3a8d0a1` `f0b6278` `e8bc06c` |
-| 7a.9 | Runtime: one preview slot per pane | `[ ]` | |
+| 7a.9 | Runtime: one preview slot per pane | `[x]` | `479a15e` `53cbc2b` `d4350ce` |
 | 7a.10 | App: coalescing gates and projection cache per pane; `PaneView` extracted (still one row) | `[ ]` | |
 | 7a.11 | App: second row, splitter, focus routing, dimming, keys | `[ ]` | |
 | 7a.12 | Persistence: split open/ratio, per-position view options | `[ ]` | |
@@ -93,6 +93,10 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
    entries beyond the current pane count, so closing the split does not forget the bottom view.
 8. **Both panes share one preview width.** Dragging either preview splitter sets both, and the one
    stored `PreviewWidth` keeps its meaning.
+9. **The Runtime keeps each pane's preview high-water mark for the life of the process** (7a.9
+   review). One int per `PaneId` ever issued, and ids are issued only by a human toggling the split.
+   Releasing it on a "pane closed" signal would add a Core-to-Runtime message to save bytes and bring
+   back the reordering hazard it guards against (a late `LoadPreview` accepted after the release).
 
 ---
 
@@ -2994,3 +2998,20 @@ anticipate. Stop and ask rather than deciding unilaterally when something contra
   renamed item's folder, and fixes docs and test names the change had made stale.
 - Deferred (plan updated): the App's rename editor compares `Location` (7a.10); the collapsed-section
   restore stops depending on one column (7a.12).
+
+## 7a.9 (2026-11-19)
+
+- One preview slot per `PaneId` in `WorkerRuntime` (cancellable, latest-wins, released on a matching
+  cancel and on completion), tasks tracked in a set that `Dispose` waits on, and per-pane latest-wins
+  in `ShellThumbnailThread` (one waiting request per pane, drained FIFO by pane). Runtime only.
+- Spec review caught a regression the plan itself had written: releasing a slot also dropped the
+  pane's high-water generation, so a late, reordered stale `LoadPreview` was accepted again. Fixed by
+  keeping the mark per pane for the life of the process (decision 9).
+- Quality review confirmed the slot logic for all five Load/Cancel/completion/Dispose interleavings,
+  and found: the task could capture a null reference to itself and leak from the set (now created
+  unstarted, added, then started); new tests that could pass vacuously under load once the 1.5 s
+  shell-thumbnail budget expired (the budget is now a constructor parameter the blocking tests set to
+  infinite); and order-dependent stale-load tests (now synchronous through an internal
+  `ExecuteForTest` seam). A cancel that arrives before its load now fences that load.
+- Runtime tests stable over three consecutive runs at each commit. 955 tests, `check.ps1` green.
+- Backlog: extracting the preview scheduling into a `PreviewScheduler` (kanban #19).
