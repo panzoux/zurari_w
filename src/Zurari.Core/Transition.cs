@@ -1191,6 +1191,15 @@ public static partial class Transition
     /// </remarks>
     private static string PathComparisonKey(string path) => path.TrimEnd('\\', '/');
 
+    /// <summary>Whether <paramref name="dest"/> is <paramref name="source"/> itself or lies inside it.</summary>
+    private static bool IsSameOrInside(string dest, string source)
+    {
+        var d = PathComparisonKey(dest);
+        var s = PathComparisonKey(source);
+        return string.Equals(d, s, StringComparison.OrdinalIgnoreCase)
+            || d.StartsWith(s + System.IO.Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string? TryGetDirectoryName(string path)
     {
         try

@@ -218,6 +218,46 @@ public sealed record Column(
     }
 
     /// <summary>
+    /// The paths an operation on this column acts on: the marked files and folders, or - with none
+    /// marked - the one under the cursor. Empty when this column is not a real folder.
+    /// </summary>
+    /// <remarks>
+    /// Only <see cref="Entries"/> is looked at, so a mark on a row that is hidden or in a collapsed
+    /// section is never acted on (see <see cref="AllEntries"/>). Headers and drives have no
+    /// operations, and a column without a filesystem path of its own (the recycle bin, the drive
+    /// list) yields nothing at all: <see cref="PathOf"/> would hand back the shell's internal
+    /// <c>$R…</c> names for the bin, which are not something to copy or move.
+    /// </remarks>
+    public ImmutableArray<string> PathsToActOn()
+    {
+        if (Location.FilesystemPath is null)
+        {
+            return [];
+        }
+
+        var marked = ImmutableArray.CreateBuilder<string>();
+        foreach (var entry in Entries)
+        {
+            if (entry.IsMarked && entry.Kind is EntryKind.File or EntryKind.Directory
+                && PathOf(entry) is { } markedPath)
+            {
+                marked.Add(markedPath);
+            }
+        }
+
+        if (marked.Count > 0)
+        {
+            return marked.ToImmutable();
+        }
+
+        return Cursor >= 0 && Cursor < Entries.Length
+            && Entries[Cursor] is { Kind: EntryKind.File or EntryKind.Directory } cursorEntry
+            && PathOf(cursorEntry) is { } path
+                ? [path]
+                : [];
+    }
+
+    /// <summary>
     /// The single place that writes <see cref="AllEntries"/>, <see cref="Entries"/> and
     /// <see cref="Cursor"/>, so they cannot drift apart.
     /// </summary>

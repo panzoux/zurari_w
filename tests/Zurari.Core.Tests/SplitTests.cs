@@ -409,7 +409,7 @@ public class SplitTests
         var (next, effects) = Transition.Apply(Browsing(), new Msg.CopyToOtherPane(IsMove: false));
 
         Assert.Empty(effects);
-        Assert.NotNull(next.Notice);
+        Assert.Contains("分割していません", next.Notice);
     }
 
     [Fact]
@@ -423,7 +423,7 @@ public class SplitTests
         var (next, effects) = Transition.Apply(state, new Msg.CopyToOtherPane(IsMove: false));
 
         Assert.Empty(effects);
-        Assert.NotNull(next.Notice);
+        Assert.Contains("ここには", next.Notice);
     }
 
     [Fact]
@@ -436,6 +436,157 @@ public class SplitTests
         var (next, effects) = Transition.Apply(state, new Msg.CopyToOtherPane(IsMove: true));
 
         Assert.Empty(TestEffects.Of<Effect.RunFileJob>(effects));
-        Assert.NotNull(next.Notice);
+        Assert.Contains("それ自身", next.Notice);
+    }
+
+    private static Column InBin(params Entry[] entries) => new(
+        Location.RecycleBin.Instance, [.. entries], Cursor: entries.Length > 0 ? 0 : -1, Load: LoadState.Loaded);
+
+    private static void AssertRefused(AppState state, string noticePart)
+    {
+        var (next, effects) = Transition.Apply(state, new Msg.CopyToOtherPane(IsMove: false));
+
+        Assert.Empty(effects);
+        Assert.Empty(next.Jobs);
+        Assert.Contains(noticePart, next.Notice);
+    }
+
+    [Fact]
+    public void Refuses_when_the_focused_column_is_the_recycle_bin()
+    {
+        var bin = InBin(new Entry(@"C:\$Recycle.Bin\S-1\$R1", EntryKind.File));
+
+        AssertRefused(SplitWith(bin, Mixed(@"D:\dst", cursor: 1)), "ここには");
+    }
+
+    [Fact]
+    public void Refuses_when_the_other_pane_is_in_the_bin_on_a_deleted_folder()
+    {
+        var bin = InBin(new Entry(@"C:\$Recycle.Bin\S-1\$R2", EntryKind.Directory));
+
+        AssertRefused(SplitWith(Mixed(@"C:\src", cursor: 1), bin), "ここには");
+    }
+
+    [Fact]
+    public void Refuses_when_the_other_pane_is_in_an_empty_bin()
+    {
+        AssertRefused(SplitWith(Mixed(@"C:\src", cursor: 1), InBin()), "ここには");
+    }
+
+    [Fact]
+    public void Refuses_when_the_other_pane_is_the_drive_list_on_a_drive_row()
+    {
+        var drives = new Column(
+            Location.Drives.Instance, [new Entry(@"C:", EntryKind.Drive)], Cursor: 0, Load: LoadState.Loaded);
+
+        AssertRefused(SplitWith(Mixed(@"C:\src", cursor: 1), drives), "ここには");
+    }
+
+    [Fact]
+    public void A_mark_hidden_by_the_view_is_not_copied()
+    {
+        var source = Mixed(@"C:\src", cursor: 1).WithAllEntries(
+            [new Entry("sub", EntryKind.Directory, IsMarked: true, IsHidden: true), new Entry("f.txt", EntryKind.File)],
+            ViewOptions.Default);
+
+        var (_, effects) = Transition.Apply(
+            SplitWith(source, Mixed(@"D:\dst", cursor: 1)), new Msg.CopyToOtherPane(IsMove: false));
+
+        Assert.Equal([@"C:\src\f.txt"], Assert.Single(TestEffects.Of<Effect.RunFileJob>(effects)).Sources);
+    }
+
+    [Fact]
+    public void The_other_column_loading_with_no_entries_gives_its_own_location()
+    {
+        var loading = new Column(new Location.RealDirectory(@"D:\dst"), [], Cursor: -1, Load: LoadState.Loading);
+
+        var (_, effects) = Transition.Apply(
+            SplitWith(Mixed(@"C:\src", cursor: 1), loading), new Msg.CopyToOtherPane(IsMove: false));
+
+        Assert.Equal(@"D:\dst", Assert.Single(TestEffects.Of<Effect.RunFileJob>(effects)).DestDir);
+    }
+
+    [Theory]
+    [InlineData(@"C:\src\sub")]
+    [InlineData(@"C:\SRC\SUB")]
+    [InlineData(@"C:\src\sub\deeper")]
+    public void Refuses_a_destination_that_is_a_source_or_inside_it_however_it_is_spelled(string dest)
+    {
+        var other = new Column(new Location.RealDirectory(dest), [], Cursor: -1, Load: LoadState.Loaded);
+
+        AssertRefused(SplitWith(Mixed(@"C:\src", cursor: 0), other), "それ自身");
+    }
+
+    [Fact]
+    public void A_drive_root_is_a_fine_destination()
+    {
+        var root = new Column(new Location.RealDirectory(@"C:"), [], Cursor: -1, Load: LoadState.Loaded);
+
+        var (_, effects) = Transition.Apply(
+            SplitWith(Mixed(@"C:\a", cursor: 1), root), new Msg.CopyToOtherPane(IsMove: false));
+
+        var job = Assert.Single(TestEffects.Of<Effect.RunFileJob>(effects));
+        Assert.Equal(@"C:", job.DestDir);
+        Assert.Equal([@"C:\a\f.txt"], job.Sources);
+    }
+
+    [Fact]
+    public void Says_so_when_everything_already_lives_in_the_destination()
+    {
+        AssertRefused(SplitWith(Mixed(@"C:\src", cursor: 1), Mixed(@"C:\src", cursor: 1)), "同じフォルダー");
+    }
+
+    [Fact]
+    public void PathsToActOn_prefers_marks_then_the_cursor_entry()
+    {
+        var cursorOnly = Mixed(@"C:\src", cursor: 1);
+        Assert.Equal([@"C:\src\f.txt"], cursorOnly.PathsToActOn());
+
+        var marked = cursorOnly.WithAllEntries(
+            [new Entry("sub", EntryKind.Directory, IsMarked: true), new Entry("f.txt", EntryKind.File, IsMarked: true)],
+            ViewOptions.Default);
+        Assert.Equal([@"C:\src\sub", @"C:\src\f.txt"], marked.PathsToActOn());
+    }
+
+    [Fact]
+    public void PathsToActOn_ignores_marks_in_a_collapsed_section_and_falls_back_to_the_cursor()
+    {
+        var column = new Column(
+            new Location.RealDirectory(@"C:\src"),
+            [
+                new Entry("sub", EntryKind.Directory, IsMarked: true, Group: "g"),
+                new Entry("f.txt", EntryKind.File),
+            ],
+            Cursor: 1,
+            Load: LoadState.Loaded).WithCollapsedGroups(["g"], ViewOptions.Default);
+
+        Assert.Equal([@"C:\src\f.txt"], column.PathsToActOn());
+    }
+
+    [Fact]
+    public void PathsToActOn_excludes_marked_headers_and_drives()
+    {
+        var column = new Column(
+            new Location.RealDirectory(@"C:\src"),
+            [
+                new Entry("hdr", EntryKind.Header, IsMarked: true),
+                new Entry(@"D:", EntryKind.Drive, IsMarked: true),
+                new Entry("f.txt", EntryKind.File),
+            ],
+            Cursor: 0,
+            Load: LoadState.Loaded);
+
+        Assert.Empty(column.PathsToActOn());
+    }
+
+    [Fact]
+    public void PathsToActOn_is_empty_for_the_recycle_bin_and_the_drive_list()
+    {
+        var bin = InBin(new Entry(@"C:\$Recycle.Bin\S-1\$R1", EntryKind.File, IsMarked: true));
+        var drives = new Column(
+            Location.Drives.Instance, [new Entry(@"C:", EntryKind.Drive)], Cursor: 0, Load: LoadState.Loaded);
+
+        Assert.Empty(bin.PathsToActOn());
+        Assert.Empty(drives.PathsToActOn());
     }
 }

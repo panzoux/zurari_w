@@ -91,7 +91,13 @@ public static partial class Transition
             return (state, NoEffects);
         }
 
-        var sources = OperationTargets(column);
+        // The bin, the drive list: not real folders, so there is nothing here to copy from.
+        if (column.Location.FilesystemPath is null)
+        {
+            return (state with { Notice = CannotTransferHere }, NoEffects);
+        }
+
+        var sources = column.PathsToActOn();
         if (sources.IsEmpty)
         {
             return (state, NoEffects);
@@ -100,7 +106,7 @@ public static partial class Transition
         var other = state.Panes[1 - state.FocusedPane];
         if (DirectoryUnderCursor(other) is not { } dest)
         {
-            return (state with { Notice = "ドライブ一覧にはコピー・移動できません" }, NoEffects);
+            return (state with { Notice = CannotTransferHere }, NoEffects);
         }
 
         foreach (var source in sources)
@@ -111,45 +117,33 @@ public static partial class Transition
             }
         }
 
+        // Everything already lives in the destination (normal right after `o`): PasteRequested would
+        // drop it all without a word. Same-or-inside was refused above, so only the parent rule is left.
+        if (FilterDropSources(dest, sources).IsEmpty)
+        {
+            return (state with { Notice = "コピー先が元と同じフォルダーです" }, NoEffects);
+        }
+
+        // `at` only checks that the source column still exists; the destination is destOverride.
         return PasteRequested(state, mine.FocusedRef, sources, isMove, destOverride: dest);
     }
 
-    /// <summary>The marked entries' paths, or the cursor entry's when nothing is marked. Headers and drives never.</summary>
-    private static ImmutableArray<string> OperationTargets(Column column)
-    {
-        var marked = ImmutableArray.CreateBuilder<string>();
-        foreach (var entry in column.Entries)
-        {
-            if (entry.IsMarked && entry.Kind is EntryKind.File or EntryKind.Directory
-                && EntryPath(column, entry) is { } markedPath)
-            {
-                marked.Add(markedPath);
-            }
-        }
-
-        if (marked.Count > 0)
-        {
-            return marked.ToImmutable();
-        }
-
-        return column.Cursor >= 0 && column.Cursor < column.Entries.Length
-            && column.Entries[column.Cursor] is { Kind: EntryKind.File or EntryKind.Directory } cursorEntry
-            && EntryPath(column, cursorEntry) is { } path
-                ? [path]
-                : [];
-    }
+    private const string CannotTransferHere = "ここにはコピー・移動できません";
 
     /// <summary>
     /// zrr's ResolvePaneDirectory: the folder under <paramref name="pane"/>'s cursor, else its focused
-    /// column's own location. <c>null</c> when that is not a real directory (the drive list).
+    /// column's own location. <c>null</c> when that column is not itself a real directory (the drive
+    /// list, the recycle bin).
     /// </summary>
     /// <remarks>
     /// Not simply the column's location: the path bar shows the folder under the cursor, and zrr
-    /// shipped a bug where copying went one level above what the screen said.
+    /// shipped a bug where copying went one level above what the screen said. But never descend from
+    /// a column that is not a real folder: a deleted folder in the bin looks like a directory, and a
+    /// drive row would make the drive list a destination, which Ctrl+V refuses too.
     /// </remarks>
     private static string? DirectoryUnderCursor(Pane pane)
     {
-        if (pane.FocusedColumnOrNull is not { } column)
+        if (pane.FocusedColumnOrNull is not { Location.FilesystemPath: not null } column)
         {
             return null;
         }
@@ -160,14 +154,6 @@ public static partial class Transition
         }
 
         return column.Location.FilesystemPath;
-    }
-
-    private static bool IsSameOrInside(string dest, string source)
-    {
-        var d = PathComparisonKey(dest);
-        var s = PathComparisonKey(source);
-        return string.Equals(d, s, StringComparison.OrdinalIgnoreCase)
-            || d.StartsWith(s + "\\", StringComparison.OrdinalIgnoreCase);
     }
 
     private static ImmutableArray<Entry> WithoutMarks(ImmutableArray<Entry> entries)
