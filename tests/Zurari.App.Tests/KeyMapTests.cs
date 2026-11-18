@@ -13,7 +13,7 @@ public class KeyMapTests
     [Fact]
     public void S_opens_sort_mode()
     {
-        Assert.Equal(new Msg.EnterSortMode(), KeyMap.ResolveNormal(Key.S, ModifierKeys.None));
+        Assert.Equal(new Msg.EnterSortMode(), KeyMap.ResolveNormal(Key.S, ModifierKeys.None, AppState.Initial));
     }
 
     [Fact]
@@ -21,7 +21,7 @@ public class KeyMapTests
     {
         Assert.Equal(
             new Msg.ToggleHiddenFiles(),
-            KeyMap.ResolveNormal(Key.OemPeriod, ModifierKeys.Control | ModifierKeys.Shift));
+            KeyMap.ResolveNormal(Key.OemPeriod, ModifierKeys.Control | ModifierKeys.Shift, AppState.Initial));
     }
 
     /// <summary>
@@ -34,13 +34,67 @@ public class KeyMapTests
     [InlineData(Key.D)]
     public void Other_letters_mean_nothing_in_normal_mode(Key key)
     {
-        Assert.Null(KeyMap.ResolveNormal(key, ModifierKeys.None));
+        Assert.Null(KeyMap.ResolveNormal(key, ModifierKeys.None, AppState.Initial));
     }
 
     [Fact]
     public void S_with_a_modifier_does_not_open_sort_mode()
     {
-        Assert.Null(KeyMap.ResolveNormal(Key.S, ModifierKeys.Control));
+        Assert.Null(KeyMap.ResolveNormal(Key.S, ModifierKeys.Control, AppState.Initial));
+    }
+
+    [Theory]
+    [InlineData(Key.W, ModifierKeys.Control, typeof(Msg.ToggleSplit))]
+    [InlineData(Key.O, ModifierKeys.Shift, typeof(Msg.SwapPanes))]
+    [InlineData(Key.O, ModifierKeys.None, typeof(Msg.SyncToOtherPane))]
+    [InlineData(Key.C, ModifierKeys.None, typeof(Msg.CopyToOtherPane))]
+    [InlineData(Key.M, ModifierKeys.None, typeof(Msg.CopyToOtherPane))]
+    public void Split_keys_resolve(Key key, ModifierKeys modifiers, Type expected)
+    {
+        Assert.IsType(expected, KeyMap.ResolveNormal(key, modifiers, AppState.Initial));
+    }
+
+    [Fact]
+    public void M_moves_and_C_copies()
+    {
+        Assert.Equal(new Msg.CopyToOtherPane(IsMove: true), KeyMap.ResolveNormal(Key.M, ModifierKeys.None, AppState.Initial));
+        Assert.Equal(new Msg.CopyToOtherPane(IsMove: false), KeyMap.ResolveNormal(Key.C, ModifierKeys.None, AppState.Initial));
+    }
+
+    [Fact]
+    public void Tab_focuses_the_other_pane_only_when_split()
+    {
+        var single = AppState.Initial;
+        var (split, _) = Transition.Apply(single, new Msg.ToggleSplit());
+
+        Assert.Null(KeyMap.ResolveNormal(Key.Tab, ModifierKeys.None, single));
+        Assert.Equal(new Msg.FocusPane(split.Panes[1].Id), KeyMap.ResolveNormal(Key.Tab, ModifierKeys.None, split));
+    }
+
+    [Fact]
+    public void Tab_from_the_bottom_pane_goes_back_to_the_top()
+    {
+        var (split, _) = Transition.Apply(AppState.Initial, new Msg.ToggleSplit());
+        var (bottomFocused, _) = Transition.Apply(split, new Msg.FocusPane(split.Panes[1].Id));
+
+        Assert.Equal(
+            new Msg.FocusPane(bottomFocused.Panes[0].Id),
+            KeyMap.ResolveNormal(Key.Tab, ModifierKeys.None, bottomFocused));
+    }
+
+    /// <summary>The clipboard chords are not the split's: Ctrl+C/X/V, Shift+Tab and Ctrl+O stay unmapped here.</summary>
+    [Theory]
+    [InlineData(Key.C, ModifierKeys.Control)]
+    [InlineData(Key.X, ModifierKeys.Control)]
+    [InlineData(Key.V, ModifierKeys.Control)]
+    [InlineData(Key.Tab, ModifierKeys.Shift)]
+    [InlineData(Key.O, ModifierKeys.Control)]
+    [InlineData(Key.W, ModifierKeys.None)]
+    public void Chords_that_look_like_split_keys_are_left_alone(Key key, ModifierKeys modifiers)
+    {
+        var (split, _) = Transition.Apply(AppState.Initial, new Msg.ToggleSplit());
+
+        Assert.Null(KeyMap.ResolveNormal(key, modifiers, split));
     }
 
     [Theory]

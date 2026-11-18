@@ -873,7 +873,7 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
-        var normal = KeyMap.ResolveNormal(EffectiveKey(e), Keyboard.Modifiers);
+        var normal = KeyMap.ResolveNormal(EffectiveKey(e), Keyboard.Modifiers, loop.State);
         if (ColumnBrowser.InputTraceEnabled)
         {
             Trace.WriteLine(InputTrace.Resolution("key", normal?.ToString() ?? "(not a mode key)"));

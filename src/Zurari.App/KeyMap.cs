@@ -16,19 +16,36 @@ namespace Zurari.App;
 /// goes where it would have gone.
 /// </para>
 /// <para>
-/// No plain letter other than <c>S</c> is claimed in normal mode. Incremental search opens on
-/// <c>/</c>, as in zrr, and letters that mean nothing yet are left free.
+/// The plain letters claimed in normal mode are <c>S</c> (sort), and <c>o</c>, <c>c</c> and <c>m</c>
+/// (the split: sync to, copy to and move to the other pane). Incremental search opens on <c>/</c>, as
+/// in zrr, and letters that mean nothing yet are left free. Ctrl+C / Ctrl+X / Ctrl+V are the
+/// clipboard's and are not touched by <c>c</c>.
 /// </para>
 /// </remarks>
 internal static class KeyMap
 {
-    /// <summary>The message for a normal-mode key this map owns, or <c>null</c> for any other key.</summary>
-    public static Msg? ResolveNormal(Key key, ModifierKeys modifiers) => (key, modifiers) switch
+    /// <summary>
+    /// The message for a normal-mode key this map owns, or <c>null</c> for any other key. Tab is
+    /// owned only while split (<paramref name="state"/> says so): with one pane it is left to WPF.
+    /// </summary>
+    public static Msg? ResolveNormal(Key key, ModifierKeys modifiers, AppState state)
     {
-        (Key.S, ModifierKeys.None) => new Msg.EnterSortMode(),
-        (Key.OemPeriod, ModifierKeys.Control | ModifierKeys.Shift) => new Msg.ToggleHiddenFiles(),
-        _ => null,
-    };
+        ArgumentNullException.ThrowIfNull(state);
+
+        return (key, modifiers) switch
+        {
+            (Key.S, ModifierKeys.None) => new Msg.EnterSortMode(),
+            (Key.OemPeriod, ModifierKeys.Control | ModifierKeys.Shift) => new Msg.ToggleHiddenFiles(),
+            (Key.W, ModifierKeys.Control) => new Msg.ToggleSplit(),
+            (Key.Tab, ModifierKeys.None) when state.Panes.Length == 2 =>
+                new Msg.FocusPane(state.Panes[1 - state.FocusedPane].Id),
+            (Key.O, ModifierKeys.Shift) => new Msg.SwapPanes(),
+            (Key.O, ModifierKeys.None) => new Msg.SyncToOtherPane(),
+            (Key.C, ModifierKeys.None) => new Msg.CopyToOtherPane(IsMove: false),
+            (Key.M, ModifierKeys.None) => new Msg.CopyToOtherPane(IsMove: true),
+            _ => null,
+        };
+    }
 
     /// <summary>What a key means while sort mode is open.</summary>
     public static SortKeyOutcome ResolveSortMode(Key key, ModifierKeys modifiers)
