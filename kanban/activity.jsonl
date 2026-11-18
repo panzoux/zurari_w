@@ -30,3 +30,5 @@
 {"timestamp":"2026-11-19T01:44:27.9485172+09:00","action":"move","task_id":6,"detail":"todo -\u003e in-progress"}
 {"timestamp":"2026-11-19T02:14:21.7240955+09:00","action":"move","task_id":6,"detail":"in-progress -\u003e done"}
 {"timestamp":"2026-11-19T02:14:21.9455653+09:00","action":"move","task_id":7,"detail":"todo -\u003e in-progress"}
+{"timestamp":"2026-11-19T02:36:11.4612746+09:00","action":"move","task_id":7,"detail":"in-progress -\u003e done"}
+{"timestamp":"2026-11-19T02:36:11.604237+09:00","action":"move","task_id":8,"detail":"todo -\u003e in-progress"}

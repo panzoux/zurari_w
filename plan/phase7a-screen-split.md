@@ -15,7 +15,7 @@
 
 # Status
 
-895 tests, `scripts/check.ps1` green.
+907 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`; do not edit it by hand. Write `(this commit)`
 in a row's commit cell (no backticks) and `status.ps1` fills in the hash after the commit lands.</sub>
@@ -30,9 +30,9 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
 | 7a.5 | Property tests: refs to panes that do not exist; per-pane invariants | `[x]` | `d35a7ca` `8ec0f31` |
 | **7a-back** | **Split UI** | `[ ]` | |
 | 7a.6 | `ToggleSplit` / `FocusPane` | `[x]` | `7aef49d` `50797e3` |
-| 7a.7 | `SwapPanes` / `SyncToOtherPane` | `[ ]` | |
+| 7a.7 | `SwapPanes` / `SyncToOtherPane` | `[x]` | `fe89b27` `7aed1c6` `ecd5c12` `274cf9b` |
 | 7a.8 | `CopyToOtherPane` (`c` / `m`) | `[ ]` | |
-| 7a.8b | Two-pane correctness follow-ups (from the 7a.2 review): scoped reveal, `ShellOpCompleted` rereads, sections in every drive pane | `[ ]` | |
+| 7a.8b | Two-pane correctness follow-ups (from the 7a.2-7a.7 reviews): scoped reveal, `ShellOpCompleted` rereads, sections in every drive pane, rename pinned to its folder | `[ ]` | |
 | 7a.9 | Runtime: one preview slot per pane | `[ ]` | |
 | 7a.10 | App: coalescing gates and projection cache per pane; `PaneView` extracted (still one row) | `[ ]` | |
 | 7a.11 | App: second row, splitter, focus routing, dimming, keys | `[ ]` | |
@@ -73,6 +73,11 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
    `JumpTo` helper. The other pane's listings are already loaded, so no I/O happens and there is no
    loading flash. `JumpTo(PaneId, Location)` is deferred to 7c, where the address bar and history
    actually need it. The design doc is updated in 7a.14.
+   *Refined by the 7a.7 review:* a copied column that is still loading gets its own
+   `ReadDirectory` for this pane (the pending one is addressed to the other pane, so the copy would
+   stay loading forever), and **marks are not copied** - a selection belongs to the pane it was
+   made in, and zrr's `o` dropped marks too. Collapsed sections and the scroll offset are copied:
+   they are placement, not intent.
 3. **`Refresh` (F5) re-reads every column of every pane**, as it re-reads every column today.
    `ExternalDirectoryChanged`, `ShellOpCompleted`, `JobCompleted`/`JobCancelled` and
    `PlacesChanged` likewise look at every pane: a directory that changed is stale wherever it is shown.
@@ -1982,13 +1987,26 @@ Replace its staleness early-return with the check inside the predicate:
 it with `WithCollapsedGroups(set, pane.View)` to every `Location.Drives` column in every pane, and
 still emits one `SetCollapsedGroups`. `CollapsedGroupsRestored` does the same with the restored set.
 
-- [ ] **Step 5: Run, check, commit**
+- [ ] **Step 5: A rename remembers the folder it is in (7a.7 review)**
+
+`RenameState(ColumnRef At, string EntryName, string? Error)` stores no `Location`. If the column at
+`At` is truncated while the editor is open, `SubmitRename` silently does nothing and the editor stays
+open (only Esc closes it); if a *different* directory has since moved into that index,
+`SubmitRename` emits `RenameEntry(editing.At, column.Location, ...)` with the new directory's
+location and renames a same-named file in the wrong folder. Add `Location` to `RenameState`, set it
+in `BeginRename`, and make `SubmitRename` close the editor with a `Notice` when `ColumnAt(At)` is
+null or its `Location` differs. Tests: both cases. Keep the invariant at "names a live pane" (a
+stronger "names a live column" would flag states the generator legitimately reaches). Before
+writing the fix, check whether the App lets the user navigate while the editor is open (mouse
+clicks on other rows/columns); record the answer in Records - it decides how urgent this was.
+
+- [ ] **Step 6: Run, check, commit**
 
 Run: `dotnet test tests/Zurari.Core.Tests` → PASS. `pwsh scripts/check.ps1` → green.
 
 ```bash
 git add -A src/Zurari.Core tests/Zurari.Core.Tests
-git commit -m "Scope a reveal to its column, and keep rereads and sections right with two panes"
+git commit -m "Scope a reveal to its column, keep rereads and sections right with two panes, and pin a rename to its folder"
 ```
 
 ---
@@ -2891,3 +2909,20 @@ anticipate. Stop and ask rather than deciding unilaterally when something contra
 - Deferred (plan updated): a "`Rename` names a live pane" invariant and moving the split handlers
   and the property tests into their own files (7a.7); a close-during-reread case for the reveal
   (7a.8b); releasing a pane's preview slot on that cancel (7a.9).
+
+## 7a.7 (2026-11-19)
+
+- Three commits: `SwapPanes`/`SyncToOtherPane` (`fe89b27`); a `CheckInvariants` rule that a rename
+  names a live pane (`7aed1c6`, found nothing - every pane-level handler already ends a rename); and a
+  pure move of the split handlers to `Transition.Split.cs` and the property tests to
+  `TransitionProperties.cs` (`ecd5c12`, verified line-for-line by the spec review). Spec compliant.
+- The quality review found a real hang: `o` copied a column that was still loading, but the only
+  pending read was addressed to the *other* pane, so the copy stayed loading forever (e.g. Ctrl+W
+  then `o` before the new pane had loaded). The follow-up re-reads such columns for this pane.
+- Decision (refines plan decision 2): `o` does not copy marks - a selection belongs to the pane it
+  was made in, as in zrr - but does copy collapsed sections and the scroll offset.
+- The new tests had `C:\a`/`C:\b` written as `C:` + BEL/BS bytes by an escape-interpreting tool;
+  they passed only because both sides held the same garbage. Fixed with the older BEL in the
+  property tests, and `check.ps1` now fails on C0 control bytes in source and plan files.
+- Deferred (plan updated): `RenameState` stores no folder, so a rename whose column moved could rename
+  a same-named file in the wrong folder - pinned to its location in 7a.8b.

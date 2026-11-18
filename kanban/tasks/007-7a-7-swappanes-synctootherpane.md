@@ -1,10 +1,12 @@
 ---
 id: 7
 title: 7a.7 SwapPanes / SyncToOtherPane
-status: in-progress
+status: done
 priority: high
 created: 2026-09-19T20:04:40.6370377+09:00
-updated: 2026-11-19T02:14:21.928971+09:00
+updated: 2026-11-19T02:36:11.4554126+09:00
+started: 2026-11-19T02:36:11.4580007+09:00
+completed: 2026-11-19T02:36:11.4580007+09:00
 tags:
     - phase7a
 depends_on:
