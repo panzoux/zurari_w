@@ -549,6 +549,100 @@ public class WorkerRuntimeTests
     }
 
     [Fact]
+    public void A_stale_load_after_the_slot_is_released_does_not_start()
+    {
+        var dir = TempDirectory.Create("zurari-stale-after-finish");
+        try
+        {
+            var pane = new PaneId(0);
+            var file = Path.Combine(dir, "a.txt");
+            File.WriteAllText(file, "alpha");
+            var posted = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(posted.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
+
+            runtime.Submit(new Effect.LoadPreview(pane, 5, file));
+            WaitFor(posted, TimeSpan.FromSeconds(10), seen => PreviewsIn(seen).Count >= 1);
+            Assert.True(PollUntil(() => runtime.PreviewSlotCount == 0), "The slot should be released.");
+
+            // Older generation, then a newer one. If the older were accepted its result would be
+            // posted; once the newer one has arrived, nothing else for this pane may be there.
+            runtime.Submit(new Effect.LoadPreview(pane, 4, file));
+            Assert.Equal(0, runtime.PreviewSlotCount);
+            runtime.Submit(new Effect.LoadPreview(pane, 6, file));
+
+            var loaded = PreviewsIn(WaitFor(posted, TimeSpan.FromSeconds(10), seen => HasGeneration(seen, 6)));
+            Assert.True(HasGeneration(new List<Msg>(posted), 6), "The newer generation should still start.");
+            AssertNoGeneration(loaded, 4);
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
+
+    [Fact]
+    public void A_stale_load_after_a_cancel_released_the_slot_does_not_start()
+    {
+        var dir = TempDirectory.Create("zurari-stale-after-cancel");
+        using var release = new ManualResetEventSlim(false);
+        try
+        {
+            var pane = new PaneId(2);
+            var posted = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(
+                posted.Enqueue,
+                thumbnailCache: new ThumbnailCache(Path.Combine(dir, "cache")),
+                shellThumbnail: (_, _) =>
+                {
+                    release.Wait(TimeSpan.FromSeconds(30));
+                    return null;
+                },
+                settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
+            var text = Path.Combine(dir, "a.txt");
+            File.WriteAllText(text, "alpha");
+
+            runtime.Submit(new Effect.LoadPreview(pane, 5, VideoFile(dir, "a.mp4")));
+            Assert.True(PollUntil(() => runtime.IsPreviewInFlight(pane)), "The preview should be in flight.");
+            runtime.Submit(new Effect.CancelPreview(pane, 5));
+            Assert.True(PollUntil(() => runtime.PreviewSlotCount == 0), "The cancel should release the slot.");
+
+            runtime.Submit(new Effect.LoadPreview(pane, 4, text));
+            Assert.Equal(0, runtime.PreviewSlotCount);
+            runtime.Submit(new Effect.LoadPreview(pane, 6, text));
+
+            var seen = WaitFor(posted, TimeSpan.FromSeconds(10), msgs => HasGeneration(msgs, 6));
+            Assert.True(HasGeneration(seen, 6), "The newer generation should still start.");
+            AssertNoGeneration(PreviewsIn(seen), 4);
+        }
+        finally
+        {
+            release.Set();
+            TempDirectory.Delete(dir);
+        }
+    }
+
+    private static bool HasGeneration(List<Msg> msgs, int generation)
+    {
+        foreach (var preview in PreviewsIn(msgs))
+        {
+            if (preview.Generation == generation)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static void AssertNoGeneration(List<Msg.PreviewLoaded> loaded, int generation)
+    {
+        foreach (var preview in loaded)
+        {
+            Assert.NotEqual(generation, preview.Generation);
+        }
+    }
+
+    [Fact]
     public void A_panes_slot_is_released_when_its_preview_is_cancelled()
     {
         var dir = TempDirectory.Create("zurari-slot-cancel");

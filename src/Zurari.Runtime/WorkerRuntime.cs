@@ -156,15 +156,16 @@ public sealed class WorkerRuntime : IDisposable
     private int _collapseRestored;
 
     /// <summary>
-    /// Guards <see cref="_previewSlots"/>, every <see cref="PreviewSlot"/> in it and
-    /// <see cref="_previewTasks"/>. They are only ever read or written under it.
+    /// Guards <see cref="_previewSlots"/>, every <see cref="PreviewSlot"/> in it,
+    /// <see cref="_highestPreviewGeneration"/> and <see cref="_previewTasks"/>. They are only ever
+    /// read or written under it.
     /// </summary>
     /// <remarks>
-    /// The invariant the pair of generation fields of one slot must satisfy: whenever
-    /// <see cref="PreviewSlot.Generation"/> is not -1 it equals <see cref="PreviewSlot.HighestGeneration"/>.
-    /// They differ only in what survives cancellation - the current generation is cleared when a
-    /// preview stops, the high-water mark is not, which is what makes a late, out-of-order request
-    /// recognisable as stale rather than as something new.
+    /// The invariant a pane's generations must satisfy: whenever its slot's
+    /// <see cref="PreviewSlot.Generation"/> is not -1 it equals that pane's entry in
+    /// <see cref="_highestPreviewGeneration"/>. They differ only in what survives a preview
+    /// stopping - the slot's current generation is cleared, the high-water mark is not, which is
+    /// what makes a late, out-of-order request recognisable as stale rather than as something new.
     ///
     /// Nothing may block while holding this lock. <see cref="RunPreview"/>'s finally takes it, so
     /// waiting on a preview task from inside it would deadlock; see <see cref="Dispose"/>.
@@ -172,8 +173,9 @@ public sealed class WorkerRuntime : IDisposable
     private readonly object _previewGate = new();
 
     /// <summary>
-    /// One pane's preview: what is in flight and the newest generation ever started. Each pane counts
-    /// generations from its own start, so the high-water mark must be per pane too.
+    /// One pane's preview in flight: only what must be released when it stops. The high-water mark
+    /// is deliberately not here, because it must survive the slot - see
+    /// <see cref="_highestPreviewGeneration"/>.
     /// </summary>
     private sealed class PreviewSlot
     {
@@ -185,20 +187,26 @@ public sealed class WorkerRuntime : IDisposable
         /// <see cref="Effect.CancelPreview"/> order-independent - see <see cref="CancelInFlightPreview"/>.
         /// </summary>
         public int Generation = -1;
-
-        /// <summary>
-        /// Highest <see cref="Effect.LoadPreview.Generation"/> ever started in this pane, so an
-        /// out-of-order request cannot supersede a newer one - see <see cref="StartPreview"/>.
-        /// </summary>
-        public int HighestGeneration = -1;
     }
 
     /// <summary>
-    /// A slot per pane, so starting one pane's preview never cancels the other's. Created on first
-    /// use and forgotten again - see <see cref="ForgetSlotUnderLock"/> - so it holds only panes with
-    /// a preview in flight.
+    /// A slot per pane, so starting one pane's preview never cancels the other's. Created when a
+    /// preview starts and forgotten again - see <see cref="ForgetSlotUnderLock"/> - so it holds only
+    /// panes with a preview in flight.
     /// </summary>
     private readonly Dictionary<PaneId, PreviewSlot> _previewSlots = [];
+
+    /// <summary>
+    /// Highest <see cref="Effect.LoadPreview.Generation"/> ever started per pane (absent = -1), so an
+    /// out-of-order request cannot supersede a newer one - see <see cref="StartPreview"/>. Each pane
+    /// counts generations from its own start, so the mark is per pane.
+    /// </summary>
+    /// <remarks>
+    /// Entries are never removed, so a released slot cannot let a late, reordered older request in.
+    /// The cost is bounded: one int per pane ever opened. Pane ids only grow and a session opens a
+    /// handful of panes; the heavy parts - cancellation sources and tasks - are still released.
+    /// </remarks>
+    private readonly Dictionary<PaneId, int> _highestPreviewGeneration = [];
 
     /// <summary>
     /// Every preview task that has not yet unwound, whichever slot it belonged to, so
@@ -207,7 +215,10 @@ public sealed class WorkerRuntime : IDisposable
     /// </summary>
     private readonly HashSet<Task> _previewTasks = [];
 
-    /// <summary>Forgets <paramref name="pane"/>'s slot once it has nothing in flight.</summary>
+    /// <summary>
+    /// Forgets <paramref name="pane"/>'s slot once it has nothing in flight. Its generation high-water
+    /// mark is kept.
+    /// </summary>
     /// <remarks>
     /// Closing and reopening the split hands out a fresh <see cref="PaneId"/> each time, so without
     /// this the dictionary would grow by one entry for every toggle in the process's life. Called
@@ -416,21 +427,20 @@ public sealed class WorkerRuntime : IDisposable
                 return;
             }
 
-            var slot = SlotFor(effect.Pane);
-
             // Generations only ever increase, so anything not newer than what we already started is
             // stale and must not supersede it. Effects are submitted in order but drained from one
             // channel by several workers, so two consecutive cursor moves can reach here reversed;
             // letting the older one win would show the wrong file, and its result would then be
             // discarded by Core's generation check - leaving the pane loading forever.
-            if (effect.Generation <= slot.HighestGeneration)
+            // The mark outlives the slot, so this also holds after the pane's slot was released. A
+            // stale request returns before SlotFor, so it never creates a slot.
+            if (_highestPreviewGeneration.TryGetValue(effect.Pane, out var highest) && effect.Generation <= highest)
             {
-                // SlotFor may just have created this slot, but then HighestGeneration is -1 and
-                // nothing is stale, so a slot is never left empty here.
                 return;
             }
 
-            slot.HighestGeneration = effect.Generation;
+            _highestPreviewGeneration[effect.Pane] = effect.Generation;
+            var slot = SlotFor(effect.Pane);
             CancelPreviewCtsUnderLock(slot);
             cts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
             slot.Cts = cts;
