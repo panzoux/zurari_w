@@ -644,6 +644,53 @@ public class SplitTests
     }
 
     [Fact]
+    public void A_finished_shell_op_rereads_affected_folders_even_when_its_column_is_gone()
+    {
+        var src = new Location.RealDirectory(@"C:\src");
+        var state = SplitWith(
+            new Column(src, [new Entry("f", EntryKind.File)], Cursor: 0, Load: LoadState.Loaded),
+            new Column(new Location.RealDirectory(@"D:\dst"), [], Load: LoadState.Loaded));
+        var closedPane = new ColumnRef(new PaneId(9), 0);
+
+        var (_, effects) = Transition.Apply(
+            state, new Msg.ShellOpCompleted(closedPane, new Location.RealDirectory(@"D:\dst"), [@"C:\src"]));
+
+        var read = Assert.Single(TestEffects.Of<Effect.ReadDirectory>(effects));
+        Assert.Equal(new ColumnRef(new PaneId(0), 0), read.At);
+    }
+
+    private static AppState TwoDriveLists()
+    {
+        var header = new Entry("net", EntryKind.Header, Group: "net");
+        var row = new Entry(@"\\s\x", EntryKind.Directory, Group: "net");
+        var drives = new Column(Location.Drives.Instance, [header, row], Cursor: 0, Load: LoadState.Loaded);
+        return SplitWith(drives, drives);
+    }
+
+    [Fact]
+    public void Collapsing_a_section_collapses_it_in_every_drive_list()
+    {
+        var state = TwoDriveLists();
+
+        var (next, effects) = Transition.Apply(state, new Msg.ToggleSection(new ColumnRef(new PaneId(0), 0), 0));
+
+        Assert.Single(next.Panes[0].Columns[0].Entries);
+        Assert.Single(next.Panes[1].Columns[0].Entries);
+        Assert.Single(TestEffects.Of<Effect.SetCollapsedGroups>(effects));
+    }
+
+    [Fact]
+    public void Restored_collapsed_sections_apply_to_every_drive_list()
+    {
+        var state = TwoDriveLists();
+
+        var (next, _) = Transition.Apply(state, new Msg.CollapsedGroupsRestored(new ColumnRef(new PaneId(1), 0), ["net"]));
+
+        Assert.Single(next.Panes[0].Columns[0].Entries);
+        Assert.Single(next.Panes[1].Columns[0].Entries);
+    }
+
+    [Fact]
     public void A_scoped_reveal_is_ignored_by_another_pane_and_kept_for_its_own()
     {
         var dir = new Location.RealDirectory(@"C:\x");

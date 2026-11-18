@@ -858,10 +858,41 @@ public static partial class Transition
         AppState state, ColumnRef at, Column column, string group)
     {
         var toggled = column.ToggleGroup(group, state.ViewAt(at));
-        var next = state.WithColumn(at, toggled);
-        return column.Location is Location.Drives
-            ? (next, new Effect[] { new Effect.SetCollapsedGroups([.. toggled.CollapsedGroups]) })
-            : (next, NoEffects);
+        if (column.Location is not Location.Drives)
+        {
+            return (state.WithColumn(at, toggled), NoEffects);
+        }
+
+        // One remembered set for every drive list: a section collapsed in one pane is collapsed in
+        // the other, so the two cannot disagree about what is persisted.
+        return (
+            WithCollapsedGroupsInAllDriveLists(state, toggled.CollapsedGroups),
+            new Effect[] { new Effect.SetCollapsedGroups([.. toggled.CollapsedGroups]) });
+    }
+
+    /// <summary>Applies <paramref name="groups"/> as the collapsed set of every drive list in every pane.</summary>
+    private static AppState WithCollapsedGroupsInAllDriveLists(AppState state, ImmutableHashSet<string> set)
+    {
+        var panes = state.Panes;
+        for (var p = 0; p < panes.Length; p++)
+        {
+            var pane = panes[p];
+            var columns = pane.Columns;
+            for (var i = 0; i < columns.Length; i++)
+            {
+                if (columns[i].Location is Location.Drives)
+                {
+                    columns = columns.SetItem(i, columns[i].WithCollapsedGroups(set, pane.View));
+                }
+            }
+
+            if (columns != pane.Columns)
+            {
+                panes = panes.SetItem(p, pane with { Columns = columns });
+            }
+        }
+
+        return panes == state.Panes ? state : state with { Panes = panes };
     }
 
     /// <summary>
@@ -882,7 +913,7 @@ public static partial class Transition
         }
 
         return column.Location is Location.Drives
-            ? state.WithColumn(at, column.WithCollapsedGroups([.. groups], state.ViewAt(at)))
+            ? WithCollapsedGroupsInAllDriveLists(state, [.. groups])
             : state;
     }
 
@@ -1240,23 +1271,17 @@ public static partial class Transition
     private static (AppState, IReadOnlyList<Effect>) ShellOpCompleted(
         AppState state, ColumnRef at, Location columnLocation, ImmutableArray<string> affectedDirs)
     {
-        if (state.ColumnAt(at) is not { } column)
-        {
-            return (state, NoEffects);
-        }
-
-        if (column.Location != columnLocation)
-        {
-            return (state, NoEffects);
-        }
-
         // A move/delete changes directories beyond the one the operation completed against
         // (its destination, and - for a move - its sources' parents), and any of those may be
         // visible as another column (e.g. dragging a file out of column 3 into column 2). Only
         // re-read columns actually affected, plus the completing column itself (belt and
-        // braces); columns showing an unrelated directory are left alone. Marks survive via the
-        // name-match carry-over in DirectoryLoaded.
-        return RereadWhere(state, (r, c) => r == at || IsAffectedDirectory(c.Location, affectedDirs));
+        // braces) while it still shows the location the operation ran against; columns showing an
+        // unrelated directory are left alone. The completing column may be gone (its pane closed
+        // or its chain truncated) - the disk changed regardless, so affected folders are still
+        // re-read. Marks survive via the name-match carry-over in DirectoryLoaded.
+        return RereadWhere(
+            state,
+            (r, c) => (r == at && c.Location == columnLocation) || IsAffectedDirectory(c.Location, affectedDirs));
     }
 
     /// <summary>
