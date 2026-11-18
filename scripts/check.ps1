@@ -5,6 +5,32 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
 try {
+    # A C0 control byte in a source or plan file is almost always an escape that a tool turned into
+    # a literal (a path written as C:<BEL>). The compiler accepts it, so it is checked here.
+    Write-Host '== control characters ==' -ForegroundColor Cyan
+    $badBytes = @()
+    $scan = @(
+        @{ Dir = 'src'; Filter = '*.cs' }, @{ Dir = 'tests'; Filter = '*.cs' },
+        @{ Dir = 'plan'; Filter = '*.md' }, @{ Dir = 'docs'; Filter = '*.md' })
+    foreach ($s in $scan) {
+        if (-not (Test-Path $s.Dir)) { continue }
+        foreach ($f in Get-ChildItem $s.Dir -Recurse -File -Filter $s.Filter) {
+            if ($f.FullName -match '[\\/](bin|obj)[\\/]') { continue }
+            $bytes = [System.IO.File]::ReadAllBytes($f.FullName)
+            $line = 1
+            foreach ($b in $bytes) {
+                if ($b -eq 10) { $line++ }
+                elseif ($b -lt 32 -and $b -ne 9 -and $b -ne 13) {
+                    $badBytes += ('{0}:{1} (byte 0x{2:X2})' -f $f.FullName, $line, $b)
+                }
+            }
+        }
+    }
+    if ($badBytes.Count -gt 0) {
+        $badBytes | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+        throw 'Control characters found in source files (see above).'
+    }
+
     Write-Host '== format (verify only) ==' -ForegroundColor Cyan
     dotnet format Zurari.sln --verify-no-changes
     if ($LASTEXITCODE -ne 0) { throw 'Formatting issues found. Fix with: dotnet format Zurari.sln' }

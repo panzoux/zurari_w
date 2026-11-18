@@ -50,23 +50,42 @@ public static partial class Transition
             ? state with { Panes = [state.Panes[1], state.Panes[0]], Rename = null, InputMode = InputMode.Normal }
             : state;
 
-    private static AppState SyncToOtherPane(AppState state)
+    // A selection belongs to the pane where it was made, so the copy carries no marks. A column still
+    // loading in the other pane is read again for this one: the pending read answers to the other
+    // pane's column, so a copy of it would otherwise stay Loading for ever.
+    private static (AppState, IReadOnlyList<Effect>) SyncToOtherPane(AppState state)
     {
         if (state.Panes.Length != 2)
         {
-            return state;
+            return (state, NoEffects);
         }
 
         var mine = state.Focused;
         var other = state.Panes[1 - state.FocusedPane];
         var columns = ImmutableArray.CreateBuilder<Column>(other.Columns.Length);
-        foreach (var column in other.Columns)
+        var effects = new List<Effect>();
+        for (var i = 0; i < other.Columns.Length; i++)
         {
-            columns.Add(column.WithView(mine.View));
+            var column = other.Columns[i];
+            columns.Add(column.WithAllEntries(WithoutMarks(column.AllEntries), mine.View));
+            if (column.Load == LoadState.Loading)
+            {
+                effects.Add(new Effect.ReadDirectory(mine.Ref(i), column.Location));
+            }
         }
 
-        return state.WithPane(mine with { Columns = columns.MoveToImmutable(), FocusedColumn = other.FocusedColumn })
-            with
-        { Rename = null };
+        var synced = state.WithPane(mine with { Columns = columns.MoveToImmutable(), FocusedColumn = other.FocusedColumn });
+        return (synced with { Rename = null, InputMode = InputMode.Normal }, effects);
+    }
+
+    private static ImmutableArray<Entry> WithoutMarks(ImmutableArray<Entry> entries)
+    {
+        var cleared = ImmutableArray.CreateBuilder<Entry>(entries.Length);
+        foreach (var entry in entries)
+        {
+            cleared.Add(entry.IsMarked ? entry with { IsMarked = false } : entry);
+        }
+
+        return cleared.MoveToImmutable();
     }
 }

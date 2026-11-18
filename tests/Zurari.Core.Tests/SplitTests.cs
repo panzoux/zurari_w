@@ -190,7 +190,7 @@ public class SplitTests
     [Fact]
     public void Swap_exchanges_the_panes_and_keeps_focus_on_the_same_position()
     {
-        var state = SplitWith(Files(@"C:", "x"), Files(@"C:", "p"));
+        var state = SplitWith(Files(@"C:\a", "x"), Files(@"C:\b", "p"));
 
         var (next, _) = Transition.Apply(state, new Msg.SwapPanes());
 
@@ -211,14 +211,14 @@ public class SplitTests
     }
 
     [Fact]
-    public void Sync_copies_the_other_panes_columns_without_reading_anything()
+    public void Sync_copies_loaded_columns_without_reading_anything()
     {
-        var other = Files(@"C:", "p", "q") with { Cursor = 1 };
-        var state = SplitWith(Files(@"C:", "x"), other);
+        var other = Files(@"C:\b", "p", "q") with { Cursor = 1 };
+        var state = SplitWith(Files(@"C:\a", "x"), other);
 
         var (next, effects) = Transition.Apply(state, new Msg.SyncToOtherPane());
 
-        Assert.Equal(new Location.RealDirectory(@"C:"), next.Panes[0].Columns[0].Location);
+        Assert.Equal(new Location.RealDirectory(@"C:\b"), next.Panes[0].Columns[0].Location);
         Assert.Equal("q", next.Panes[0].Columns[0].CursorName);
         Assert.Equal(new PaneId(0), next.Panes[0].Id);
         Assert.Empty(TestEffects.Of<Effect.ReadDirectory>(effects));
@@ -228,10 +228,10 @@ public class SplitTests
     public void Sync_re_derives_the_copied_columns_under_this_panes_view()
     {
         var other = new Column(
-            new Location.RealDirectory(@"C:"),
+            new Location.RealDirectory(@"C:\b"),
             [new Entry("big", EntryKind.File, SizeBytes: 9), new Entry("small", EntryKind.File, SizeBytes: 1)],
             Cursor: 0, Load: LoadState.Loaded);
-        var state = SplitWith(Files(@"C:", "x"), other);
+        var state = SplitWith(Files(@"C:\a", "x"), other);
         state = state.WithPane(state.Panes[0] with
         {
             View = ViewOptions.Default with { Sort = SortOrder.Default with { Mode = SortMode.Size } },
@@ -240,5 +240,121 @@ public class SplitTests
         var (next, _) = Transition.Apply(state, new Msg.SyncToOtherPane());
 
         Assert.Equal("small", next.Panes[0].Columns[0].Entries[0].Name);
+    }
+
+    [Fact]
+    public void Sync_reads_a_copied_column_that_is_still_loading()
+    {
+        var loading = new Column(new Location.RealDirectory(@"C:\b"), Entries: [], Cursor: -1, Load: LoadState.Loading);
+        var state = SplitWith(Files(@"C:\a", "x"), loading);
+
+        var (next, effects) = Transition.Apply(state, new Msg.SyncToOtherPane());
+
+        var read = Assert.Single(TestEffects.Of<Effect.ReadDirectory>(effects));
+        Assert.Equal(next.Panes[0].Ref(0), read.At);
+        Assert.Equal(LoadState.Loading, next.Panes[0].Columns[0].Load);
+
+        var (loaded, _) = Transition.Apply(
+            next,
+            new Msg.DirectoryLoaded(read.At, read.Location, [new Entry("p", EntryKind.File)]));
+
+        Assert.Equal(LoadState.Loaded, loaded.Panes[0].Columns[0].Load);
+        Assert.Equal("p", loaded.Panes[0].Columns[0].Entries[0].Name);
+    }
+
+    [Fact]
+    public void Sync_does_not_copy_marks()
+    {
+        var other = Files(@"C:\b", "p", "q");
+        var marked = other.AllEntries.SetItem(0, other.AllEntries[0] with { IsMarked = true });
+        other = other.WithAllEntries(marked, ViewOptions.Default);
+        var state = SplitWith(Files(@"C:\a", "x"), other);
+
+        var (next, _) = Transition.Apply(state, new Msg.SyncToOtherPane());
+
+        Assert.False(next.Panes[0].Columns[0].Entries[0].IsMarked);
+        Assert.False(next.Panes[0].Columns[0].AllEntries[0].IsMarked);
+        Assert.True(next.Panes[1].Columns[0].Entries[0].IsMarked);
+        Assert.Empty(next.CheckInvariants());
+    }
+
+    [Fact]
+    public void Swap_ends_a_rename()
+    {
+        var (renaming, _) = StartRename(Split());
+
+        var (next, _) = Transition.Apply(renaming, new Msg.SwapPanes());
+
+        Assert.Null(next.Rename);
+        Assert.Empty(next.CheckInvariants());
+    }
+
+    [Fact]
+    public void Swap_leaves_focus_on_the_same_position_showing_the_other_panes_content()
+    {
+        var state = SplitWith(Files(@"C:\a", "x"), Files(@"C:\b", "p"));
+        state = state with { FocusedPane = 1 };
+
+        var (next, _) = Transition.Apply(state, new Msg.SwapPanes());
+
+        Assert.Equal(1, next.FocusedPane);
+        Assert.Equal(new PaneId(0), next.Focused.Id);
+        Assert.Equal(new Location.RealDirectory(@"C:\a"), next.Focused.Columns[0].Location);
+    }
+
+    [Fact]
+    public void Sync_ends_a_rename_and_sort_mode()
+    {
+        var (renaming, _) = StartRename(Split());
+        var (sorting, _) = Transition.Apply(Split(), new Msg.EnterSortMode());
+
+        var (fromRename, _) = Transition.Apply(renaming, new Msg.SyncToOtherPane());
+        var (fromSort, _) = Transition.Apply(sorting, new Msg.SyncToOtherPane());
+
+        Assert.Null(fromRename.Rename);
+        Assert.Equal(InputMode.Normal, fromSort.InputMode);
+    }
+
+    [Fact]
+    public void Sync_copies_every_column_and_the_focused_column()
+    {
+        var pane = new Pane(new PaneId(1), [Files(@"C:\b", "p"), Files(@"C:\b\p", "q")], 1);
+        var state = AppState.Initial with
+        {
+            Panes = [new Pane(new PaneId(0), [Files(@"C:\a", "x")], 0), pane],
+            FocusedPane = 0,
+            NextPaneId = 2,
+        };
+
+        var (next, _) = Transition.Apply(state, new Msg.SyncToOtherPane());
+
+        Assert.Equal(2, next.Panes[0].Columns.Length);
+        Assert.Equal(1, next.Panes[0].FocusedColumn);
+        Assert.Equal(new Location.RealDirectory(@"C:\b\p"), next.Panes[0].Columns[1].Location);
+        Assert.Empty(next.CheckInvariants());
+    }
+
+    [Fact]
+    public void Sync_from_the_bottom_pane_copies_the_top_pane()
+    {
+        var state = SplitWith(Files(@"C:\a", "x"), Files(@"C:\b", "p"));
+        state = state with { FocusedPane = 1 };
+
+        var (next, _) = Transition.Apply(state, new Msg.SyncToOtherPane());
+
+        Assert.Equal(new Location.RealDirectory(@"C:\a"), next.Panes[1].Columns[0].Location);
+        Assert.Equal(new Location.RealDirectory(@"C:\a"), next.Panes[0].Columns[0].Location);
+        Assert.Equal(new PaneId(1), next.Panes[1].Id);
+    }
+
+    [Fact]
+    public void Sync_with_one_pane_does_nothing()
+    {
+        var state = Browsing();
+
+        var (next, effects) = Transition.Apply(state, new Msg.SyncToOtherPane());
+
+        Assert.Same(state, next);
+        Assert.Empty(effects);
     }
 }

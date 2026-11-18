@@ -93,7 +93,7 @@ public class TransitionProperties
                 Gen.OneOfConst("a", "b", "c"),
                 GenEntryKind,
                 Gen.OneOfConst("g1", "g2"),
-                Gen.OneOfConst<string?>(null, @"D:\somewhere"))
+                Gen.OneOfConst<string?>(null, @"D:\somewhere"))
             .Select(t => new Entry(t.Item1, t.Item2, Group: t.Item3, OriginalPath: t.Item4));
 
     private static Gen<ImmutableArray<Entry>> GenEntries =>

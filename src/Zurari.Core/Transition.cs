@@ -249,7 +249,7 @@ public static partial class Transition
             Msg.ToggleSplit m => ToggleSplit(state, m.NewPaneView),
             Msg.FocusPane m => (FocusPane(state, m.Pane), NoEffects),
             Msg.SwapPanes => (SwapPanes(state), NoEffects),
-            Msg.SyncToOtherPane => (SyncToOtherPane(state), NoEffects),
+            Msg.SyncToOtherPane => SyncToOtherPane(state),
             _ => (state, NoEffects),
         };
     }
