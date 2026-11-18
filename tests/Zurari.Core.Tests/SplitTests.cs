@@ -715,17 +715,136 @@ public class SplitTests
         Assert.Single(next.Panes[1].Columns[0].Entries);
     }
 
+    private static Column TwoSectionDrives() => new(
+        Location.Drives.Instance,
+        [
+            new Entry("net", EntryKind.Header, Group: "net"),
+            new Entry(@"\\s\x", EntryKind.Directory, Group: "net"),
+            new Entry("fav", EntryKind.Header, Group: "fav"),
+            new Entry(@"C:\work", EntryKind.Directory, Group: "fav"),
+        ],
+        Cursor: 0,
+        Load: LoadState.Loaded);
+
+    [Fact]
+    public void A_new_pane_shares_the_collapsed_sections_and_a_toggle_there_keeps_the_other_ones()
+    {
+        var drives = TwoSectionDrives();
+        var first = new ColumnRef(new PaneId(0), 0);
+        var second = new ColumnRef(new PaneId(1), 0);
+        var (collapsed, _) = Transition.Apply(AppState.SinglePane([drives]), new Msg.ToggleSection(first, 0));
+        var (split, _) = Transition.Apply(collapsed, new Msg.ToggleSplit());
+
+        var seeded = split.Panes[1].Columns[0];
+        Assert.True(seeded.CollapsedGroups.SetEquals(["net"]));
+        Assert.Empty(split.CheckInvariants());
+
+        var (loaded, _) = Transition.Apply(
+            split, new Msg.DirectoryLoaded(second, Location.Drives.Instance, drives.AllEntries));
+        var fav = loaded.Panes[1].Columns[0].Entries.IndexOf(drives.AllEntries[2]);
+        var (both, effects) = Transition.Apply(loaded, new Msg.ToggleSection(second, fav));
+
+        Assert.True(both.Panes[0].Columns[0].CollapsedGroups.SetEquals(["net", "fav"]));
+        Assert.True(both.Panes[1].Columns[0].CollapsedGroups.SetEquals(["net", "fav"]));
+        var saved = Assert.Single(TestEffects.Of<Effect.SetCollapsedGroups>(effects));
+        Assert.Equal(2, saved.Groups.Length);
+        Assert.Empty(both.CheckInvariants());
+    }
+
+    [Fact]
+    public void A_reveal_does_not_jump_a_later_listing_of_another_folder_at_the_same_ref()
+    {
+        var dir = new Location.RealDirectory(@"C:\x");
+        var other = new Location.RealDirectory(@"C:\y");
+        var at = new ColumnRef(new PaneId(0), 0);
+        var shown = new Column(dir, [new Entry("old", EntryKind.File)], Cursor: 0, Load: LoadState.Loaded);
+        var (renamed, _) = Transition.Apply(AppState.SinglePane([shown]), new Msg.RenameCompleted(at, dir, "new"));
+        var moved = renamed.WithColumn(
+            at, new Column(other, [new Entry("a", EntryKind.File)], Cursor: 0, Load: LoadState.Loaded));
+
+        var listing = ImmutableArray.Create(new Entry("a", EntryKind.File), new Entry("new", EntryKind.File));
+        var (dropped, _) = Transition.Apply(moved, new Msg.DirectoryLoaded(at, dir, listing));
+        var (later, _) = Transition.Apply(dropped, new Msg.DirectoryLoaded(at, other, listing));
+
+        Assert.Equal("a", later.Panes[0].Columns[0].CursorName);
+    }
+
+    [Fact]
+    public void A_failed_reread_clears_the_reveal_waiting_for_it()
+    {
+        var dir = new Location.RealDirectory(@"C:\x");
+        var at = new ColumnRef(new PaneId(0), 0);
+        var shown = new Column(dir, [new Entry("old", EntryKind.File)], Cursor: 0, Load: LoadState.Loaded);
+        var (renamed, _) = Transition.Apply(AppState.SinglePane([shown]), new Msg.RenameCompleted(at, dir, "new"));
+        Assert.NotNull(renamed.RevealTarget);
+
+        var (failed, _) = Transition.Apply(renamed, new Msg.DirectoryLoadFailed(at, dir, "denied"));
+
+        Assert.Null(failed.RevealTarget);
+    }
+
+    [Fact]
+    public void Closing_the_split_clears_a_reveal_scoped_to_the_dropped_pane_only()
+    {
+        var dir = new Location.RealDirectory(@"C:\x");
+        var shown = new Column(dir, [new Entry("old", EntryKind.File)], Cursor: 0, Load: LoadState.Loaded);
+        var state = SplitWith(shown, shown);
+
+        var (bottomReveal, _) = Transition.Apply(state, new Msg.RenameCompleted(new ColumnRef(new PaneId(1), 0), dir, "new"));
+        var (closedKeepingTop, _) = Transition.Apply(bottomReveal, new Msg.ToggleSplit());
+        Assert.Null(closedKeepingTop.RevealTarget);
+        Assert.Empty(closedKeepingTop.CheckInvariants());
+
+        var (topReveal, _) = Transition.Apply(state, new Msg.RenameCompleted(new ColumnRef(new PaneId(0), 0), dir, "new"));
+        var (stillThere, _) = Transition.Apply(topReveal, new Msg.ToggleSplit());
+        Assert.NotNull(stillThere.RevealTarget);
+    }
+
+    [Fact]
+    public void A_shell_op_does_not_reread_its_column_when_it_shows_another_folder_but_does_reread_affected_ones()
+    {
+        var state = SplitWith(
+            new Column(new Location.RealDirectory(@"C:\a"), [], Load: LoadState.Loaded),
+            new Column(new Location.RealDirectory(@"D:\b"), [], Load: LoadState.Loaded));
+
+        var (_, effects) = Transition.Apply(
+            state,
+            new Msg.ShellOpCompleted(
+                new ColumnRef(new PaneId(0), 0), new Location.RealDirectory(@"C:\old"), [@"D:\b"]));
+
+        var read = Assert.Single(TestEffects.Of<Effect.ReadDirectory>(effects));
+        Assert.Equal(new ColumnRef(new PaneId(1), 0), read.At);
+    }
+
+    [Fact]
+    public void A_rename_rereads_the_same_folder_in_the_other_pane_too()
+    {
+        var dir = new Location.RealDirectory(@"C:\x");
+        var shown = new Column(dir, [new Entry("old", EntryKind.File)], Cursor: 0, Load: LoadState.Loaded);
+        var state = SplitWith(shown, shown);
+        var mine = new ColumnRef(new PaneId(0), 0);
+
+        var (next, effects) = Transition.Apply(state, new Msg.RenameCompleted(mine, dir, "new"));
+
+        var reads = TestEffects.Of<Effect.ReadDirectory>(effects);
+        Assert.Equal(2, reads.Count);
+        Assert.Contains(new Effect.ReadDirectory(mine, dir), reads);
+        Assert.Contains(new Effect.ReadDirectory(new ColumnRef(new PaneId(1), 0), dir), reads);
+        Assert.Equal(LoadState.Loading, next.Panes[1].Columns[0].Load);
+        Assert.Equal(mine, next.RevealTarget!.At);
+    }
+
     [Fact]
     public void A_scoped_reveal_is_ignored_by_another_pane_and_kept_for_its_own()
     {
         var dir = new Location.RealDirectory(@"C:\x");
         var shown = new Column(dir, [new Entry("old", EntryKind.File)], Cursor: 0, Load: LoadState.Loaded);
-        var state = SplitWith(shown, shown) with { RevealTarget = new Reveal("new", new ColumnRef(new PaneId(0), 0)) };
+        var state = SplitWith(shown, shown) with { RevealTarget = new Reveal("new", new ColumnRef(new PaneId(0), 0), dir) };
 
         var listing = ImmutableArray.Create(new Entry("a", EntryKind.File), new Entry("new", EntryKind.File));
         var (next, _) = Transition.Apply(state, new Msg.DirectoryLoaded(new ColumnRef(new PaneId(1), 0), dir, listing));
 
         Assert.Equal("a", next.Panes[1].Columns[0].CursorName);
-        Assert.Equal(new Reveal("new", new ColumnRef(new PaneId(0), 0)), next.RevealTarget);
+        Assert.Equal(new Reveal("new", new ColumnRef(new PaneId(0), 0), dir), next.RevealTarget);
     }
 }

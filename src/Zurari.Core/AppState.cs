@@ -687,7 +687,13 @@ public sealed record RenameState(ColumnRef At, Location Location, string EntryNa
 /// shown in the other pane must not take it); <c>null</c> lets any listing consume it (a mounted
 /// image appears in every drive list).
 /// </summary>
-public sealed record Reveal(string Name, ColumnRef? At);
+/// <param name="Name">The entry name to put the cursor on.</param>
+/// <param name="At">The one column that may consume it, or <c>null</c> for any column showing <paramref name="Location"/>.</param>
+/// <param name="Location">
+/// The folder the listing must be of. A column index can come to show another folder before the
+/// reread arrives; a reveal must not jump that folder's listing.
+/// </param>
+public sealed record Reveal(string Name, ColumnRef? At, Location Location);
 
 /// <summary>Where the cursor was in one place the user has been.</summary>
 /// <param name="Location">The place.</param>
@@ -814,8 +820,8 @@ public sealed record AppState
     /// <summary>
     /// An entry name to put the cursor on as soon as a listing containing it arrives, or
     /// <c>null</c>. Consumed and cleared by the first <see cref="Msg.DirectoryLoaded"/> that may take
-    /// it (see <see cref="Reveal"/>). Dropped by a <see cref="Msg.DirectoryLoaded"/> once the pane it
-    /// names has been closed.
+    /// it (see <see cref="Reveal"/>). Dropped when the pane it names is
+    /// closed, and when the read it waits for fails.
     /// </summary>
     /// <remarks>
     /// Mounting an image is the first use: the new drive does not exist until the listing is re-read,
@@ -932,6 +938,33 @@ public sealed record AppState
         if (Rename is not null && IndexOfPane(Rename.At.Pane) < 0)
         {
             violations.Add($"Rename names {Rename.At.Pane}, which is not a live pane.");
+        }
+
+        if (RevealTarget is { At: { } revealAt } && IndexOfPane(revealAt.Pane) < 0)
+        {
+            violations.Add($"RevealTarget names {revealAt.Pane}, which is not a live pane.");
+        }
+
+        // One remembered set of collapsed sections, shown by every drive list (see Transition.Collapse).
+        ImmutableHashSet<string>? driveGroups = null;
+        for (var p = 0; p < Panes.Length; p++)
+        {
+            foreach (var column in Panes[p].Columns)
+            {
+                if (column.Location is not Location.Drives)
+                {
+                    continue;
+                }
+
+                if (driveGroups is null)
+                {
+                    driveGroups = column.CollapsedGroups;
+                }
+                else if (!driveGroups.SetEquals(column.CollapsedGroups))
+                {
+                    violations.Add($"Panes[{p}] holds a drive list whose CollapsedGroups differs from another drive list's.");
+                }
+            }
         }
 
         if (CursorMemory.Length > MaxRememberedCursors)

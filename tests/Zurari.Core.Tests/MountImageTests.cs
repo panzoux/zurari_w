@@ -84,7 +84,7 @@ public class MountImageTests
 
         var (next, effects) = Transition.Apply(state, new Msg.ImageMounted(@"E:\"));
 
-        Assert.Equal(new Reveal(@"E:\", null), next.RevealTarget);
+        Assert.Equal(new Reveal(@"E:\", null, Location.Drives.Instance), next.RevealTarget);
         Assert.Equal(LoadState.Loading, next.Focused.Columns[0].Load);
         Assert.Equal(
             new Effect.ReadDirectory(Col(0), Location.Drives.Instance),
@@ -129,6 +129,6 @@ public class MountImageTests
             waiting,
             new Msg.DirectoryLoaded(Col(0), Location.Drives.Instance, [Fixed]));
 
-        Assert.Equal(new Reveal(@"E:\", null), loaded.RevealTarget);
+        Assert.Equal(new Reveal(@"E:\", null, Location.Drives.Instance), loaded.RevealTarget);
     }
 }

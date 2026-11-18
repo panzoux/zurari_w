@@ -103,23 +103,25 @@ public abstract record Msg
 
     /// <summary>
     /// A shell operation (<see cref="Effect.DeleteToRecycleBin"/> or
-    /// <see cref="Effect.ShellCopyOrMove"/>) succeeded. Subject to the same staleness check as
-    /// <see cref="DirectoryLoaded"/> (<paramref name="At"/> in range and that column's
-    /// location still equals <paramref name="ColumnLocation"/>). <paramref name="AffectedDirs"/> lists every
+    /// <see cref="Effect.ShellCopyOrMove"/>) succeeded. <paramref name="AffectedDirs"/> lists every
     /// directory whose contents actually changed (e.g. a move's destination and, for a move only,
     /// the distinct parents of its sources; a delete's targets' distinct parents) - computed by the
     /// Shell executor, which has the effect at hand. Re-emits <see cref="Effect.ReadDirectory"/> for
-    /// <paramref name="At"/> and for every other column whose path matches one of
-    /// <paramref name="AffectedDirs"/>; those columns stay <see cref="LoadState.Loading"/> until
-    /// their read completes. Columns showing an unrelated directory are left untouched.
+    /// every column in every pane whose path matches one of <paramref name="AffectedDirs"/>, and for
+    /// <paramref name="At"/> only if that column still exists and still shows
+    /// <paramref name="ColumnLocation"/>. The completing column may be gone (its pane closed, its
+    /// chain truncated); the affected folders are re-read regardless, because the disk changed.
+    /// Re-read columns stay <see cref="LoadState.Loading"/> until their read completes; columns
+    /// showing an unrelated directory are left untouched.
     /// </summary>
     public sealed record ShellOpCompleted(
         ColumnRef At, Location ColumnLocation, ImmutableArray<string> AffectedDirs) : Msg;
 
     /// <summary>
     /// A shell operation (<see cref="Effect.DeleteToRecycleBin"/> or
-    /// <see cref="Effect.ShellCopyOrMove"/>) failed. Subject to the same staleness check as
-    /// <see cref="ShellOpCompleted"/>.
+    /// <see cref="Effect.ShellCopyOrMove"/>) failed. Ignored unless <paramref name="At"/> still
+    /// names a column showing <paramref name="ColumnLocation"/> (nothing changed on disk, so
+    /// nothing else needs re-reading).
     /// </summary>
     public sealed record ShellOpFailed(ColumnRef At, Location ColumnLocation, string Error) : Msg;
 

@@ -977,7 +977,7 @@ public class TransitionTests
     }
 
     [Fact]
-    public void ShellOpCompleted_with_wrong_path_is_ignored_as_stale()
+    public void ShellOpCompleted_with_no_affected_dirs_does_nothing_when_its_column_shows_another_folder()
     {
         var column = new Column(new Location.RealDirectory(@"C:\"), [Dir], Load: LoadState.Loading);
         var state = StateWithColumns(column);
@@ -989,7 +989,7 @@ public class TransitionTests
     }
 
     [Fact]
-    public void ShellOpCompleted_with_out_of_range_column_is_ignored_as_stale()
+    public void ShellOpCompleted_with_no_affected_dirs_does_nothing_when_its_column_is_gone()
     {
         var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [], Load: LoadState.Loading));
 

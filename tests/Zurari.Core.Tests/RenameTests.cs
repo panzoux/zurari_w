@@ -22,7 +22,17 @@ public class RenameTests
     [Fact]
     public void Submitting_after_the_column_was_truncated_closes_the_editor_with_a_notice()
     {
-        var state = Editing(out _).WithFocused(p => p with { Columns = [] });
+        var parent = new Column(
+            new Location.RealDirectory(@"C:\"), [new Entry("here", EntryKind.Directory)], Cursor: 0, Load: LoadState.Loaded);
+        var child = new Column(Here, [new Entry("notes.txt", EntryKind.File)], Cursor: 0, Load: LoadState.Loaded);
+        var two = AppState.SinglePane([parent, child]).WithFocused(p => p with { FocusedColumn = 1 });
+        var (editing, _) = Transition.Apply(two, new Msg.RenameRequested(Col(1)));
+        Assert.Equal(Col(1), editing.Rename!.At);
+        Assert.Empty(editing.CheckInvariants());
+
+        // What actually happens: the user goes back to the parent and the chain is cut at index 0.
+        var state = editing.WithFocused(p => p with { Columns = [parent], FocusedColumn = 0 });
+        Assert.Empty(state.CheckInvariants());
 
         var (next, effects) = Transition.Apply(state, new Msg.RenameSubmitted("other.txt"));
 
@@ -177,7 +187,7 @@ public class RenameTests
         var (done, effects) = Transition.Apply(asked, new Msg.RenameCompleted(Col(0), Here, "readme.txt"));
 
         Assert.Null(done.Rename);
-        Assert.Equal(new Reveal("readme.txt", Col(0)), done.RevealTarget);
+        Assert.Equal(new Reveal("readme.txt", Col(0), Here), done.RevealTarget);
         Assert.Single(TestEffects.Of<Effect.ReadDirectory>(effects));
 
         var (loaded, _) = Transition.Apply(

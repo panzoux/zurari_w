@@ -207,7 +207,7 @@ public static partial class Transition
             Msg.PinFocusedLocation m => PinFocusedLocation(state, m.At),
             Msg.PinEntryAtCursor m => PinEntryAtCursor(state, m.At),
             Msg.PlacesChanged => ReloadDrivePanes(state),
-            Msg.ImageMounted m => ReloadDrivePanes(state with { RevealTarget = new Reveal(m.DriveRoot, null) }),
+            Msg.ImageMounted m => ReloadDrivePanes(state with { RevealTarget = new Reveal(m.DriveRoot, null, Location.Drives.Instance) }),
             Msg.NoticeRaised m => (state with { Notice = m.Message }, NoEffects),
             Msg.RenameRequested m => (BeginRename(state, m.At), NoEffects),
             Msg.RenameCancelled => (state with { Rename = null }, NoEffects),
@@ -511,7 +511,18 @@ public static partial class Transition
         AppState state, ColumnRef at, Location location, string newName)
     {
         var closed = state with { Rename = null };
-        return RereadColumn(closed, at, location, reveal: newName);
+        var (renamed, first) = RereadColumn(closed, at, location, reveal: newName);
+
+        // The same folder shown anywhere else is stale too; do not leave it to the file watcher.
+        var (all, others) = RereadWhere(renamed, (r, c) => r != at && c.Location == location);
+        if (others.Count == 0)
+        {
+            return (all, first);
+        }
+
+        var effects = new List<Effect>(first);
+        effects.AddRange(others);
+        return (all, effects);
     }
 
     /// <summary>
@@ -544,7 +555,7 @@ public static partial class Transition
 
         var loading = state.WithColumn(at, column with { Load = LoadState.Loading });
         return (
-            loading with { RevealTarget = reveal is null ? null : new Reveal(reveal, at) },
+            loading with { RevealTarget = reveal is null ? null : new Reveal(reveal, at, location) },
             new Effect[] { new Effect.ReadDirectory(at, location) });
     }
 
@@ -587,14 +598,9 @@ public static partial class Transition
 
         // Something was waiting for this listing to exist before it could be pointed at - the drive
         // a disc image was just mounted as. Now that its row is here, put the cursor on it.
-        // A reveal made in a pane that has since been closed names a column that no longer exists;
-        // it is dropped here (rather than in ToggleSplit) so it cannot jump a later listing.
-        if (state.RevealTarget is { At: { } scope } && state.PaneOf(scope.Pane) is null)
-        {
-            state = state with { RevealTarget = null };
-        }
-
-        var revealed = state.RevealTarget is { } target && (target.At is null || target.At == at)
+        var revealed = state.RevealTarget is { } target
+            && (target.At is null || target.At == at)
+            && target.Location == location
             ? IndexOfName(updated.Entries, target.Name)
             : -1;
         if (revealed >= 0)
@@ -665,6 +671,12 @@ public static partial class Transition
 
     private static AppState DirectoryLoadFailed(AppState state, ColumnRef at, Location location, string error)
     {
+        // The listing a reveal was waiting for is not coming: drop it so it cannot jump a later one.
+        if (state.RevealTarget is { At: { } scope } waiting && scope == at && waiting.Location == location)
+        {
+            state = state with { RevealTarget = null };
+        }
+
         if (state.ColumnAt(at) is not { } column)
         {
             return state;
@@ -879,7 +891,7 @@ public static partial class Transition
     }
 
     /// <summary>Applies <paramref name="groups"/> as the collapsed set of every drive list in every pane.</summary>
-    private static AppState WithCollapsedGroupsInAllDriveLists(AppState state, ImmutableHashSet<string> set)
+    private static AppState WithCollapsedGroupsInAllDriveLists(AppState state, ImmutableHashSet<string> groups)
     {
         var panes = state.Panes;
         for (var p = 0; p < panes.Length; p++)
@@ -890,7 +902,7 @@ public static partial class Transition
             {
                 if (columns[i].Location is Location.Drives)
                 {
-                    columns = columns.SetItem(i, columns[i].WithCollapsedGroups(set, pane.View));
+                    columns = columns.SetItem(i, columns[i].WithCollapsedGroups(groups, pane.View));
                 }
             }
 

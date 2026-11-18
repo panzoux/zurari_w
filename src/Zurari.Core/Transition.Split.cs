@@ -10,7 +10,16 @@ public static partial class Transition
         {
             var kept = state.Focused;
             var dropped = state.Panes[1 - state.FocusedPane];
-            var closed = state with { Panes = [kept], FocusedPane = 0, Rename = null, InputMode = InputMode.Normal };
+            var closed = state with
+            {
+                Panes = [kept],
+                FocusedPane = 0,
+                Rename = null,
+                InputMode = InputMode.Normal,
+                RevealTarget = state.RevealTarget is { At: { } revealAt } && revealAt.Pane == dropped.Id
+                    ? null
+                    : state.RevealTarget,
+            };
 
             // A preview still loading for the pane that is going would hold a worker until it times
             // out, and nothing would ever consume its result: say so.
@@ -26,8 +35,16 @@ public static partial class Transition
         }
 
         var id = new PaneId(state.NextPaneId);
+        var view = newPaneView ?? state.Focused.View;
         var column = new Column(source.Location, Entries: [], Cursor: -1, Load: LoadState.Loading);
-        var pane = new Pane(id, [column], 0) { View = newPaneView ?? state.Focused.View };
+        if (source.Location is Location.Drives)
+        {
+            // Every drive list shows the same collapsed sections; a fresh one starting empty would
+            // let a toggle here overwrite the set the other pane (and the settings) hold.
+            column = column.WithCollapsedGroups(source.CollapsedGroups, view);
+        }
+
+        var pane = new Pane(id, [column], 0) { View = view };
         var next = state with { Panes = state.Panes.Add(pane), NextPaneId = state.NextPaneId + 1 };
         return (next, [new Effect.ReadDirectory(pane.Ref(0), source.Location)]);
     }
