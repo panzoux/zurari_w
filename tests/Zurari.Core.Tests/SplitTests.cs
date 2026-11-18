@@ -378,6 +378,19 @@ public class SplitTests
     }
 
     [Fact]
+    public void Copying_to_the_other_pane_keeps_the_pending_cut_look()
+    {
+        var state = SplitWith(Mixed(@"C:\src", cursor: 1), Mixed(@"D:\dst", cursor: 0));
+        ImmutableArray<string> cut = [@"C:\src\sub"];
+        state = state with { CutPending = cut };
+
+        var (next, effects) = Transition.Apply(state, new Msg.CopyToOtherPane(IsMove: false));
+
+        Assert.Single(TestEffects.Of<Effect.RunFileJob>(effects));
+        Assert.Equal(cut, next.CutPending);
+    }
+
+    [Fact]
     public void Uses_the_other_columns_own_location_when_its_cursor_is_on_a_file()
     {
         var state = SplitWith(Mixed(@"C:\src", cursor: 1), Mixed(@"D:\dst", cursor: 1));

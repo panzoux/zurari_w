@@ -1380,7 +1380,9 @@ public static partial class Transition
             NextJobId = jobId + 1,
             // Any paste - whether or not it consumes the exact paths that were cut - consumes the
             // pending-cut look; keeping it simple rather than trying to diff which paths were pasted.
-            CutPending = [],
+            // A transfer to the other pane (destOverride) does not touch the clipboard, so the look
+            // stays: Ctrl+X then `c` must still leave a later Ctrl+V moving what was cut.
+            CutPending = destOverride is null ? [] : state.CutPending,
         };
         return (newState, [new Effect.RunFileJob(jobId, job.Kind, filtered, destDir)]);
     }

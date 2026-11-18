@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Zurari.Core;
+using static Zurari.TestSupport.TestPanes;
 
 namespace Zurari.Core.Tests;
 
@@ -19,20 +20,6 @@ public class PaneTests
             Cursor: names.Length > 0 ? 0 : -1,
             Load: LoadState.Loaded);
     }
-
-    /// <summary>
-    /// Two panes, top (id 0, focused) and bottom (id 1), each showing one column. Every test that
-    /// uses this addresses pane 1 - the unfocused one - to prove a Msg reaches the pane it names
-    /// rather than always landing on the focused pane. <paramref name="focused"/> picks which pane is
-    /// focused, for tests that need the bottom one to be.
-    /// </summary>
-    private static AppState TwoPanes(Column top, Column bottom, int focused = 0) =>
-        AppState.Initial with
-        {
-            Panes = [new Pane(new PaneId(0), [top], 0), new Pane(new PaneId(1), [bottom], 0)],
-            FocusedPane = focused,
-            NextPaneId = 2,
-        };
 
     [Fact]
     public void Initial_has_one_pane_with_the_drive_list()

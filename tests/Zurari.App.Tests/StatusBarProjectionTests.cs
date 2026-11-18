@@ -83,12 +83,7 @@ public class StatusBarProjectionTests
         var top = Folder(new Entry("t.txt", EntryKind.File));
         var bottom = new Column(
             new Location.RealDirectory(@"C:\other"), [new Entry("b.txt", EntryKind.File)], Cursor: 0, Load: LoadState.Loaded);
-        var state = AppState.Initial with
-        {
-            Panes = [new Pane(new PaneId(0), [top], 0), new Pane(new PaneId(1), [bottom], 0)],
-            FocusedPane = 1,
-            NextPaneId = 2,
-        };
+        var state = TwoPanes(top, bottom, focused: 1);
 
         Assert.Equal(@"C:\other\b.txt", StateProjection.ProjectStatusBar(state).Path);
     }
