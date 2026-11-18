@@ -15,7 +15,7 @@
 
 # Status
 
-928 tests, `scripts/check.ps1` green.
+946 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`; do not edit it by hand. Write `(this commit)`
 in a row's commit cell (no backticks) and `status.ps1` fills in the hash after the commit lands.</sub>
@@ -32,7 +32,7 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
 | 7a.6 | `ToggleSplit` / `FocusPane` | `[x]` | `7aef49d` `50797e3` |
 | 7a.7 | `SwapPanes` / `SyncToOtherPane` | `[x]` | `fe89b27` `7aed1c6` `ecd5c12` `274cf9b` |
 | 7a.8 | `CopyToOtherPane` (`c` / `m`) | `[x]` | `60fc9f5` `4a8c14a` |
-| 7a.8b | Two-pane correctness follow-ups (from the 7a.2-7a.7 reviews): scoped reveal, `ShellOpCompleted` rereads, sections in every drive pane, rename pinned to its folder | `[ ]` | |
+| 7a.8b | Two-pane correctness follow-ups (from the 7a.2-7a.7 reviews): scoped reveal, `ShellOpCompleted` rereads, sections in every drive pane, rename pinned to its folder | `[x]` | `f15b1dc` `2a42b22` `3a8d0a1` `f0b6278` `e8bc06c` |
 | 7a.9 | Runtime: one preview slot per pane | `[ ]` | |
 | 7a.10 | App: coalescing gates and projection cache per pane; `PaneView` extracted (still one row) | `[ ]` | |
 | 7a.11 | App: second row, splitter, focus routing, dimming, keys | `[ ]` | |
@@ -2335,8 +2335,11 @@ column index and read the focused pane - `OnEntryDragRequested`, `ResolveFullPat
 `ResolveMarkedFullPaths`, `ShowContextMenu`, `ResolveShellName`, `RenderRename` - take a `ColumnRef` instead and resolve
 through `state.ColumnAt`. Do not convert them to `state.Focused.Columns` or `state.Focused.Ref(i)`
 (that bakes in the assumption 7a.11 must remove). The keyboard-only actions (`TryCopyToClipboard`,
-`TryDelete`, `TryDeleteFocusedEntry`) legitimately mean the focused pane and follow automatically. `RenderRename` draws the editor in the `PaneView` showing
-`rename.At.Pane` and clears it in the other.
+`TryDelete`, `TryDeleteFocusedEntry`) legitimately mean the focused pane and follow automatically.
+`RenderRename` draws the editor in the `PaneView` showing `rename.At.Pane` and clears it in the
+other. It also compares `column.Location` with `rename.Location` (added in 7a.8b) and dispatches
+`RenameCancelled` when they differ, instead of placing the editor on a same-named row of whatever
+folder now occupies that index.
 
 `Render(state)` renders `state.Panes[0]` into `TopPane` (`Project(state, state.Panes[0], …)`,
 `TopPane.RenderPreview(StateProjection.ProjectPreview(state, state.Panes[0]))`), with the existing
@@ -2622,6 +2625,12 @@ and these members on the record:
         return this with { PaneViews = merged };
     }
 ```
+
+**Collapsed-section restore (7a.8b review).** Since 7a.8b every drive list in every pane shares one
+collapsed set (an invariant), so `CollapsedGroupsRestored`'s `At` only gates the restore: if that one
+column was replaced before the message arrived, the once-per-process restore is lost although other
+drive lists exist. Drop the `ColumnAt`/Drives gate and apply to every drive list, or document `At`
+as a liveness hint; decide alongside the `ViewRestored` change below.
 
 **The restore must name the top pane, not whichever read won (7a.3 review).** `ViewRestored` and
 `CollapsedGroupsRestored` are posted from a once-per-process gate, fired by the first
@@ -2965,3 +2974,23 @@ anticipate. Stop and ask rather than deciding unilaterally when something contra
   (the normal state right after `o`).
 - Deferred (plan updated): the App's Ctrl+C and drag selection onto `PathsToActOn` (7a.10); `c` must
   keep the Ctrl+X dimming (7a.11); `/` normalised in path comparison (7a.8b).
+
+## 7a.8b (2026-11-19)
+
+- Four commits: a reveal scoped to the column it was made in (`f15b1dc`); `ShellOpCompleted` rereads
+  affected folders in every pane even when its own column is gone, and drive-pane sections apply to
+  every drive list (`2a42b22`); path comparison accepts `/` (`3a8d0a1`); a rename pinned to the folder
+  it was opened in (`f0b6278`). Spec compliant.
+- Answer to Step 5's question: the user effectively cannot navigate while the rename editor is open -
+  any focus loss cancels it (`RenameAdorner.cs:71`), and window keys are ignored while a text box has
+  focus (`MainWindow.xaml.cs` `IsEditingText`). The wrong-folder rename was reachable only through an
+  asynchronous change or a sub-event race: low urgency, fixed anyway because the fix is cheap.
+- Quality review found a data-loss path the plan had not anticipated: opening the split from the drive
+  list gave the new pane an empty collapsed set, and toggling a section there pushed that set to every
+  drive list and to settings, wiping the other pane's sections. The follow-up seeds the new pane from
+  its source and adds an invariant that every drive list shares one set. It also pins a reveal to its
+  folder (a moved cursor could otherwise leave a reveal that jumps a much later listing), clears a
+  dead pane's reveal when the pane closes (with a matching invariant), rereads every column showing a
+  renamed item's folder, and fixes docs and test names the change had made stale.
+- Deferred (plan updated): the App's rename editor compares `Location` (7a.10); the collapsed-section
+  restore stops depending on one column (7a.12).
