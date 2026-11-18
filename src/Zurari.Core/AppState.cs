@@ -875,6 +875,11 @@ public sealed record AppState
             CheckColumns(pane, $"Panes[{p}].", violations);
         }
 
+        if (Rename is not null && IndexOfPane(Rename.At.Pane) < 0)
+        {
+            violations.Add($"Rename names {Rename.At.Pane}, which is not a live pane.");
+        }
+
         if (CursorMemory.Length > MaxRememberedCursors)
         {
             violations.Add(
