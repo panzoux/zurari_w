@@ -2012,8 +2012,7 @@ public class TransitionTests
     public void CursorMove_onto_a_directory_clears_the_preview_and_shows_the_directory_instead()
     {
         var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 1, Load: LoadState.Loaded);
-        var initial = StateWithColumns(column);
-        var state = initial.WithPane(initial.Focused with { Preview = new PreviewState(3, @"C:\a.txt", PreviewKind.Text, "hi", [], null) });
+        var state = StateWithColumns(column).WithFocused(p => p with { Preview = new PreviewState(3, @"C:\a.txt", PreviewKind.Text, "hi", [], null) });
 
         var (next, effects) = Transition.Apply(state, new Msg.CursorUp(Col(0)));
 
@@ -2289,8 +2288,7 @@ public class TransitionTests
     public void CursorMove_off_a_still_loading_preview_cancels_the_abandoned_generation()
     {
         var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 1, Load: LoadState.Loaded);
-        var initial = StateWithColumns(column);
-        var state = initial.WithPane(initial.Focused with { Preview = new PreviewState(3, @"C:\a.txt", PreviewKind.Loading, null, [], null) });
+        var state = StateWithColumns(column).WithFocused(p => p with { Preview = new PreviewState(3, @"C:\a.txt", PreviewKind.Loading, null, [], null) });
 
         var (next, effects) = Transition.Apply(state, new Msg.CursorDown(Col(0))); // File1 -> File2
 
@@ -2306,9 +2304,8 @@ public class TransitionTests
     public void CursorMove_off_a_completed_preview_does_not_cancel_anything()
     {
         var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 1, Load: LoadState.Loaded);
-        var initial = StateWithColumns(column);
         // Already delivered - there is no outstanding work to call off.
-        var state = initial.WithPane(initial.Focused with { Preview = new PreviewState(3, @"C:\a.txt", PreviewKind.Text, "hi", [], null) });
+        var state = StateWithColumns(column).WithFocused(p => p with { Preview = new PreviewState(3, @"C:\a.txt", PreviewKind.Text, "hi", [], null) });
 
         var (_, effects) = Transition.Apply(state, new Msg.CursorDown(Col(0)));
 
@@ -2319,8 +2316,7 @@ public class TransitionTests
     public void CursorMove_from_a_loading_preview_onto_a_directory_cancels_without_reloading()
     {
         var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 1, Load: LoadState.Loaded);
-        var initial = StateWithColumns(column);
-        var state = initial.WithPane(initial.Focused with { Preview = new PreviewState(3, @"C:\a.txt", PreviewKind.Loading, null, [], null) });
+        var state = StateWithColumns(column).WithFocused(p => p with { Preview = new PreviewState(3, @"C:\a.txt", PreviewKind.Loading, null, [], null) });
 
         var (next, effects) = Transition.Apply(state, new Msg.CursorUp(Col(0))); // File1 -> Dir
 
@@ -2933,7 +2929,15 @@ public class TransitionProperties
         Assert.Equal(
             expected with { Panes = default, Jobs = default, CursorMemory = default, CutPending = default },
             actual with { Panes = default, Jobs = default, CursorMemory = default, CutPending = default });
-        Assert.Equal(expected.Jobs, actual.Jobs);
+        Assert.Equal(expected.Jobs.Length, actual.Jobs.Length);
+        for (var j = 0; j < expected.Jobs.Length; j++)
+        {
+            var ej = expected.Jobs[j];
+            var aj = actual.Jobs[j];
+            Assert.Equal(ej with { Sources = default }, aj with { Sources = default });
+            Assert.Equal(ej.Sources, aj.Sources);
+        }
+
         Assert.Equal(expected.CursorMemory, actual.CursorMemory);
         Assert.Equal(expected.CutPending, actual.CutPending);
         Assert.Equal(expected.Panes.Length, actual.Panes.Length);
@@ -2949,16 +2953,11 @@ public class TransitionProperties
             {
                 var ec = e.Columns[c];
                 var ac = a.Columns[c];
-                var allExpected = ec.AllEntries;
-                var allActual = ac.AllEntries;
+                // Empty rather than default: an ImmutableHashSet is a reference type, so default is null.
                 Assert.Equal(ec with { Entries = default, AllEntries = default, CollapsedGroups = ImmutableHashSet<string>.Empty }, ac with { Entries = default, AllEntries = default, CollapsedGroups = ImmutableHashSet<string>.Empty });
                 Assert.Equal(ec.Entries, ac.Entries);
-                Assert.Equal(allExpected, allActual);
-                Assert.Equal(ec.CollapsedGroups.Count, ac.CollapsedGroups.Count);
-                foreach (var group in ec.CollapsedGroups)
-                {
-                    Assert.Contains(group, ac.CollapsedGroups);
-                }
+                Assert.Equal(ec.AllEntries, ac.AllEntries);
+                Assert.True(ec.CollapsedGroups.SetEquals(ac.CollapsedGroups));
             }
         }
     }

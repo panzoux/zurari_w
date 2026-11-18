@@ -70,8 +70,7 @@ public class PreviewRetryTests
     public void A_timeout_reported_by_the_runtime_is_kept_on_the_preview()
     {
         var timedOut = TimedOut(1);
-        var loading = timedOut.WithPane(
-            timedOut.Focused with { Preview = new PreviewState(5, Clip, PreviewKind.Loading, null, [], null) });
+        var loading = timedOut.WithFocused(p => p with { Preview = new PreviewState(5, Clip, PreviewKind.Loading, null, [], null) });
 
         var (next, _) = Transition.Apply(
             loading, new Msg.PreviewLoaded(First, 5, PreviewKind.Binary, null, [], "label", null, TimedOut: true));
