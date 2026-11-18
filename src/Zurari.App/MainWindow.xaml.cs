@@ -151,7 +151,7 @@ public sealed partial class MainWindow : Window, IDisposable
         InitializeComponent();
 
         jobStrip = new JobStripRows(JobStrip);
-        rows = [TopPane];
+        rows = [TopPane, BottomPane];
 
         runtime = new WorkerRuntime(
             post: PostToLoop, places: RootPlaces, trash: TrashPlaceRow, settings: settingsStore,
@@ -179,7 +179,7 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         Closed += (_, _) => Dispose();
-        Loaded += (_, _) => TopPane.ColumnBrowser.Focus();
+        Loaded += (_, _) => FocusRow(loop.State.FocusedPane);
 
         // The handle does not exist until here, and the shell registers against a handle.
         SourceInitialized += OnSourceInitialized;
@@ -221,14 +221,23 @@ public sealed partial class MainWindow : Window, IDisposable
         browser.EntryPointerPressed += (_, e) => OnEntryPointerPressed(row, e);
         browser.EntryClicked += (_, e) => OnEntryClicked(row, e);
         browser.EntryDragRequested += (s, e) => OnEntryDragRequested(row, s, e);
-        browser.FileDropRequested += (_, e) => Dispatch(
-            new Msg.DropFiles(
+        browser.FileDropRequested += (_, e) =>
+        {
+            FocusPaneOf(row);
+            Dispatch(new Msg.DropFiles(
                 RefIn(row, e.ColumnIndex), e.TargetEntryIndex, [.. e.Paths], e.ShiftHeld, e.CtrlHeld));
-        browser.MarkRangeRequested += (_, e) => Dispatch(
-            new Msg.MarkRange(RefIn(row, e.ColumnIndex), e.FromIndex, e.ToIndex, e.Additive));
+        };
+        browser.MarkRangeRequested += (_, e) =>
+        {
+            FocusPaneOf(row);
+            Dispatch(new Msg.MarkRange(RefIn(row, e.ColumnIndex), e.FromIndex, e.ToIndex, e.Additive));
+        };
         browser.RubberBandStarted += (_, e) => OnRubberBandStarted(row, e);
-        browser.SectionToggleRequested += (_, e) => Dispatch(
-            new Msg.ToggleSection(RefIn(row, e.ColumnIndex), e.EntryIndex));
+        browser.SectionToggleRequested += (_, e) =>
+        {
+            FocusPaneOf(row);
+            Dispatch(new Msg.ToggleSection(RefIn(row, e.ColumnIndex), e.EntryIndex));
+        };
         browser.RenameSubmitted += (_, e) => Dispatch(new Msg.RenameSubmitted(e.NewName));
         browser.RenameCancelled += (_, _) => Dispatch(new Msg.RenameCancelled());
 
@@ -242,6 +251,33 @@ public sealed partial class MainWindow : Window, IDisposable
     /// </summary>
     private PaneId PaneInRow(int row) =>
         row < loop.State.Panes.Length ? loop.State.Panes[row].Id : loop.State.Focused.Id;
+
+    /// <summary>
+    /// Clicking a pane focuses it: called before any pointer <see cref="Msg"/> from
+    /// <paramref name="row"/> is dispatched, so the Msg then lands in the focused pane and the render
+    /// dims the other one. Does nothing when the row's pane already has the focus.
+    /// </summary>
+    private void FocusPaneOf(int row)
+    {
+        var pane = PaneInRow(row);
+        if (pane != loop.State.Focused.Id)
+        {
+            Dispatch(new Msg.FocusPane(pane));
+        }
+    }
+
+    /// <summary>
+    /// Moves keyboard focus into the browser of <paramref name="row"/>, unless it is already inside
+    /// it (which would steal it from the list item a click just landed on).
+    /// </summary>
+    private void FocusRow(int row)
+    {
+        var browser = rows[row].ColumnBrowser;
+        if (!browser.IsKeyboardFocusWithin)
+        {
+            Keyboard.Focus(browser);
+        }
+    }
 
     /// <summary>Column <paramref name="columnIndex"/> of the pane shown in <paramref name="row"/>. Addresses a pane by its id, never by focus.</summary>
     private ColumnRef RefIn(int row, int columnIndex) => new(PaneInRow(row), columnIndex);
@@ -477,6 +513,8 @@ public sealed partial class MainWindow : Window, IDisposable
         var after = loop.State;
         if (after.InputMode != before.InputMode
             || after.Focused.View != before.Focused.View
+            || after.Focused.Id != before.Focused.Id
+            || after.Panes.Length != before.Panes.Length
             || msg is Msg.EnterSortMode or Msg.ExitSortMode or Msg.SetSortMode or Msg.SetSortDescending
                 or Msg.ToggleDirectoriesFirst or Msg.ToggleHiddenFiles or Msg.ViewRestored)
         {
@@ -550,6 +588,7 @@ public sealed partial class MainWindow : Window, IDisposable
                 + $"button={e.Button} modifiers={e.Modifiers}");
         }
 
+        FocusPaneOf(row);
         if (!(e.Button == MouseButton.Left && e.Modifiers == ModifierKeys.Control))
         {
             Dispatch(new Msg.CursorTo(RefIn(row, e.ColumnIndex), e.EntryIndex));
@@ -627,6 +666,7 @@ public sealed partial class MainWindow : Window, IDisposable
                 $"[app] OnEntryClicked col={e.ColumnIndex} idx={e.EntryIndex} modifiers={Keyboard.Modifiers}");
         }
 
+        FocusPaneOf(row);
         if ((Keyboard.Modifiers & ModifierKeys.Control) != 0)
         {
             Dispatch(new Msg.ToggleMark(RefIn(row, e.ColumnIndex), e.EntryIndex));
@@ -649,6 +689,7 @@ public sealed partial class MainWindow : Window, IDisposable
     /// </summary>
     private void OnRubberBandStarted(int row, RubberBandStartedEventArgs e)
     {
+        FocusPaneOf(row);
         if (!e.Additive)
         {
             Dispatch(new Msg.ClearMarks(RefIn(row, e.ColumnIndex)));
@@ -781,7 +822,9 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         var cursor = focusedColumn.Cursor;
-        if (cursor < 0 || TopPane.ColumnBrowser.TryGetRowScreenRect(at.Index, cursor) is not { } rowRect)
+        // The row showing the focused pane, or the menu appears over the wrong pane whenever the
+        // bottom one is focused.
+        if (cursor < 0 || rows[state.FocusedPane].ColumnBrowser.TryGetRowScreenRect(at.Index, cursor) is not { } rowRect)
         {
             return;
         }
@@ -800,6 +843,17 @@ public sealed partial class MainWindow : Window, IDisposable
         if (ColumnBrowser.InputTraceEnabled)
         {
             TraceKey("previewKey", e);
+        }
+
+        // Tab is WPF's own focus navigation unless it is taken here, before the tunnelling event gets
+        // to it. Claimed only when the map has a message for it (i.e. while split), so a single pane
+        // keeps WPF's behaviour. FocusPane also closes sort mode, so this runs ahead of the sort check.
+        if (!IsEditingText()
+            && KeyMap.ResolveNormal(EffectiveKey(e), Keyboard.Modifiers, loop.State) is Msg.FocusPane focusOther)
+        {
+            Dispatch(focusOther);
+            e.Handled = true;
+            return;
         }
 
         if (loop.State.InputMode != Zurari.Core.InputMode.Sort || IsEditingText())
@@ -1122,6 +1176,8 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void Render(AppState state)
     {
+        ApplyLayout(state);
+
         // Render state.Panes[i] into row i. A row with no pane (the split is closed) is cleared in
         // DropGonePanes, below.
         var visibleRows = Math.Min(state.Panes.Length, rows.Length);
@@ -1155,6 +1211,59 @@ public sealed partial class MainWindow : Window, IDisposable
         PathBarText.Text = statusBar.Path;
         StatusHints.Text = statusBar.Hints;
         StatusSummary.Text = statusBar.Summary;
+
+        // Keyboard focus follows the focused pane. By row, not by pane id: a swap keeps the focused
+        // row, and the row already has the keyboard.
+        if (state.FocusedPane != lastFocusedRow)
+        {
+            lastFocusedRow = state.FocusedPane;
+            FocusRow(lastFocusedRow);
+        }
+    }
+
+    /// <summary>The row <see cref="Render"/> last moved keyboard focus to (the top row at startup).</summary>
+    private int lastFocusedRow;
+
+    /// <summary>Whether <see cref="ApplyLayout"/> currently shows the second row.</summary>
+    private bool splitShown;
+
+    /// <summary>
+    /// Where the splitter starts when the split opens: the top pane's share of the height. Fixed
+    /// until 7a.12 stores and restores it.
+    /// </summary>
+    private const double DefaultSplitRatio = 0.5;
+
+    /// <summary>
+    /// Opens or closes the second row when the state's pane count says so. Acts only on a change,
+    /// not on every render: sizing the rows each time would undo the user's splitter drag.
+    /// </summary>
+    private void ApplyLayout(AppState state)
+    {
+        var split = state.Panes.Length == 2;
+        if (split == splitShown)
+        {
+            return;
+        }
+
+        splitShown = split;
+        if (split)
+        {
+            TopRow.Height = new GridLength(DefaultSplitRatio, GridUnitType.Star);
+            SplitterRow.Height = new GridLength(6);
+            BottomRow.MinHeight = 120;
+            BottomRow.Height = new GridLength(1 - DefaultSplitRatio, GridUnitType.Star);
+            PaneSplitter.Visibility = Visibility.Visible;
+            BottomPane.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            PaneSplitter.Visibility = Visibility.Collapsed;
+            BottomPane.Visibility = Visibility.Collapsed;
+            BottomRow.MinHeight = 0;
+            BottomRow.Height = new GridLength(0);
+            SplitterRow.Height = new GridLength(0);
+            TopRow.Height = new GridLength(1, GridUnitType.Star);
+        }
     }
 
     /// <summary>

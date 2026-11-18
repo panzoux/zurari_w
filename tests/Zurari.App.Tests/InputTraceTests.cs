@@ -46,7 +46,7 @@ public class InputTraceTests
         };
 
         Assert.Equal(
-            @"[app] state mode=Sort sort=Name/desc/dirsFirst hidden=False focused=0 loc=Drives sortable=False first=[ドライブ, C:\, D:\]",
+            @"[app] state pane=0/1 mode=Sort sort=Name/desc/dirsFirst hidden=False focused=0 loc=Drives sortable=False first=[ドライブ, C:\, D:\]",
             InputTrace.State(state));
     }
 
@@ -60,7 +60,7 @@ public class InputTraceTests
             new Location.RealDirectory(@"C:\bottom"), [new Entry("b.txt", EntryKind.File)], Cursor: 0, Load: LoadState.Loaded);
 
         Assert.Equal(
-            @"[app] state mode=Normal sort=Name/asc/dirsFirst hidden=False focused=0 loc=C:\bottom sortable=True first=[b.txt]",
+            @"[app] state pane=1/2 mode=Normal sort=Name/asc/dirsFirst hidden=False focused=0 loc=C:\bottom sortable=True first=[b.txt]",
             InputTrace.State(TwoPanes(top, bottom, focused: 1)));
     }
 
@@ -72,7 +72,7 @@ public class InputTraceTests
         var state = AppState.SinglePane([folder]);
 
         Assert.Equal(
-            @"[app] state mode=Normal sort=Name/asc/dirsFirst hidden=False focused=0 loc=C:\x sortable=True first=[b.txt]",
+            @"[app] state pane=0/1 mode=Normal sort=Name/asc/dirsFirst hidden=False focused=0 loc=C:\x sortable=True first=[b.txt]",
             InputTrace.State(state));
     }
 }

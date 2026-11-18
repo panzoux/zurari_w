@@ -51,7 +51,8 @@ internal static class InputTrace
 
     /// <summary>
     /// The parts of the state a key could have changed, plus enough of the focused column to tell
-    /// whether its rows actually moved.
+    /// whether its rows actually moved. <c>pane=id/count</c> says which pane the line describes
+    /// (the focused one) and how many there are.
     /// </summary>
     public static string State(AppState state)
     {
@@ -62,7 +63,7 @@ internal static class InputTrace
         var folders = sort.DirectoriesFirst ? "/dirsFirst" : string.Empty;
         var line = string.Create(
             CultureInfo.InvariantCulture,
-            $"[app] state mode={state.InputMode} sort={sort.Mode}/{direction}{folders} hidden={state.Focused.View.ShowHidden} focused={state.Focused.FocusedColumn}");
+            $"[app] state pane={state.Focused.Id.Value}/{state.Panes.Length} mode={state.InputMode} sort={sort.Mode}/{direction}{folders} hidden={state.Focused.View.ShowHidden} focused={state.Focused.FocusedColumn}");
 
         if (state.Focused.FocusedColumnOrNull is { } column)
         {

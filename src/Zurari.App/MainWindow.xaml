@@ -64,6 +64,20 @@
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
         </ItemsControl>
-        <local:PaneView x:Name="TopPane" />
+        <!-- Two rows of panes. The second row and the splitter are collapsed (height 0) until the
+             split opens; Render sizes them. -->
+        <Grid x:Name="PaneRows">
+            <Grid.RowDefinitions>
+                <RowDefinition x:Name="TopRow" Height="*" MinHeight="120" />
+                <RowDefinition x:Name="SplitterRow" Height="0" />
+                <RowDefinition x:Name="BottomRow" Height="0" MinHeight="0" />
+            </Grid.RowDefinitions>
+            <local:PaneView x:Name="TopPane" Grid.Row="0" />
+            <!-- Focusable=False: a focused GridSplitter eats the arrow keys (see the preview splitter). -->
+            <GridSplitter x:Name="PaneSplitter" Grid.Row="1" Height="6" HorizontalAlignment="Stretch"
+                          ResizeDirection="Rows" Background="Transparent" ShowsPreview="False"
+                          Focusable="False" IsTabStop="False" Visibility="Collapsed" />
+            <local:PaneView x:Name="BottomPane" Grid.Row="2" Visibility="Collapsed" />
+        </Grid>
     </DockPanel>
 </Window>
