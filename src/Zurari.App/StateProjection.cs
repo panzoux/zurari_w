@@ -543,12 +543,11 @@ public static class StateProjection
     {
         ArgumentNullException.ThrowIfNull(state);
 
-        if (state.Focused.FocusedColumn < 0 || state.Focused.FocusedColumn >= state.Focused.Columns.Length)
+        if (state.Focused.FocusedColumnOrNull is not { } column)
         {
             return new StatusBarVm(string.Empty, string.Empty, string.Empty);
         }
 
-        var column = state.Focused.Columns[state.Focused.FocusedColumn];
         return new StatusBarVm(PathBarText(column), HintsFor(state), Summarize(state, column));
     }
 

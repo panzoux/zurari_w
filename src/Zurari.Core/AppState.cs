@@ -683,7 +683,10 @@ public sealed record AppState
             ? pane.Columns[at.Index]
             : null;
 
-    /// <summary>The view options of the pane <paramref name="at"/> names.</summary>
+    /// <summary>
+    /// The view options of the pane <paramref name="at"/> names. <c>at.Pane</c> must exist; callers
+    /// resolve <c>ColumnAt(at)</c> first. Throws otherwise.
+    /// </summary>
     public ViewOptions ViewAt(ColumnRef at) => PaneOf(at.Pane)!.View;
 
     /// <summary>
@@ -713,10 +716,6 @@ public sealed record AppState
             ? this
             : WithPane(pane with { Columns = pane.Columns.SetItem(at.Index, column) });
     }
-
-    /// <summary>A state with one pane showing <paramref name="columns"/>. For startup and tests.</summary>
-    public static AppState SinglePane(ImmutableArray<Column> columns, int focusedColumn = 0) =>
-        new() { Panes = [new Pane(new PaneId(0), columns, focusedColumn)], FocusedPane = 0, NextPaneId = 1 };
 
     /// <summary>Background copy/move jobs, in submission order.</summary>
     public ImmutableArray<Job> Jobs { get; init; } = [];
@@ -782,12 +781,10 @@ public sealed record AppState
     /// <summary>Starting state: one pane with a single, still-loading virtual root column (the drive list).</summary>
     public static AppState Initial { get; } = SinglePane([new Column(Location.Drives.Instance, Entries: [])]);
 
-    /// <summary>
-    /// Checks the invariants that every reachable <see cref="AppState"/> must satisfy. Returns an
-    /// empty list when the state is valid; otherwise one human-readable description per violation.
-    /// Intended for tests (property-based tests call this after every transition), not production
-    /// hot paths.
-    /// </summary>
+    /// <summary>A state with one pane showing <paramref name="columns"/>. For startup and tests.</summary>
+    public static AppState SinglePane(ImmutableArray<Column> columns, int focusedColumn = 0) =>
+        new() { Panes = [new Pane(new PaneId(0), columns, focusedColumn)], FocusedPane = 0, NextPaneId = 1 };
+
     /// <summary>
     /// How many places <see cref="CursorMemory"/> keeps. Deep enough to cover a session's worth of
     /// moving around, small enough that a linear scan of it is not worth thinking about.
@@ -835,6 +832,12 @@ public sealed record AppState
         return null;
     }
 
+    /// <summary>
+    /// Checks the invariants that every reachable <see cref="AppState"/> must satisfy. Returns an
+    /// empty list when the state is valid; otherwise one human-readable description per violation.
+    /// Intended for tests (property-based tests call this after every transition), not production
+    /// hot paths.
+    /// </summary>
     public IReadOnlyList<string> CheckInvariants()
     {
         var violations = new List<string>();

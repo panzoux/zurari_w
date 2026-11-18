@@ -26,9 +26,10 @@ public static class Transition
             var before = state.PaneOf(pane.Id);
             if (ReferenceEquals(before, pane))
             {
-                // Nothing touched this pane, so there is nothing to reconcile - skipping it keeps
-                // the unfocused pane free on every keystroke instead of costing a PaneOf scan and
-                // two reconcile passes it can never change the outcome of.
+                // Nothing touched this pane, so there is nothing to reconcile. This is valid only
+                // because ReconcileChildColumn and ReconcilePreview read nothing but `before` and the
+                // pane itself, and return early when those agree. If either starts reading shared
+                // state (CursorMemory, RevealTarget, Notice, ...), remove this skip.
                 continue;
             }
 
@@ -97,6 +98,10 @@ public static class Transition
     /// Does nothing when the column to the right already shows the right place, which is what lets
     /// <see cref="GoToParent"/> keep the chain: moving focus left puts the cursor on the folder the
     /// next column is already showing, so the columns beyond it survive untouched.
+    /// </para>
+    /// <para>
+    /// Reads only <c>before</c> and the pane itself; <see cref="Apply"/> skips it for an untouched
+    /// pane on that basis.
     /// </para>
     /// </remarks>
     private static (AppState, IReadOnlyList<Effect>) ReconcileChildColumn(
@@ -1513,7 +1518,8 @@ public static class Transition
     /// sets <see cref="PreviewKind.Loading"/>, and appends <see cref="Effect.LoadPreview"/>; a
     /// change to none/directory/drive bumps the generation and resets to
     /// <see cref="PreviewKind.None"/> with no effect (any in-flight load for the old target is left
-    /// to arrive and be discarded by the generation mismatch).
+    /// to arrive and be discarded by the generation mismatch). Reads only <c>before</c> and the pane
+    /// itself; <see cref="Apply"/> skips it for an untouched pane on that basis.
     /// </summary>
     private static (AppState, IReadOnlyList<Effect>) ReconcilePreview(
         Pane? before, PaneId id, AppState state, IReadOnlyList<Effect> effects)

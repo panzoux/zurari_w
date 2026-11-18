@@ -64,9 +64,8 @@ internal static class InputTrace
             CultureInfo.InvariantCulture,
             $"[app] state mode={state.InputMode} sort={sort.Mode}/{direction}{folders} hidden={state.Focused.View.ShowHidden} focused={state.Focused.FocusedColumn}");
 
-        if (state.Focused.FocusedColumn >= 0 && state.Focused.FocusedColumn < state.Focused.Columns.Length)
+        if (state.Focused.FocusedColumnOrNull is { } column)
         {
-            var column = state.Focused.Columns[state.Focused.FocusedColumn];
             line += string.Create(
                 CultureInfo.InvariantCulture,
                 $" loc={Describe(column.Location)} sortable={column.IsSortable} first=[{FirstNames(column.Entries, e => e.Name)}]");

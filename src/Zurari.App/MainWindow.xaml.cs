@@ -777,12 +777,12 @@ public sealed partial class MainWindow : Window, IDisposable
     {
         var state = loop.State;
         var columnIndex = state.Focused.FocusedColumn;
-        if (columnIndex < 0 || columnIndex >= state.Focused.Columns.Length)
+        if (state.Focused.FocusedColumnOrNull is not { } focusedColumn)
         {
             return;
         }
 
-        var cursor = state.Focused.Columns[columnIndex].Cursor;
+        var cursor = focusedColumn.Cursor;
         if (cursor < 0 || Browser.TryGetRowScreenRect(columnIndex, cursor) is not { } rowRect)
         {
             return;
@@ -976,12 +976,11 @@ public sealed partial class MainWindow : Window, IDisposable
     {
         var state = loop.State;
         var columnIndex = state.Focused.FocusedColumn;
-        if (columnIndex < 0 || columnIndex >= state.Focused.Columns.Length)
+        if (state.Focused.FocusedColumnOrNull is not { } column)
         {
             return;
         }
 
-        var column = state.Focused.Columns[columnIndex];
         if (column.Location.FilesystemPath is null)
         {
             return;
