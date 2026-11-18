@@ -1,8 +1,11 @@
+using Zurari.Core;
+
 namespace Zurari.Runtime;
 
 /// <summary>
 /// Runs shell thumbnail extractions one at a time on a single STA thread, keeping at most one
-/// request waiting: a newer request replaces the waiter rather than queueing behind it.
+/// request waiting per pane: a newer request from a pane replaces that pane's waiter rather than
+/// queueing behind it, and never displaces another pane's.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -25,8 +28,16 @@ internal sealed class ShellThumbnailThread : IDisposable
     private readonly Thread _thread;
     private readonly object _gate = new();
 
-    /// <summary>The one request waiting to run, if any. Replaced, never queued - see the remarks.</summary>
-    private Pending? _waiting;
+    /// <summary>
+    /// The one request per pane waiting to run, if any. Replaced, never queued - see the remarks.
+    /// </summary>
+    private readonly Dictionary<PaneId, Pending> _waiting = [];
+
+    /// <summary>
+    /// The panes in <see cref="_waiting"/>, longest-waiting first. A replacement keeps its pane's
+    /// place, so a pane that keeps asking cannot push another pane's request back forever.
+    /// </summary>
+    private readonly List<PaneId> _order = [];
 
     private bool _disposed;
 
@@ -50,11 +61,12 @@ internal sealed class ShellThumbnailThread : IDisposable
     }
 
     /// <summary>
-    /// Asks for <paramref name="path"/>'s thumbnail. The task completes with the PNG bytes, or with
-    /// <c>null</c> when the shell has none - or when a newer request displaced this one before it
-    /// ever ran.
+    /// Asks for <paramref name="path"/>'s thumbnail on behalf of <paramref name="pane"/>. The task
+    /// completes with the PNG bytes, or with <c>null</c> when the shell has none - or when a newer
+    /// request from the same pane displaced this one before it ever ran. Another pane's request
+    /// never displaces it.
     /// </summary>
-    public Task<byte[]?> Request(string path, int size)
+    public Task<byte[]?> Request(PaneId pane, string path, int size)
     {
         var pending = new Pending(path, size);
 
@@ -66,13 +78,19 @@ internal sealed class ShellThumbnailThread : IDisposable
                 return pending.Completion.Task;
             }
 
-            var displaced = _waiting;
-            _waiting = pending;
-            Monitor.Pulse(_gate);
+            if (_waiting.TryGetValue(pane, out var displaced))
+            {
+                // Whoever was waiting is stale by definition - this pane's cursor has moved past it
+                // - so it is told "nothing" rather than left waiting for a result nobody will look at.
+                displaced.Completion.TrySetResult(null);
+            }
+            else
+            {
+                _order.Add(pane);
+            }
 
-            // Whoever was waiting is stale by definition - the cursor has moved past it - so it is
-            // told "nothing" rather than left waiting for a result nobody will look at.
-            displaced?.Completion.TrySetResult(null);
+            _waiting[pane] = pending;
+            Monitor.Pulse(_gate);
         }
 
         return pending.Completion.Task;
@@ -85,7 +103,7 @@ internal sealed class ShellThumbnailThread : IDisposable
             Pending taken;
             lock (_gate)
             {
-                while (_waiting is null && !_disposed)
+                while (_order.Count == 0 && !_disposed)
                 {
                     Monitor.Wait(_gate);
                 }
@@ -95,8 +113,10 @@ internal sealed class ShellThumbnailThread : IDisposable
                     return;
                 }
 
-                taken = _waiting!;
-                _waiting = null;
+                var next = _order[0];
+                _order.RemoveAt(0);
+                taken = _waiting[next];
+                _waiting.Remove(next);
             }
 
             byte[]? extracted = null;
@@ -119,8 +139,13 @@ internal sealed class ShellThumbnailThread : IDisposable
         lock (_gate)
         {
             _disposed = true;
-            _waiting?.Completion.TrySetResult(null);
-            _waiting = null;
+            foreach (var waiting in _waiting.Values)
+            {
+                waiting.Completion.TrySetResult(null);
+            }
+
+            _waiting.Clear();
+            _order.Clear();
             Monitor.PulseAll(_gate);
         }
 

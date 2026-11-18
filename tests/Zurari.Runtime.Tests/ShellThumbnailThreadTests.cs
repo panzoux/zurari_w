@@ -186,11 +186,11 @@ public class ShellThumbnailThreadTests
             return OnePixelPng;
         });
 
-        var held = thread.Request("held.pdf", 256);
+        var held = thread.Request(First, "held.pdf", 256);
         Assert.True(started.Wait(TimeSpan.FromSeconds(10)), "held.pdf never reached the shell thread.");
 
-        var passed = thread.Request("passed-over.pdf", 256);
-        var landed = thread.Request("landed-on.pdf", 256);
+        var passed = thread.Request(First, "passed-over.pdf", 256);
+        var landed = thread.Request(First, "landed-on.pdf", 256);
 
         // Displaced before it ever ran: answered "nothing" at once, not left to wait.
         Assert.Null(await passed.WaitAsync(TimeSpan.FromSeconds(10)));
@@ -200,6 +200,47 @@ public class ShellThumbnailThreadTests
         Assert.Equal(OnePixelPng, await landed.WaitAsync(TimeSpan.FromSeconds(10)));
 
         Assert.Equal(["held.pdf", "landed-on.pdf"], asked);
+    }
+
+    /// <summary>
+    /// Latest wins per pane: a second pane asking while the first is waiting displaces nothing, and
+    /// the longest-waiting pane runs first.
+    /// </summary>
+    [Fact]
+    public async Task A_request_from_another_pane_does_not_displace_a_waiting_one()
+    {
+        var asked = new ConcurrentQueue<string>();
+        using var started = new ManualResetEventSlim(false);
+        using var release = new ManualResetEventSlim(false);
+        using var thread = new ShellThumbnailThread((path, _) =>
+        {
+            asked.Enqueue(path);
+            if (path == "held.pdf")
+            {
+                started.Set();
+                release.Wait(TimeSpan.FromSeconds(10));
+            }
+
+            return OnePixelPng;
+        });
+        var other = new PaneId(1);
+
+        var held = thread.Request(First, "held.pdf", 256);
+        Assert.True(started.Wait(TimeSpan.FromSeconds(10)), "held.pdf never reached the shell thread.");
+
+        var firstPaneOld = thread.Request(First, "first-old.pdf", 256);
+        var otherPane = thread.Request(other, "other.pdf", 256);
+        var firstPaneNew = thread.Request(First, "first-new.pdf", 256);
+
+        Assert.Null(await firstPaneOld.WaitAsync(TimeSpan.FromSeconds(10)));
+
+        release.Set();
+        await held.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(OnePixelPng, await firstPaneNew.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.Equal(OnePixelPng, await otherPane.WaitAsync(TimeSpan.FromSeconds(10)));
+
+        // The first pane's replacement keeps its place in line, ahead of the other pane's request.
+        Assert.Equal(["held.pdf", "first-new.pdf", "other.pdf"], asked);
     }
 
     /// <summary>

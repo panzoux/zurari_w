@@ -156,12 +156,12 @@ public sealed class WorkerRuntime : IDisposable
     private int _collapseRestored;
 
     /// <summary>
-    /// Guards every <c>_preview*</c> field below. All four move together and are only ever read or
-    /// written under it.
+    /// Guards <see cref="_previewSlots"/>, every <see cref="PreviewSlot"/> in it and
+    /// <see cref="_previewTasks"/>. They are only ever read or written under it.
     /// </summary>
     /// <remarks>
-    /// The invariant the pair of generation fields must satisfy: whenever
-    /// <see cref="_previewGeneration"/> is not -1 it equals <see cref="_highestPreviewGeneration"/>.
+    /// The invariant the pair of generation fields of one slot must satisfy: whenever
+    /// <see cref="PreviewSlot.Generation"/> is not -1 it equals <see cref="PreviewSlot.HighestGeneration"/>.
     /// They differ only in what survives cancellation - the current generation is cleared when a
     /// preview stops, the high-water mark is not, which is what makes a late, out-of-order request
     /// recognisable as stale rather than as something new.
@@ -171,23 +171,88 @@ public sealed class WorkerRuntime : IDisposable
     /// </remarks>
     private readonly object _previewGate = new();
 
-    /// <summary>Cancels the one in-flight preview, if any. Replaced each time a new one starts.</summary>
-    private CancellationTokenSource? _previewCts;
+    /// <summary>
+    /// One pane's preview: what is in flight and the newest generation ever started. Each pane counts
+    /// generations from its own start, so the high-water mark must be per pane too.
+    /// </summary>
+    private sealed class PreviewSlot
+    {
+        /// <summary>Cancels this pane's one in-flight preview, if any. Replaced each time a new one starts.</summary>
+        public CancellationTokenSource? Cts;
+
+        /// <summary>
+        /// <see cref="Effect.LoadPreview.Generation"/> of the in-flight preview, or -1 when idle. Makes
+        /// <see cref="Effect.CancelPreview"/> order-independent - see <see cref="CancelInFlightPreview"/>.
+        /// </summary>
+        public int Generation = -1;
+
+        /// <summary>
+        /// Highest <see cref="Effect.LoadPreview.Generation"/> ever started in this pane, so an
+        /// out-of-order request cannot supersede a newer one - see <see cref="StartPreview"/>.
+        /// </summary>
+        public int HighestGeneration = -1;
+    }
 
     /// <summary>
-    /// <see cref="Effect.LoadPreview.Generation"/> of the in-flight preview, or -1 when idle. Makes
-    /// <see cref="Effect.CancelPreview"/> order-independent - see <see cref="CancelInFlightPreview"/>.
+    /// A slot per pane, so starting one pane's preview never cancels the other's. Created on first
+    /// use and forgotten again - see <see cref="ForgetSlotUnderLock"/> - so it holds only panes with
+    /// a preview in flight.
     /// </summary>
-    private int _previewGeneration = -1;
+    private readonly Dictionary<PaneId, PreviewSlot> _previewSlots = [];
 
     /// <summary>
-    /// Highest <see cref="Effect.LoadPreview.Generation"/> ever started, so an out-of-order request
-    /// cannot supersede a newer one - see <see cref="StartPreview"/>.
+    /// Every preview task that has not yet unwound, whichever slot it belonged to, so
+    /// <see cref="Dispose"/> can wait for all of them - a cancelled pane's slot is forgotten while its
+    /// task may still be running.
     /// </summary>
-    private int _highestPreviewGeneration = -1;
+    private readonly HashSet<Task> _previewTasks = [];
 
-    /// <summary>The in-flight preview, kept only so <see cref="Dispose"/> can wait for it to unwind.</summary>
-    private Task? _previewTask;
+    /// <summary>Forgets <paramref name="pane"/>'s slot once it has nothing in flight.</summary>
+    /// <remarks>
+    /// Closing and reopening the split hands out a fresh <see cref="PaneId"/> each time, so without
+    /// this the dictionary would grow by one entry for every toggle in the process's life. Called
+    /// after a cancel (Core's ToggleSplit close emits <see cref="Effect.CancelPreview"/> for the
+    /// pane it drops) and when a preview's task has unwound. A slot with a preview in flight is kept.
+    /// </remarks>
+    private void ForgetSlotUnderLock(PaneId pane)
+    {
+        if (_previewSlots.TryGetValue(pane, out var slot) && slot.Cts is null)
+        {
+            _previewSlots.Remove(pane);
+        }
+    }
+
+    private PreviewSlot SlotFor(PaneId pane)
+    {
+        if (!_previewSlots.TryGetValue(pane, out var slot))
+        {
+            slot = new PreviewSlot();
+            _previewSlots.Add(pane, slot);
+        }
+
+        return slot;
+    }
+
+    /// <summary>How many panes currently hold a preview slot. Test-only observation of slot release.</summary>
+    internal int PreviewSlotCount
+    {
+        get
+        {
+            lock (_previewGate)
+            {
+                return _previewSlots.Count;
+            }
+        }
+    }
+
+    /// <summary>Whether <paramref name="pane"/> has a started, not yet cancelled or finished preview.</summary>
+    internal bool IsPreviewInFlight(PaneId pane)
+    {
+        lock (_previewGate)
+        {
+            return _previewSlots.TryGetValue(pane, out var slot) && slot.Cts is not null;
+        }
+    }
 
     static WorkerRuntime()
     {
@@ -295,7 +360,7 @@ public sealed class WorkerRuntime : IDisposable
                 StartPreview(loadPreview);
                 break;
             case Effect.CancelPreview cancelPreview:
-                CancelInFlightPreview(cancelPreview.Generation);
+                CancelInFlightPreview(cancelPreview.Pane, cancelPreview.Generation);
                 break;
             case Effect.RenameEntry renameEntry:
                 ExecuteRename(renameEntry);
@@ -351,23 +416,32 @@ public sealed class WorkerRuntime : IDisposable
                 return;
             }
 
+            var slot = SlotFor(effect.Pane);
+
             // Generations only ever increase, so anything not newer than what we already started is
             // stale and must not supersede it. Effects are submitted in order but drained from one
             // channel by several workers, so two consecutive cursor moves can reach here reversed;
             // letting the older one win would show the wrong file, and its result would then be
             // discarded by Core's generation check - leaving the pane loading forever.
-            if (effect.Generation <= _highestPreviewGeneration)
+            if (effect.Generation <= slot.HighestGeneration)
             {
+                // SlotFor may just have created this slot, but then HighestGeneration is -1 and
+                // nothing is stale, so a slot is never left empty here.
                 return;
             }
 
-            _highestPreviewGeneration = effect.Generation;
-            CancelPreviewCtsUnderLock();
+            slot.HighestGeneration = effect.Generation;
+            CancelPreviewCtsUnderLock(slot);
             cts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
-            _previewCts = cts;
-            _previewGeneration = effect.Generation;
+            slot.Cts = cts;
+            slot.Generation = effect.Generation;
             token = cts.Token;
-            _previewTask = Task.Run(() => RunPreview(effect, cts, token), CancellationToken.None);
+
+            // The task removes itself from _previewTasks in its finally, which takes _previewGate, so
+            // it cannot read `self` before this lock is released and the assignment is complete.
+            Task? self = null;
+            self = Task.Run(() => RunPreview(effect, slot, cts, self!, token), CancellationToken.None);
+            _previewTasks.Add(self);
         }
     }
 
@@ -382,7 +456,8 @@ public sealed class WorkerRuntime : IDisposable
     /// preview into a spurious <see cref="Msg.PreviewFailed"/>. Cancelling merely signals; the task
     /// cleans up when it is genuinely finished with the token.
     /// </remarks>
-    private void RunPreview(Effect.LoadPreview effect, CancellationTokenSource cts, CancellationToken token)
+    private void RunPreview(
+        Effect.LoadPreview effect, PreviewSlot slot, CancellationTokenSource cts, Task self, CancellationToken token)
     {
         try
         {
@@ -392,13 +467,21 @@ public sealed class WorkerRuntime : IDisposable
         {
             lock (_previewGate)
             {
-                if (ReferenceEquals(_previewCts, cts))
+                if (ReferenceEquals(slot.Cts, cts))
                 {
-                    _previewCts = null;
-                    _previewGeneration = -1;
+                    slot.Cts = null;
+                    slot.Generation = -1;
                 }
 
                 cts.Dispose();
+                _previewTasks.Remove(self);
+
+                // Only this task's own slot: a cancel may already have forgotten it and a later
+                // preview for the same pane created a fresh one, which must be left alone.
+                if (_previewSlots.TryGetValue(effect.Pane, out var current) && ReferenceEquals(current, slot))
+                {
+                    ForgetSlotUnderLock(effect.Pane);
+                }
             }
         }
     }
@@ -415,24 +498,30 @@ public sealed class WorkerRuntime : IDisposable
     /// executed *after* the load it was meant to precede. Cancelling whatever happens to be
     /// current would then kill the new preview, and the pane would sit on "loading" forever.
     /// </remarks>
-    private void CancelInFlightPreview(int generation)
+    private void CancelInFlightPreview(PaneId pane, int generation)
     {
         lock (_previewGate)
         {
-            if (_previewGeneration != generation)
+            // TryGetValue, not SlotFor: a cancel for a pane with no slot has nothing to cancel and
+            // must not create one.
+            if (!_previewSlots.TryGetValue(pane, out var slot) || slot.Generation != generation)
             {
                 return;
             }
 
-            CancelPreviewCtsUnderLock();
+            CancelPreviewCtsUnderLock(slot);
+
+            // The slot is released here rather than waiting for the cancelled task to unwind: the
+            // task holds its own reference and also tries to forget it, harmlessly.
+            ForgetSlotUnderLock(pane);
         }
     }
 
-    private void CancelPreviewCtsUnderLock()
+    private static void CancelPreviewCtsUnderLock(PreviewSlot slot)
     {
-        var previous = _previewCts;
-        _previewCts = null;
-        _previewGeneration = -1;
+        var previous = slot.Cts;
+        slot.Cts = null;
+        slot.Generation = -1;
         if (previous is null)
         {
             return;
@@ -1307,7 +1396,7 @@ public sealed class WorkerRuntime : IDisposable
             return false;
         }
 
-        var request = _shellThumbnails!.Value.Request(effect.Path, VideoThumbnailSize);
+        var request = _shellThumbnails!.Value.Request(effect.Pane, effect.Path, VideoThumbnailSize);
 
         try
         {
@@ -1528,12 +1617,16 @@ public sealed class WorkerRuntime : IDisposable
         _channel.Writer.TryComplete();
         _cts.Cancel();
 
-        Task? previewTask;
+        Task[] previewTasks;
         lock (_previewGate)
         {
-            CancelPreviewCtsUnderLock();
-            previewTask = _previewTask;
-            _previewTask = null;
+            foreach (var slot in _previewSlots.Values)
+            {
+                CancelPreviewCtsUnderLock(slot);
+            }
+
+            previewTasks = new Task[_previewTasks.Count];
+            _previewTasks.CopyTo(previewTasks);
         }
 
         try
@@ -1546,7 +1639,7 @@ public sealed class WorkerRuntime : IDisposable
             //
             // This wait MUST stay outside _previewGate: RunPreview's finally takes that lock, so
             // waiting while holding it would deadlock against the very task being waited for.
-            previewTask?.Wait(TimeSpan.FromSeconds(5));
+            Task.WaitAll(previewTasks, TimeSpan.FromSeconds(5));
         }
         catch (AggregateException)
         {

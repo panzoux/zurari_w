@@ -406,4 +406,178 @@ public class WorkerRuntimeTests
             TempDirectory.Delete(dir);
         }
     }
+
+    private static List<Msg> WaitFor(ConcurrentQueue<Msg> queue, TimeSpan timeout, Func<List<Msg>, bool> done)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            var seen = new List<Msg>(queue);
+            if (done(seen))
+            {
+                return seen;
+            }
+
+            Thread.Sleep(10);
+        }
+
+        return new List<Msg>(queue);
+    }
+
+    private static List<Msg.PreviewLoaded> PreviewsIn(List<Msg> msgs)
+    {
+        var loaded = new List<Msg.PreviewLoaded>();
+        foreach (var msg in msgs)
+        {
+            if (msg is Msg.PreviewLoaded preview)
+            {
+                loaded.Add(preview);
+            }
+        }
+
+        return loaded;
+    }
+
+    /// <summary>Polls <paramref name="condition"/> until it holds; false if it never does in time.</summary>
+    private static bool PollUntil(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (condition())
+            {
+                return true;
+            }
+
+            Thread.Sleep(10);
+        }
+
+        return condition();
+    }
+
+    /// <summary>A file the preview treats as video by its extension; its shell thumbnail is what blocks.</summary>
+    private static string VideoFile(string dir, string name)
+    {
+        var path = Path.Combine(dir, name);
+        File.WriteAllBytes(path, [0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x6D, 0x70, 0x34, 0x32]);
+        return path;
+    }
+
+    [Fact]
+    public void Two_panes_previews_load_independently()
+    {
+        var dir = TempDirectory.Create("zurari-two-previews");
+        var a = Path.Combine(dir, "a.txt");
+        var b = Path.Combine(dir, "b.txt");
+        File.WriteAllText(a, "alpha");
+        File.WriteAllText(b, "bravo");
+        var posted = new ConcurrentQueue<Msg>();
+        using var runtime = new WorkerRuntime(posted.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
+
+        // Pane 0 is already at generation 5; pane 1 starts at 1. With one shared "highest
+        // generation" the second request would be dropped as stale.
+        runtime.Submit(new Effect.LoadPreview(new PaneId(0), 5, a));
+        runtime.Submit(new Effect.LoadPreview(new PaneId(1), 1, b));
+
+        var loaded = PreviewsIn(WaitFor(posted, TimeSpan.FromSeconds(5), seen => PreviewsIn(seen).Count >= 2));
+        Assert.Contains(loaded, m => m.Pane == new PaneId(0) && m.Text == "alpha");
+        Assert.Contains(loaded, m => m.Pane == new PaneId(1) && m.Text == "bravo");
+        TempDirectory.Delete(dir);
+    }
+
+    [Fact]
+    public void Cancelling_one_panes_preview_leaves_the_others_at_the_same_generation_running()
+    {
+        var dir = TempDirectory.Create("zurari-cancel-one-pane");
+        using var release = new ManualResetEventSlim(false);
+        try
+        {
+            var paneA = new PaneId(0);
+            var paneB = new PaneId(1);
+            var posted = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(
+                posted.Enqueue,
+                thumbnailCache: new ThumbnailCache(Path.Combine(dir, "cache")),
+                shellThumbnail: (_, _) =>
+                {
+                    release.Wait(TimeSpan.FromSeconds(30));
+                    return null;
+                },
+                settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
+
+            // Both panes are at generation 3 and both are held in the (blocked) shell extractor.
+            runtime.Submit(new Effect.LoadPreview(paneA, 3, VideoFile(dir, "a.mp4")));
+            runtime.Submit(new Effect.LoadPreview(paneB, 3, VideoFile(dir, "b.mp4")));
+            Assert.True(PollUntil(() => runtime.PreviewSlotCount == 2), "Both previews should be in flight.");
+
+            runtime.Submit(new Effect.CancelPreview(paneA, 3));
+
+            // A's cancel also releases A's slot, which is how we know it has been applied.
+            Assert.True(PollUntil(() => runtime.PreviewSlotCount == 1), "Pane A's cancel was never applied.");
+            Assert.False(runtime.IsPreviewInFlight(paneA));
+            Assert.True(runtime.IsPreviewInFlight(paneB), "Cancelling pane A must not cancel pane B.");
+        }
+        finally
+        {
+            release.Set();
+            TempDirectory.Delete(dir);
+        }
+    }
+
+    [Fact]
+    public void A_panes_slot_is_released_when_its_preview_finishes()
+    {
+        var dir = TempDirectory.Create("zurari-slot-finish");
+        try
+        {
+            var file = Path.Combine(dir, "a.txt");
+            File.WriteAllText(file, "alpha");
+            var posted = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(posted.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
+
+            runtime.Submit(new Effect.LoadPreview(new PaneId(0), 1, file));
+            runtime.Submit(new Effect.LoadPreview(new PaneId(1), 1, file));
+
+            var loaded = PreviewsIn(WaitFor(posted, TimeSpan.FromSeconds(10), seen => PreviewsIn(seen).Count >= 2));
+            Assert.Equal(2, loaded.Count);
+            Assert.True(PollUntil(() => runtime.PreviewSlotCount == 0), "Finished previews should not keep their slots.");
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
+
+    [Fact]
+    public void A_panes_slot_is_released_when_its_preview_is_cancelled()
+    {
+        var dir = TempDirectory.Create("zurari-slot-cancel");
+        using var release = new ManualResetEventSlim(false);
+        try
+        {
+            var pane = new PaneId(4);
+            var posted = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(
+                posted.Enqueue,
+                thumbnailCache: new ThumbnailCache(Path.Combine(dir, "cache")),
+                shellThumbnail: (_, _) =>
+                {
+                    release.Wait(TimeSpan.FromSeconds(30));
+                    return null;
+                },
+                settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
+
+            runtime.Submit(new Effect.LoadPreview(pane, 1, VideoFile(dir, "a.mp4")));
+            Assert.True(PollUntil(() => runtime.IsPreviewInFlight(pane)), "The preview should be in flight.");
+
+            runtime.Submit(new Effect.CancelPreview(pane, 1));
+
+            Assert.True(PollUntil(() => runtime.PreviewSlotCount == 0), "A cancelled pane's slot should be released.");
+        }
+        finally
+        {
+            release.Set();
+            TempDirectory.Delete(dir);
+        }
+    }
 }
