@@ -34,8 +34,12 @@ public sealed partial class MainWindow : Window, IDisposable
     /// <summary>Persisted preferences, at the default per-user location.</summary>
     private readonly UserSettingsStore settingsStore = new();
 
-    /// <summary>Lets a render reuse the row arrays it built last time - see <see cref="ProjectionCache"/>.</summary>
-    private readonly ProjectionCache projectionCache = new();
+    /// <summary>
+    /// Lets a render reuse the row arrays it built last time - see <see cref="ProjectionCache"/>.
+    /// One per pane: the cache is keyed by column index, so two panes sharing one would evict each
+    /// other's rows on every render.
+    /// </summary>
+    private readonly Dictionary<PaneId, ProjectionCache> projectionCaches = [];
 
     /// <summary>
     /// The job strip's actual <c>ItemsSource</c>, assigned once in the constructor and never
@@ -47,24 +51,24 @@ public sealed partial class MainWindow : Window, IDisposable
     private readonly ObservableCollection<JobRowVm> jobRows = new();
 
     /// <summary>
-    /// The focused pane's <see cref="Pane.Columns"/> most recently pushed into <see cref="Browser"/>.
+    /// What each pane's <see cref="Controls.ColumnBrowser"/> was most recently handed.
     /// <see cref="Render"/> only reassigns <see cref="Controls.ColumnBrowser.Columns"/> when this
-    /// differs (by the underlying array reference - see its remarks) from the incoming state's,
-    /// so unrelated renders (job progress, preview loads, ...) do not force
-    /// <see cref="Controls.ColumnBrowser"/> to rebuild/re-sync every column, which otherwise yanks
-    /// back any in-progress user scrolling (Phase 5 bug B3).
+    /// differs from the incoming state's, so unrelated renders (job progress, preview loads, ...)
+    /// do not force <see cref="Controls.ColumnBrowser"/> to rebuild/re-sync every column, which
+    /// otherwise yanks back any in-progress user scrolling (Phase 5 bug B3).
     /// </summary>
-    private ImmutableArray<Column> lastRenderedColumns;
+    private readonly Dictionary<PaneId, RenderedPane> lastRendered = [];
 
     /// <summary>
-    /// The focused pane's <see cref="Pane.FocusedColumn"/> most recently pushed into
-    /// <see cref="Browser"/>. Focus-only changes (<see cref="Msg.GoToParent"/>,
-    /// <see cref="Msg.FocusColumn"/>) leave <see cref="Pane.Columns"/>'s array reference untouched, so
-    /// the guard above alone would never re-project them - the strong-cursor highlight silently
-    /// stopped following focus (Left/Backspace looked like a no-op) until this was tracked alongside
-    /// it.
+    /// The inputs of one pane's last projection. <c>Columns</c> is compared by the underlying array
+    /// reference (see <see cref="ImmutableArray{T}"/>'s equality). <c>FocusedColumn</c>: focus-only
+    /// changes (<see cref="Msg.GoToParent"/>, <see cref="Msg.FocusColumn"/>) leave the array
+    /// untouched, so without it the strong-cursor highlight silently stopped following focus
+    /// (Left/Backspace looked like a no-op). <c>PaneFocused</c>: moving focus between panes changes
+    /// what each projects (the unfocused one draws no focused column) with neither of the others
+    /// changing.
     /// </summary>
-    private int lastRenderedFocusedColumn = -1;
+    private readonly record struct RenderedPane(ImmutableArray<Column> Columns, int FocusedColumn, bool PaneFocused);
 
     /// <summary>
     /// The <see cref="StateProjection.PreviewVm.Generation"/> of the image most recently decoded
@@ -102,17 +106,36 @@ public sealed partial class MainWindow : Window, IDisposable
     /// </summary>
     private static readonly TimeSpan PlacesRefreshDelay = TimeSpan.FromMilliseconds(400);
 
-    private readonly PendingEffectGate<Effect.LoadPreview> previewGate = new();
+    /// <summary>
+    /// One gate per pane: a gate holds only the newest effect, so a single shared one would let a
+    /// preview request for pane B replace pane A's inside the debounce window, and A would stay
+    /// "loading" forever. The timer tick drains every gate.
+    /// </summary>
+    private readonly Dictionary<PaneId, PendingEffectGate<Effect.LoadPreview>> previewGates = [];
     private DispatcherTimer? previewDebounceTimer;
 
     /// <summary>
-    /// The same coalescing as <see cref="previewGate"/>, for the column that fills in beside the
-    /// cursor. Held for the same reason and with the same interval: a held-down arrow key would
-    /// otherwise put one directory listing on the worker pool per keystroke, and on a network share
-    /// that is exactly the stall the preview slot was separated out to avoid.
+    /// The same coalescing as <see cref="previewGates"/>, for the column that fills in beside the
+    /// cursor, per pane (keyed by the column's pane). Held for the same reason and with the same
+    /// interval: a held-down arrow key would otherwise put one directory listing on the worker pool
+    /// per keystroke, and on a network share that is exactly the stall the preview slot was
+    /// separated out to avoid. Without one gate per pane, pane B's read inside the window would
+    /// replace pane A's and A's child column would stay "loading" forever.
     /// </summary>
-    private readonly PendingEffectGate<Effect.ReadDirectory> speculativeReadGate = new();
+    private readonly Dictionary<PaneId, PendingEffectGate<Effect.ReadDirectory>> speculativeReadGates = [];
     private DispatcherTimer? speculativeReadTimer;
+
+    private static T For<T>(Dictionary<PaneId, T> map, PaneId pane)
+        where T : new()
+    {
+        if (!map.TryGetValue(pane, out var value))
+        {
+            value = new T();
+            map.Add(pane, value);
+        }
+
+        return value;
+    }
 
     /// <summary>
     /// Watches for drives arriving and leaving, so the pane does not need an F5 to notice. Created
@@ -142,22 +165,22 @@ public sealed partial class MainWindow : Window, IDisposable
         directoryWatcher = new DirectoryWatcher(post: PostToLoop);
         loop = new MessageLoop(AppState.Initial, RunEffect, Render);
 
-        Browser.CursorMoveRequested += (_, e) => Dispatch(ToCursorMsg(e, loop.State.Focused.Ref(e.ColumnIndex)));
-        Browser.ColumnFocusRequested += (_, e) => Dispatch(new Msg.FocusColumn(loop.State.Focused.Ref(e.ColumnIndex)));
+        Browser.CursorMoveRequested += (_, e) => Dispatch(ToCursorMsg(e, TopRef(e.ColumnIndex)));
+        Browser.ColumnFocusRequested += (_, e) => Dispatch(new Msg.FocusColumn(TopRef(e.ColumnIndex)));
         Browser.EntryActivated += (_, e) => Dispatch(
-            new Msg.EnterDirectory(loop.State.Focused.Ref(e.ColumnIndex), e.EntryIndex));
-        Browser.NavigateUpRequested += (_, e) => Dispatch(new Msg.GoToParent(loop.State.Focused.Ref(e.ColumnIndex)));
+            new Msg.EnterDirectory(TopRef(e.ColumnIndex), e.EntryIndex));
+        Browser.NavigateUpRequested += (_, e) => Dispatch(new Msg.GoToParent(TopRef(e.ColumnIndex)));
         Browser.EntryPointerPressed += OnEntryPointerPressed;
         Browser.EntryClicked += OnEntryClicked;
         Browser.EntryDragRequested += OnEntryDragRequested;
         Browser.FileDropRequested += (_, e) => Dispatch(
             new Msg.DropFiles(
-                loop.State.Focused.Ref(e.ColumnIndex), e.TargetEntryIndex, [.. e.Paths], e.ShiftHeld, e.CtrlHeld));
+                TopRef(e.ColumnIndex), e.TargetEntryIndex, [.. e.Paths], e.ShiftHeld, e.CtrlHeld));
         Browser.MarkRangeRequested += (_, e) => Dispatch(
-            new Msg.MarkRange(loop.State.Focused.Ref(e.ColumnIndex), e.FromIndex, e.ToIndex, e.Additive));
+            new Msg.MarkRange(TopRef(e.ColumnIndex), e.FromIndex, e.ToIndex, e.Additive));
         Browser.RubberBandStarted += OnRubberBandStarted;
         Browser.SectionToggleRequested += (_, e) => Dispatch(
-            new Msg.ToggleSection(loop.State.Focused.Ref(e.ColumnIndex), e.EntryIndex));
+            new Msg.ToggleSection(TopRef(e.ColumnIndex), e.EntryIndex));
         Browser.RenameSubmitted += (_, e) => Dispatch(new Msg.RenameSubmitted(e.NewName));
         Browser.RenameCancelled += (_, _) => Dispatch(new Msg.RenameCancelled());
 
@@ -395,8 +418,9 @@ public sealed partial class MainWindow : Window, IDisposable
     }
 
     /// <summary>
-    /// Holds <paramref name="effect"/> in <see cref="previewGate"/> (replacing whatever was
-    /// pending) and (re)starts <see cref="previewDebounceTimer"/> at <see cref="PreviewDebounceInterval"/>.
+    /// Holds <paramref name="effect"/> in its pane's gate in <see cref="previewGates"/> (replacing
+    /// whatever that pane had pending) and (re)starts <see cref="previewDebounceTimer"/> at
+    /// <see cref="PreviewDebounceInterval"/>.
     /// Only the timer tick (<see cref="OnPreviewDebounceTick"/>) ever actually submits a
     /// <see cref="Effect.LoadPreview"/> to <see cref="runtime"/> - this method never does, which is
     /// the coalescing behavior itself (Phase 5 fix P1). The timer is created lazily on first use and
@@ -404,7 +428,7 @@ public sealed partial class MainWindow : Window, IDisposable
     /// </summary>
     private void SchedulePreviewLoad(Effect.LoadPreview effect)
     {
-        previewGate.Hold(effect);
+        For(previewGates, effect.Pane).Hold(effect);
 
         if (previewDebounceTimer is null)
         {
@@ -422,7 +446,7 @@ public sealed partial class MainWindow : Window, IDisposable
     /// </summary>
     private void ScheduleSpeculativeRead(Effect.ReadDirectory effect)
     {
-        speculativeReadGate.Hold(effect);
+        For(speculativeReadGates, effect.At.Pane).Hold(effect);
 
         if (speculativeReadTimer is null)
         {
@@ -437,20 +461,24 @@ public sealed partial class MainWindow : Window, IDisposable
     private void OnSpeculativeReadTick(object? sender, EventArgs e)
     {
         speculativeReadTimer?.Stop();
-        var effect = speculativeReadGate.Take();
-        if (effect is not null)
+        foreach (var gate in speculativeReadGates.Values)
         {
-            runtime.Submit(effect);
+            if (gate.Take() is { } effect)
+            {
+                runtime.Submit(effect);
+            }
         }
     }
 
     private void OnPreviewDebounceTick(object? sender, EventArgs e)
     {
         previewDebounceTimer?.Stop();
-        var effect = previewGate.Take();
-        if (effect is not null)
+        foreach (var gate in previewGates.Values)
         {
-            runtime.Submit(effect);
+            if (gate.Take() is { } effect)
+            {
+                runtime.Submit(effect);
+            }
         }
     }
 
@@ -488,7 +516,7 @@ public sealed partial class MainWindow : Window, IDisposable
     }
 
     /// <summary>The link under a timed-out preview: try again, waiting longer.</summary>
-    private void OnPreviewRetryClick(object sender, RoutedEventArgs e) => Dispatch(new Msg.RetryPreview(loop.State.Focused.Id));
+    private void OnPreviewRetryClick(object sender, RoutedEventArgs e) => Dispatch(new Msg.RetryPreview(loop.State.Panes[0].Id));
 
     private static Msg ToCursorMsg(CursorMoveRequestedEventArgs e, ColumnRef at)
     {
@@ -530,7 +558,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
         if (!(e.Button == MouseButton.Left && e.Modifiers == ModifierKeys.Control))
         {
-            Dispatch(new Msg.CursorTo(loop.State.Focused.Ref(e.ColumnIndex), e.EntryIndex));
+            Dispatch(new Msg.CursorTo(TopRef(e.ColumnIndex), e.EntryIndex));
         }
 
         if (e.Button != MouseButton.Right)
@@ -538,8 +566,14 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
-        ShowContextMenu(e.ColumnIndex, e.EntryIndex, e.ScreenPosition);
+        ShowContextMenu(TopRef(e.ColumnIndex), e.EntryIndex, e.ScreenPosition);
     }
+
+    /// <summary>
+    /// The column <paramref name="columnIndex"/> of the pane the one on-screen
+    /// <see cref="Controls.ColumnBrowser"/> shows. Addresses a pane by its id, never by focus.
+    /// </summary>
+    private ColumnRef TopRef(int columnIndex) => loop.State.Panes[0].Ref(columnIndex);
 
     /// <summary>
     /// Opens the shell context menu for one row at <paramref name="screenPosition"/>, on the row's
@@ -551,14 +585,16 @@ public sealed partial class MainWindow : Window, IDisposable
     /// <see cref="ResolveFullPath"/>: the recycle-bin row has no filesystem path at all, and it is
     /// the row whose menu - "ゴミ箱を空にする" - there is no other way to reach.
     /// </remarks>
-    private void ShowContextMenu(int columnIndex, int entryIndex, Point screenPosition)
+    private void ShowContextMenu(ColumnRef at, int entryIndex, Point screenPosition)
     {
-        if (ResolveShellName(columnIndex, entryIndex) is not { } shellName)
+        if (ResolveShellName(at, entryIndex) is not { } shellName)
         {
             return;
         }
 
-        var paths = IsEntryMarked(columnIndex, entryIndex) ? ResolveMarkedFullPaths(columnIndex) : [shellName];
+        // A marked row stands for the whole selection (Core's one rule, PathsToActOn); a row that is
+        // not marked is just itself, whatever else is marked.
+        var paths = IsEntryMarked(at, entryIndex) ? ResolveMarkedFullPaths(at) : [shellName];
         if (paths.Count == 0)
         {
             paths = [shellName];
@@ -604,12 +640,12 @@ public sealed partial class MainWindow : Window, IDisposable
 
         if ((Keyboard.Modifiers & ModifierKeys.Control) != 0)
         {
-            Dispatch(new Msg.ToggleMark(loop.State.Focused.Ref(e.ColumnIndex), e.EntryIndex));
+            Dispatch(new Msg.ToggleMark(TopRef(e.ColumnIndex), e.EntryIndex));
             return;
         }
 
-        Dispatch(new Msg.ClearMarks(loop.State.Focused.Ref(e.ColumnIndex)));
-        Dispatch(new Msg.EnterDirectory(loop.State.Focused.Ref(e.ColumnIndex), e.EntryIndex, FocusChild: false));
+        Dispatch(new Msg.ClearMarks(TopRef(e.ColumnIndex)));
+        Dispatch(new Msg.EnterDirectory(TopRef(e.ColumnIndex), e.EntryIndex, FocusChild: false));
     }
 
     /// <summary>
@@ -626,7 +662,7 @@ public sealed partial class MainWindow : Window, IDisposable
     {
         if (!e.Additive)
         {
-            Dispatch(new Msg.ClearMarks(loop.State.Focused.Ref(e.ColumnIndex)));
+            Dispatch(new Msg.ClearMarks(TopRef(e.ColumnIndex)));
         }
     }
 
@@ -641,24 +677,19 @@ public sealed partial class MainWindow : Window, IDisposable
     /// </summary>
     private void OnEntryDragRequested(object? sender, EntryDragRequestedEventArgs e)
     {
-        var state = loop.State;
-        if (e.ColumnIndex < 0 || e.ColumnIndex >= state.Focused.Columns.Length)
+        var at = TopRef(e.ColumnIndex);
+        if (loop.State.ColumnAt(at) is not { } column || column.Location.FilesystemPath is null)
         {
             return;
         }
 
-        if (state.Focused.Columns[e.ColumnIndex].Location.FilesystemPath is null)
-        {
-            return;
-        }
-
-        var fullPath = ResolveFullPath(e.ColumnIndex, e.EntryIndex);
+        var fullPath = ResolveFullPath(at, e.EntryIndex);
         if (fullPath is null)
         {
             return;
         }
 
-        var paths = IsEntryMarked(e.ColumnIndex, e.EntryIndex) ? ResolveMarkedFullPaths(e.ColumnIndex) : [fullPath];
+        var paths = IsEntryMarked(at, e.EntryIndex) ? ResolveMarkedFullPaths(at) : [fullPath];
         if (paths.Count == 0)
         {
             paths = [fullPath];
@@ -674,27 +705,22 @@ public sealed partial class MainWindow : Window, IDisposable
 
     /// <summary>
     /// Resolves the full filesystem path of an entry the same way <c>Transition</c> does
-    /// (<c>Path.Combine(column.Path, entry.Name)</c>, with the root column's empty
-    /// <see cref="Column.Path"/> meaning entries are drives already named like <c>"C:\\"</c>).
-    /// Returns <c>null</c> if the indices no longer match the current state (e.g. a race with a
-    /// directory reload).
+    /// (<see cref="Column.PathOf"/>). Returns <c>null</c> if the indices no longer match the
+    /// current state (e.g. a race with a directory reload).
     /// </summary>
-    private string? ResolveFullPath(int columnIndex, int entryIndex)
+    private string? ResolveFullPath(ColumnRef at, int entryIndex)
     {
-        var state = loop.State;
-        if (columnIndex < 0 || columnIndex >= state.Focused.Columns.Length)
+        if (loop.State.ColumnAt(at) is not { } column)
         {
             return null;
         }
 
-        var column = state.Focused.Columns[columnIndex];
         if (entryIndex < 0 || entryIndex >= column.Entries.Length)
         {
             return null;
         }
 
-        var entry = column.Entries[entryIndex];
-        return entry.Target is { } target ? target.FilesystemPath : column.Location.ChildPath(entry.Name);
+        return column.PathOf(column.Entries[entryIndex]);
     }
 
     /// <summary>
@@ -702,15 +728,13 @@ public sealed partial class MainWindow : Window, IDisposable
     /// everything, the bin's CLSID for the ゴミ箱 row. <c>null</c> when the indices no longer match
     /// the current state, or the row is not something the shell can name at all (a section header).
     /// </summary>
-    private string? ResolveShellName(int columnIndex, int entryIndex)
+    private string? ResolveShellName(ColumnRef at, int entryIndex)
     {
-        var state = loop.State;
-        if (columnIndex < 0 || columnIndex >= state.Focused.Columns.Length)
+        if (loop.State.ColumnAt(at) is not { } column)
         {
             return null;
         }
 
-        var column = state.Focused.Columns[columnIndex];
         if (entryIndex < 0 || entryIndex >= column.Entries.Length)
         {
             return null;
@@ -725,41 +749,27 @@ public sealed partial class MainWindow : Window, IDisposable
         return entry.Target is { } target ? target.ShellParsingName : column.Location.ChildPath(entry.Name);
     }
 
-    private bool IsEntryMarked(int columnIndex, int entryIndex)
+    private bool IsEntryMarked(ColumnRef at, int entryIndex)
     {
-        var state = loop.State;
-        if (columnIndex < 0 || columnIndex >= state.Focused.Columns.Length)
+        if (loop.State.ColumnAt(at) is not { } column)
         {
             return false;
         }
 
-        var column = state.Focused.Columns[columnIndex];
         return entryIndex >= 0 && entryIndex < column.Entries.Length && column.Entries[entryIndex].IsMarked;
     }
 
-    /// <summary>Full paths of every marked entry in <paramref name="columnIndex"/>, in entry order.</summary>
-    private List<string> ResolveMarkedFullPaths(int columnIndex)
+    /// <summary>
+    /// The paths an operation on <paramref name="at"/> acts on - Core's one rule,
+    /// <see cref="Column.PathsToActOn"/>, so a drag, the shell menu and Ctrl+C can never act on
+    /// different sets than <c>c</c> does. Empty when the column is gone or is not a real folder.
+    /// </summary>
+    private List<string> ResolveMarkedFullPaths(ColumnRef at)
     {
-        var state = loop.State;
-        if (columnIndex < 0 || columnIndex >= state.Focused.Columns.Length)
-        {
-            return [];
-        }
-
-        var column = state.Focused.Columns[columnIndex];
         var result = new List<string>();
-        foreach (var entry in column.Entries)
+        if (loop.State.ColumnAt(at) is { } column)
         {
-            if (entry.IsMarked)
-            {
-                var path = entry.Target is { } target
-                    ? target.FilesystemPath
-                    : column.Location.ChildPath(entry.Name);
-                if (path is not null)
-                {
-                    result.Add(path);
-                }
-            }
+            result.AddRange(column.PathsToActOn());
         }
 
         return result;
@@ -776,19 +786,19 @@ public sealed partial class MainWindow : Window, IDisposable
     private void ShowContextMenuAtCursor()
     {
         var state = loop.State;
-        var columnIndex = state.Focused.FocusedColumn;
+        var at = state.Focused.FocusedRef;
         if (state.Focused.FocusedColumnOrNull is not { } focusedColumn)
         {
             return;
         }
 
         var cursor = focusedColumn.Cursor;
-        if (cursor < 0 || Browser.TryGetRowScreenRect(columnIndex, cursor) is not { } rowRect)
+        if (cursor < 0 || Browser.TryGetRowScreenRect(at.Index, cursor) is not { } rowRect)
         {
             return;
         }
 
-        ShowContextMenu(columnIndex, cursor, new Point(rowRect.Left, rowRect.Bottom));
+        ShowContextMenu(at, cursor, new Point(rowRect.Left, rowRect.Bottom));
     }
 
     /// <summary>
@@ -974,34 +984,23 @@ public sealed partial class MainWindow : Window, IDisposable
     /// </summary>
     private void TryCopyToClipboard(bool isMove)
     {
-        var state = loop.State;
-        var columnIndex = state.Focused.FocusedColumn;
-        if (state.Focused.FocusedColumnOrNull is not { } column)
+        if (loop.State.Focused.FocusedColumnOrNull is not { } column)
         {
             return;
         }
 
-        if (column.Location.FilesystemPath is null)
+        // The same rule as `c`/`m` (Core's PathsToActOn): the marks, else the cursor entry, and
+        // nothing at all for a column that is not a real folder.
+        var paths = column.PathsToActOn();
+        if (paths.IsEmpty)
         {
             return;
-        }
-
-        var paths = ResolveMarkedFullPaths(columnIndex);
-        if (paths.Count == 0)
-        {
-            var cursorPath = ResolveFullPath(columnIndex, column.Cursor);
-            if (cursorPath is null)
-            {
-                return;
-            }
-
-            paths = [cursorPath];
         }
 
         try
         {
             var data = new DataObject();
-            data.SetData(DataFormats.FileDrop, paths.ToArray());
+            data.SetData(DataFormats.FileDrop, (string[])[.. paths]);
             var effect = isMove ? DragDropEffects.Move : DragDropEffects.Copy;
             data.SetData("Preferred DropEffect", new MemoryStream(BitConverter.GetBytes((int)effect)));
             Clipboard.SetDataObject(data, copy: true);
@@ -1014,7 +1013,7 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
-        Dispatch(new Msg.SetCutPending(isMove ? [.. paths] : []));
+        Dispatch(new Msg.SetCutPending(isMove ? paths : []));
     }
 
     /// <summary>
@@ -1155,57 +1154,132 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void Render(AppState state)
     {
+        // Only the top pane is on screen so far; a second PaneView is a matter of rendering
+        // state.Panes[1] into it the same way.
+        var watchedChanged = RenderPane(state, state.Panes[0]);
+        watchedChanged |= DropGonePanes(state);
+
+        // Cheap reconcile (see DirectoryWatcher.SetWatchedPaths' remarks) - only worth doing when
+        // some pane's columns actually changed (or a pane went away), the same guard as the
+        // Browser.Columns reassignment, so an unrelated render (job progress, preview loads, ...)
+        // does not churn watchers.
+        if (watchedChanged)
+        {
+            directoryWatcher.SetWatchedPaths(WatchedPaths(state));
+        }
+
+        RenderJobs(state);
+        RenderPreview(state, state.Panes[0]);
+        RenderRename(state, state.Panes[0]);
+
+        var statusBar = StateProjection.ProjectStatusBar(state);
+        PathBarText.Text = statusBar.Path;
+        StatusHints.Text = statusBar.Hints;
+        StatusSummary.Text = statusBar.Summary;
+    }
+
+    /// <summary>
+    /// Pushes <paramref name="pane"/>'s columns into the browser showing it, unless nothing that
+    /// feeds the projection changed since last time. Returns whether it did.
+    /// </summary>
+    private bool RenderPane(AppState state, Pane pane)
+    {
         // Reference comparison, not value comparison: Transition returns the very same
         // ImmutableArray<Column> instance (same underlying array) whenever a Msg does not touch the
-        // focused pane's Columns at all (JobProgress/JobFailed/JobCancelRequested/JobDismissed, and
-        // the untouched columns inside ShellOpCompleted/JobFinished's per-column loop). Skipping the
+        // pane's Columns at all (JobProgress/JobFailed/JobCancelRequested/JobDismissed, and the
+        // untouched columns inside ShellOpCompleted/JobFinished's per-column loop). Skipping the
         // reassignment in that case is what stops Controls.ColumnBrowser.RebuildColumns and
         // ColumnView.SyncFromColumn from running - and yanking back user scroll/hover state - on
         // renders that have nothing to do with the browsed columns (Phase 5 bug B3).
-        if (state.Focused.Columns != lastRenderedColumns || state.Focused.FocusedColumn != lastRenderedFocusedColumn)
+        var rendered = new RenderedPane(pane.Columns, pane.FocusedColumn, pane.Id == state.Focused.Id);
+        if (lastRendered.TryGetValue(pane.Id, out var last) && last == rendered)
         {
-            var projected = StateProjection.Project(state, state.Focused, ResolveIcon, projectionCache);
-            Browser.Columns = projected;
+            return false;
+        }
 
-            // What the screen was handed, as opposed to what Core holds. The two can only disagree
-            // through the projection cache, and this is the line that would show it.
-            if (ColumnBrowser.InputTraceEnabled && state.Focused.FocusedColumn >= 0 && state.Focused.FocusedColumn < projected.Count)
+        var projected = StateProjection.Project(state, pane, ResolveIcon, For(projectionCaches, pane.Id));
+        Browser.Columns = projected;
+
+        // What the screen was handed, as opposed to what Core holds. The two can only disagree
+        // through the projection cache, and this is the line that would show it.
+        if (ColumnBrowser.InputTraceEnabled && pane.FocusedColumn >= 0 && pane.FocusedColumn < projected.Count)
+        {
+            Trace.WriteLine(
+                $"[app] render focused={pane.FocusedColumn} "
+                + $"shown=[{InputTrace.FirstNames(projected[pane.FocusedColumn].Entries, vm => vm.Name)}]");
+        }
+
+        lastRendered[pane.Id] = rendered;
+        return true;
+    }
+
+    /// <summary>
+    /// Forgets the per-pane gates, caches and last-rendered records of panes that no longer exist,
+    /// so closing the split does not pin their row arrays or leave a stale preview request to be
+    /// submitted. Returns whether any pane had been rendered and is now gone.
+    /// </summary>
+    private bool DropGonePanes(AppState state)
+    {
+        DropUnknownKeys(state, previewGates);
+        DropUnknownKeys(state, speculativeReadGates);
+        DropUnknownKeys(state, projectionCaches);
+        return DropUnknownKeys(state, lastRendered) > 0;
+    }
+
+    private static int DropUnknownKeys<T>(AppState state, Dictionary<PaneId, T> map)
+    {
+        var gone = new List<PaneId>();
+        foreach (var id in map.Keys)
+        {
+            if (!HasPane(state, id))
             {
-                Trace.WriteLine(
-                    $"[app] render focused={state.Focused.FocusedColumn} "
-                    + $"shown=[{InputTrace.FirstNames(projected[state.Focused.FocusedColumn].Entries, vm => vm.Name)}]");
+                gone.Add(id);
             }
-            lastRenderedColumns = state.Focused.Columns;
-            lastRenderedFocusedColumn = state.Focused.FocusedColumn;
+        }
 
-            // Cheap reconcile (see DirectoryWatcher.SetWatchedPaths' remarks) - only worth doing
-            // when the columns actually changed, same guard as the Browser.Columns reassignment
-            // above, so an unrelated render (job progress, preview loads, ...) does not churn
-            // watchers.
-            // Only real directories can be watched. A virtual location (the drive list, and later
-            // the recycle bin or the inside of an archive) has no path for FileSystemWatcher to
-            // point at, so it is filtered out here rather than relying on the watcher to reject it.
-            var watchedPaths = new List<string>();
-            var seenPaths = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var column in state.Focused.Columns)
+        foreach (var id in gone)
+        {
+            map.Remove(id);
+        }
+
+        return gone.Count;
+    }
+
+    private static bool HasPane(AppState state, PaneId id)
+    {
+        foreach (var pane in state.Panes)
+        {
+            if (pane.Id == id)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// The real directories of every column of every pane. Only those can be watched: a virtual
+    /// location (the drive list, and later the recycle bin or the inside of an archive) has no path
+    /// for FileSystemWatcher to point at, so it is filtered out here rather than relying on the
+    /// watcher to reject it.
+    /// </summary>
+    private static List<string> WatchedPaths(AppState state)
+    {
+        var watchedPaths = new List<string>();
+        var seenPaths = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var pane in state.Panes)
+        {
+            foreach (var column in pane.Columns)
             {
                 if (column.Location is Location.RealDirectory directory && seenPaths.Add(directory.Path))
                 {
                     watchedPaths.Add(directory.Path);
                 }
             }
-
-            directoryWatcher.SetWatchedPaths(watchedPaths);
         }
 
-        RenderJobs(state);
-        RenderPreview(state);
-        RenderRename(state);
-
-        var statusBar = StateProjection.ProjectStatusBar(state);
-        PathBarText.Text = statusBar.Path;
-        StatusHints.Text = statusBar.Hints;
-        StatusSummary.Text = statusBar.Summary;
+        return watchedPaths;
     }
 
     /// <summary>
@@ -1315,11 +1389,23 @@ public sealed partial class MainWindow : Window, IDisposable
     /// says a row is being renamed, and goes away when it stops saying so. Nothing here decides
     /// anything - the control raises what the user did, and Core decides what that meant.
     /// </remarks>
-    private void RenderRename(AppState state)
+    private void RenderRename(AppState state, Pane pane)
     {
-        if (state.Rename is not { } rename || state.ColumnAt(rename.At) is not { } column)
+        // The editor belongs to the pane the rename's column is in; any other pane shows none.
+        if (state.Rename is not { } rename
+            || rename.At.Pane != pane.Id
+            || state.ColumnAt(rename.At) is not { } column)
         {
             Browser.SyncRenameEditor(-1, -1, null, null);
+            return;
+        }
+
+        // The column index now holds a different folder than the one the rename started in (a
+        // navigation, a swap). Without this the editor would land on a same-named row of whatever
+        // occupies that index.
+        if (column.Location != rename.Location)
+        {
+            Dispatch(new Msg.RenameCancelled());
             return;
         }
 
@@ -1372,9 +1458,9 @@ public sealed partial class MainWindow : Window, IDisposable
         PreviewCapacityPanel.Visibility = Visibility.Visible;
     }
 
-    private void RenderPreview(AppState state)
+    private void RenderPreview(AppState state, Pane pane)
     {
-        var vm = StateProjection.ProjectPreview(state, state.Focused);
+        var vm = StateProjection.ProjectPreview(state, pane);
         previewFileName = vm.FileName;
         previewOriginalDirectory = vm.OriginalDirectory;
         FitPreviewHeader();
