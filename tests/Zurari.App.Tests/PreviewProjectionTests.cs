@@ -1,11 +1,27 @@
 using System.Collections.Immutable;
 using Zurari.App;
 using Zurari.Core;
+using static Zurari.TestSupport.TestPanes;
 
 namespace Zurari.App.Tests;
 
 public class PreviewProjectionTests
 {
+    private static StateProjection.PreviewVm ProjectFocused(AppState state) =>
+        StateProjection.ProjectPreview(state, state.Focused);
+
+    [Fact]
+    public void ProjectPreview_reads_the_pane_it_is_given()
+    {
+        var top = new Column(new Location.RealDirectory(@"C:\a"), [], Load: LoadState.Loaded);
+        var state = TwoPanes(top, top);
+        var preview = new PreviewState(1, @"C:\b\p.txt", PreviewKind.Text, "bottom body", [], null);
+        state = state.WithPane(state.Panes[1] with { Preview = preview });
+
+        Assert.Equal("p.txt", StateProjection.ProjectPreview(state, state.Panes[1]).FileName);
+        Assert.Null(StateProjection.ProjectPreview(state, state.Panes[0]).FileName);
+    }
+
     private static AppState StateWithPreview(PreviewState preview)
     {
         return AppState.SinglePane([new Column(Location.Drives.Instance, [], Load: LoadState.Loaded)])
@@ -15,7 +31,7 @@ public class PreviewProjectionTests
     [Fact]
     public void ProjectPreview_rejects_null_state()
     {
-        Assert.Throws<ArgumentNullException>(() => StateProjection.ProjectPreview(null!));
+        Assert.Throws<ArgumentNullException>(() => StateProjection.ProjectPreview(null!, null!));
     }
 
     [Fact]
@@ -23,7 +39,7 @@ public class PreviewProjectionTests
     {
         var state = StateWithPreview(PreviewState.Initial);
 
-        var vm = StateProjection.ProjectPreview(state);
+        var vm = StateProjection.ProjectPreview(state, state.Focused);
 
         Assert.Equal(PreviewKind.None, vm.Kind);
         Assert.Null(vm.FileName);
@@ -36,7 +52,7 @@ public class PreviewProjectionTests
         var preview = new PreviewState(2, @"C:\Users\someone\notes.txt", PreviewKind.Loading, null, [], null);
         var state = StateWithPreview(preview);
 
-        var vm = StateProjection.ProjectPreview(state);
+        var vm = StateProjection.ProjectPreview(state, state.Focused);
 
         Assert.Equal(PreviewKind.Loading, vm.Kind);
         Assert.Equal("notes.txt", vm.FileName);
@@ -59,7 +75,7 @@ public class PreviewProjectionTests
         };
         var state = StateWithPreview(preview);
 
-        var vm = StateProjection.ProjectPreview(state);
+        var vm = StateProjection.ProjectPreview(state, state.Focused);
 
         Assert.Equal("notes.txt", vm.FileName);
         Assert.Equal(@"C:\Users\someone\Documents", vm.OriginalDirectory);
@@ -70,7 +86,7 @@ public class PreviewProjectionTests
     {
         var preview = new PreviewState(1, @"C:\Users\someone\notes.txt", PreviewKind.Text, "body", [], null);
 
-        var vm = StateProjection.ProjectPreview(StateWithPreview(preview));
+        var vm = ProjectFocused(StateWithPreview(preview));
 
         Assert.Equal("notes.txt", vm.FileName);
         Assert.Null(vm.OriginalDirectory);
@@ -87,7 +103,7 @@ public class PreviewProjectionTests
                 "Windows (C:)", "NTFS · 固定ドライブ", UsedBytes: 768L * 1024 * 1024, TotalBytes: 1024L * 1024 * 1024),
         };
 
-        var vm = StateProjection.ProjectPreview(StateWithPreview(preview));
+        var vm = ProjectFocused(StateWithPreview(preview));
 
         Assert.NotNull(vm.Capacity);
         Assert.Equal(0.75, vm.Capacity!.UsedFraction);
@@ -113,7 +129,7 @@ public class PreviewProjectionTests
             Capacity = new PreviewCapacity("ゴミ箱", "ゴミ箱", UsedBytes: 2048, TotalBytes: null, ItemCount: 413),
         };
 
-        var vm = StateProjection.ProjectPreview(StateWithPreview(preview));
+        var vm = ProjectFocused(StateWithPreview(preview));
 
         Assert.Null(vm.Capacity!.UsedFraction);
         Assert.Null(vm.Capacity.Free);
@@ -131,7 +147,7 @@ public class PreviewProjectionTests
             Capacity = new PreviewCapacity("E:", "光学ドライブ", Status: "準備できていません"),
         };
 
-        var vm = StateProjection.ProjectPreview(StateWithPreview(preview));
+        var vm = ProjectFocused(StateWithPreview(preview));
 
         Assert.Equal("準備できていません", vm.Capacity!.Summary);
         Assert.Null(vm.Capacity.UsedFraction);
@@ -146,7 +162,7 @@ public class PreviewProjectionTests
     {
         var preview = new PreviewState(1, @"C:\a.txt", PreviewKind.Text, "body", [], null);
 
-        Assert.Null(StateProjection.ProjectPreview(StateWithPreview(preview)).Capacity);
+        Assert.Null(ProjectFocused(StateWithPreview(preview)).Capacity);
     }
 
     [Fact]
@@ -156,7 +172,7 @@ public class PreviewProjectionTests
         var preview = new PreviewState(1, @"C:\pic.png", PreviewKind.Image, null, bytes, null);
         var state = StateWithPreview(preview);
 
-        var vm = StateProjection.ProjectPreview(state);
+        var vm = StateProjection.ProjectPreview(state, state.Focused);
 
         Assert.Equal(PreviewKind.Image, vm.Kind);
         Assert.Equal(bytes, vm.ImageBytes);
@@ -169,7 +185,7 @@ public class PreviewProjectionTests
         var preview = new PreviewState(1, @"C:\notes.txt", PreviewKind.Text, "hello world", [], null);
         var state = StateWithPreview(preview);
 
-        var vm = StateProjection.ProjectPreview(state);
+        var vm = StateProjection.ProjectPreview(state, state.Focused);
 
         Assert.Equal(PreviewKind.Text, vm.Kind);
         Assert.Equal("hello world", vm.Text);
@@ -181,7 +197,7 @@ public class PreviewProjectionTests
         var preview = new PreviewState(1, @"C:\app.exe", PreviewKind.Binary, "PE Executable", [], null);
         var state = StateWithPreview(preview);
 
-        var vm = StateProjection.ProjectPreview(state);
+        var vm = StateProjection.ProjectPreview(state, state.Focused);
 
         Assert.Equal(PreviewKind.Binary, vm.Kind);
         Assert.Equal("PE Executable", vm.Text);
@@ -194,7 +210,7 @@ public class PreviewProjectionTests
         var preview = new PreviewState(1, @"C:\app.exe", PreviewKind.Binary, "PE Executable", head, null);
         var state = StateWithPreview(preview);
 
-        var vm = StateProjection.ProjectPreview(state);
+        var vm = StateProjection.ProjectPreview(state, state.Focused);
 
         Assert.Equal(PreviewKind.Binary, vm.Kind);
         Assert.StartsWith("PE Executable\n\n", vm.Text);
@@ -207,7 +223,7 @@ public class PreviewProjectionTests
         var preview = PreviewState.Initial with { Error = "access denied" };
         var state = StateWithPreview(preview);
 
-        var vm = StateProjection.ProjectPreview(state);
+        var vm = StateProjection.ProjectPreview(state, state.Focused);
 
         Assert.Equal("access denied", vm.Error);
     }
@@ -218,7 +234,7 @@ public class PreviewProjectionTests
         var preview = new PreviewState(1, @"C:\notes.txt", PreviewKind.Text, "hello", [], null, Metadata: null);
         var state = StateWithPreview(preview);
 
-        var vm = StateProjection.ProjectPreview(state);
+        var vm = StateProjection.ProjectPreview(state, state.Focused);
 
         Assert.Equal(string.Empty, vm.MetadataText);
     }
@@ -231,7 +247,7 @@ public class PreviewProjectionTests
         var preview = new PreviewState(1, @"C:\notes.txt", PreviewKind.Text, "hello", [], null, metadata);
         var state = StateWithPreview(preview);
 
-        var vm = StateProjection.ProjectPreview(state);
+        var vm = StateProjection.ProjectPreview(state, state.Focused);
 
         Assert.Contains("ファイル名: notes.txt", vm.MetadataText);
         Assert.Contains("種類: テキストファイル", vm.MetadataText);
@@ -251,7 +267,7 @@ public class PreviewProjectionTests
         var preview = new PreviewState(1, @"C:\pic.png", PreviewKind.Image, null, [1, 2, 3], null, metadata);
         var state = StateWithPreview(preview);
 
-        var vm = StateProjection.ProjectPreview(state);
+        var vm = StateProjection.ProjectPreview(state, state.Focused);
 
         Assert.Contains("種類: 画像ファイル", vm.MetadataText);
         Assert.Contains("解像度: 1754 × 804", vm.MetadataText);
@@ -268,7 +284,7 @@ public class PreviewProjectionTests
         var metadata = new PreviewMetadata("paper.pdf", 204800, new DateTime(2024, 1, 1), new DateTime(2024, 1, 2));
         var preview = new PreviewState(1, @"C:\paper.pdf", PreviewKind.Image, "PDF Document", [1, 2, 3], null, metadata);
 
-        var vm = StateProjection.ProjectPreview(StateWithPreview(preview));
+        var vm = ProjectFocused(StateWithPreview(preview));
 
         Assert.Contains("種類: PDF Document", vm.MetadataText);
         Assert.DoesNotContain("画像ファイル", vm.MetadataText);
@@ -283,7 +299,7 @@ public class PreviewProjectionTests
         var preview = new PreviewState(1, @"C:\app.exe", PreviewKind.Binary, "PE Executable", [], null, metadata);
         var state = StateWithPreview(preview);
 
-        var vm = StateProjection.ProjectPreview(state);
+        var vm = StateProjection.ProjectPreview(state, state.Focused);
 
         Assert.Contains("種類: PE Executable", vm.MetadataText);
         Assert.DoesNotContain("解像度", vm.MetadataText);

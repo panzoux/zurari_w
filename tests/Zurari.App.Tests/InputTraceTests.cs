@@ -1,6 +1,7 @@
 using System.Windows.Input;
 using Zurari.App;
 using Zurari.Core;
+using static Zurari.TestSupport.TestPanes;
 
 namespace Zurari.App.Tests;
 
@@ -47,6 +48,20 @@ public class InputTraceTests
         Assert.Equal(
             @"[app] state mode=Sort sort=Name/desc/dirsFirst hidden=False focused=0 loc=Drives sortable=False first=[ドライブ, C:\, D:\]",
             InputTrace.State(state));
+    }
+
+    /// <summary>With the bottom pane focused the line describes that pane, not the top one.</summary>
+    [Fact]
+    public void A_state_line_describes_the_focused_pane_when_it_is_the_bottom_one()
+    {
+        var top = new Column(
+            new Location.RealDirectory(@"C:\top"), [new Entry("t.txt", EntryKind.File)], Cursor: 0, Load: LoadState.Loaded);
+        var bottom = new Column(
+            new Location.RealDirectory(@"C:\bottom"), [new Entry("b.txt", EntryKind.File)], Cursor: 0, Load: LoadState.Loaded);
+
+        Assert.Equal(
+            @"[app] state mode=Normal sort=Name/asc/dirsFirst hidden=False focused=0 loc=C:\bottom sortable=True first=[b.txt]",
+            InputTrace.State(TwoPanes(top, bottom, focused: 1)));
     }
 
     [Fact]

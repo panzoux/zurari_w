@@ -60,7 +60,7 @@ public class HeadlessBrowsingTests
 
             // Two columns: the root, plus the one that opened beside the cursor because it landed
             // on a directory.
-            var rootVms = StateProjection.Project(loop.State);
+            var rootVms = StateProjection.Project(loop.State, loop.State.Focused);
             Assert.Equal(2, rootVms.Count);
             Assert.Equal(3, rootVms[0].Entries.Count);
             Assert.True(rootVms[0].IsFocused);
@@ -79,7 +79,7 @@ public class HeadlessBrowsingTests
             Assert.Equal(1, loop.State.Focused.FocusedColumn);
             DrainUntil(loop, queue, () => loop.State.Focused.Columns[1].Load == LoadState.Loaded, TimeSpan.FromSeconds(10));
 
-            var afterEnterVms = StateProjection.Project(loop.State);
+            var afterEnterVms = StateProjection.Project(loop.State, loop.State.Focused);
             Assert.Equal(2, afterEnterVms.Count);
             Assert.Equal("Alpha", afterEnterVms[1].Title);
             Assert.False(afterEnterVms[0].IsFocused);
@@ -96,7 +96,7 @@ public class HeadlessBrowsingTests
             Assert.Equal(0, loop.State.Focused.FocusedColumn);
             Assert.Equal(2, loop.State.Focused.Columns.Length);
 
-            var afterParentVms = StateProjection.Project(loop.State);
+            var afterParentVms = StateProjection.Project(loop.State, loop.State.Focused);
             Assert.True(afterParentVms[0].IsFocused);
             Assert.False(afterParentVms[1].IsFocused);
         }

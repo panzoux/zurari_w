@@ -18,7 +18,7 @@ public class PreviewRetryProjectionTests
         };
         var state = AppState.Initial.WithFocused(p => p with { Preview = preview });
 
-        return StateProjection.ProjectPreview(state);
+        return StateProjection.ProjectPreview(state, state.Focused);
     }
 
     [Fact]

@@ -15,16 +15,20 @@ public static class StateProjection
     private static readonly string[] SizeUnits = ["KB", "MB", "GB", "TB", "PB"];
 
     /// <summary>
-    /// Projects every column of <paramref name="state"/> into a <see cref="Controls.ColumnVm"/>.
+    /// Projects every column of <paramref name="pane"/> into a <see cref="Controls.ColumnVm"/>.
+    /// Only the focused pane's focused column is drawn as focused; an unfocused pane projects none,
+    /// so its cursor rows get the weak highlight unfocused columns already use (dimming).
     /// <paramref name="iconResolver"/> is optional so callers without a shell (tests, headless
     /// runs) can omit it — entries then simply project with a <c>null</c> icon.
     /// </summary>
     public static IReadOnlyList<Controls.ColumnVm> Project(
         AppState state,
+        Pane pane,
         Func<Entry, ImageSource?>? iconResolver = null,
         ProjectionCache? cache = null)
     {
         ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(pane);
 
         // Built once per Project call (not per column/entry) - CutPending is a flat list of full
         // paths shared across every column, so a HashSet lookup here is what keeps the per-entry
@@ -33,14 +37,15 @@ public static class StateProjection
             ? null
             : new HashSet<string>(state.CutPending, StringComparer.OrdinalIgnoreCase);
 
-        var result = new Controls.ColumnVm[state.Focused.Columns.Length];
-        for (var i = 0; i < state.Focused.Columns.Length; i++)
+        var paneIsFocused = pane.Id == state.Focused.Id;
+        var result = new Controls.ColumnVm[pane.Columns.Length];
+        for (var i = 0; i < pane.Columns.Length; i++)
         {
             result[i] = ProjectColumn(
-                state.Focused.Columns[i], isFocused: i == state.Focused.FocusedColumn, iconResolver, cutPending, cache, i, state.CutPending);
+                pane.Columns[i], isFocused: paneIsFocused && i == pane.FocusedColumn, iconResolver, cutPending, cache, i, state.CutPending);
         }
 
-        cache?.Trim(state.Focused.Columns.Length);
+        cache?.Trim(pane.Columns.Length);
 
         return result;
     }
@@ -350,14 +355,15 @@ public static class StateProjection
     }
 
     /// <summary>
-    /// Projects the focused pane's <see cref="Pane.Preview"/> into a <see cref="PreviewVm"/>. Pure -
+    /// Projects <paramref name="pane"/>'s <see cref="Pane.Preview"/> into a <see cref="PreviewVm"/>. Pure -
     /// no I/O, no decisions beyond display formatting (the file name, the metadata block).
     /// </summary>
-    public static PreviewVm ProjectPreview(AppState state)
+    public static PreviewVm ProjectPreview(AppState state, Pane pane)
     {
         ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(pane);
 
-        var preview = state.Focused.Preview;
+        var preview = pane.Preview;
 
         // A deleted file is named and placed by where it came from, not by where the bin keeps it.
         var displayPath = preview.OriginalPath ?? preview.Path;

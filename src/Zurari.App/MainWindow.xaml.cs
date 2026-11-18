@@ -1164,7 +1164,7 @@ public sealed partial class MainWindow : Window, IDisposable
         // renders that have nothing to do with the browsed columns (Phase 5 bug B3).
         if (state.Focused.Columns != lastRenderedColumns || state.Focused.FocusedColumn != lastRenderedFocusedColumn)
         {
-            var projected = StateProjection.Project(state, ResolveIcon, projectionCache);
+            var projected = StateProjection.Project(state, state.Focused, ResolveIcon, projectionCache);
             Browser.Columns = projected;
 
             // What the screen was handed, as opposed to what Core holds. The two can only disagree
@@ -1374,7 +1374,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void RenderPreview(AppState state)
     {
-        var vm = StateProjection.ProjectPreview(state);
+        var vm = StateProjection.ProjectPreview(state, state.Focused);
         previewFileName = vm.FileName;
         previewOriginalDirectory = vm.OriginalDirectory;
         FitPreviewHeader();

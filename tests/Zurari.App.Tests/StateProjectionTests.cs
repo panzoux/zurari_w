@@ -1,5 +1,6 @@
 using Zurari.App;
 using Zurari.Core;
+using static Zurari.TestSupport.TestPanes;
 
 namespace Zurari.App.Tests;
 
@@ -8,10 +9,46 @@ public class StateProjectionTests
     private static AppState StateWithColumns(params Column[] columns) =>
         AppState.SinglePane([.. columns]);
 
+    private static IReadOnlyList<Zurari.Controls.ColumnVm> ProjectFocused(AppState state, ProjectionCache? cache = null) =>
+        StateProjection.Project(state, state.Focused, null, cache);
+
+    private static Column Listing(string path, string name) => new(
+        new Location.RealDirectory(path), [new Entry(name, EntryKind.File)], Cursor: 0, Load: LoadState.Loaded);
+
+    [Fact]
+    public void Projects_the_pane_it_is_given()
+    {
+        var state = TwoPanes(Listing(@"C:\a", "x"), Listing(@"C:\b", "p"));
+
+        var projected = StateProjection.Project(state, state.Panes[1]);
+
+        Assert.Equal("p", Assert.Single(projected).Entries[0].Name);
+    }
+
+    [Fact]
+    public void The_unfocused_pane_projects_no_focused_column()
+    {
+        var column = Listing(@"C:\a", "x");
+        var state = TwoPanes(column, column);
+
+        Assert.True(StateProjection.Project(state, state.Panes[0])[0].IsFocused);
+        Assert.False(StateProjection.Project(state, state.Panes[1])[0].IsFocused);
+    }
+
+    [Fact]
+    public void With_the_bottom_pane_focused_the_top_one_is_the_dimmed_one()
+    {
+        var column = Listing(@"C:\a", "x");
+        var state = TwoPanes(column, column, focused: 1);
+
+        Assert.False(StateProjection.Project(state, state.Panes[0])[0].IsFocused);
+        Assert.True(StateProjection.Project(state, state.Panes[1])[0].IsFocused);
+    }
+
     [Fact]
     public void Project_rejects_null_state()
     {
-        Assert.Throws<ArgumentNullException>(() => StateProjection.Project(null!));
+        Assert.Throws<ArgumentNullException>(() => StateProjection.Project(null!, null!));
     }
 
     [Fact]
@@ -19,7 +56,7 @@ public class StateProjectionTests
     {
         var state = StateWithColumns(new Column(Location.Drives.Instance, [], Load: LoadState.Loaded));
 
-        var vms = StateProjection.Project(state);
+        var vms = StateProjection.Project(state, state.Focused);
 
         Assert.Equal("ドライブ", vms[0].Title);
     }
@@ -29,7 +66,7 @@ public class StateProjectionTests
     {
         var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\Users\someone"), [], Load: LoadState.Loaded));
 
-        var vms = StateProjection.Project(state);
+        var vms = StateProjection.Project(state, state.Focused);
 
         Assert.Equal("someone", vms[0].Title);
     }
@@ -39,7 +76,7 @@ public class StateProjectionTests
     {
         var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [], Load: LoadState.Loaded));
 
-        var vms = StateProjection.Project(state);
+        var vms = StateProjection.Project(state, state.Focused);
 
         Assert.Equal("C:", vms[0].Title);
     }
@@ -50,7 +87,7 @@ public class StateProjectionTests
         var state = StateWithColumns(
             new Column(new Location.RealDirectory(@"C:\Users"), [], Load: LoadState.Error, ErrorMessage: "denied"));
 
-        var vms = StateProjection.Project(state);
+        var vms = StateProjection.Project(state, state.Focused);
 
         Assert.Equal("Users (エラー)", vms[0].Title);
     }
@@ -60,7 +97,7 @@ public class StateProjectionTests
     {
         var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\Users"), [], Load: LoadState.Loading));
 
-        var vms = StateProjection.Project(state);
+        var vms = StateProjection.Project(state, state.Focused);
 
         Assert.Equal("Users …", vms[0].Title);
     }
@@ -71,7 +108,7 @@ public class StateProjectionTests
         var entry = new Entry("a.txt", EntryKind.File);
         var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\Users"), [entry], Cursor: 0, Load: LoadState.Loading));
 
-        var vms = StateProjection.Project(state);
+        var vms = StateProjection.Project(state, state.Focused);
 
         Assert.Equal("Users", vms[0].Title);
         // Stale entries stay visible while reloading.
@@ -89,7 +126,7 @@ public class StateProjectionTests
         var entry = new Entry("f.bin", EntryKind.File, SizeBytes: sizeBytes);
         var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [entry], Cursor: 0, Load: LoadState.Loaded));
 
-        var vms = StateProjection.Project(state);
+        var vms = StateProjection.Project(state, state.Focused);
 
         Assert.Equal(expected, vms[0].Entries[0].SizeText);
     }
@@ -100,7 +137,7 @@ public class StateProjectionTests
         var entry = new Entry("f.bin", EntryKind.File, SizeBytes: -1);
         var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [entry], Cursor: 0, Load: LoadState.Loaded));
 
-        var vms = StateProjection.Project(state);
+        var vms = StateProjection.Project(state, state.Focused);
 
         Assert.Null(vms[0].Entries[0].SizeText);
     }
@@ -113,7 +150,7 @@ public class StateProjectionTests
         var entry = new Entry("sub", kind, SizeBytes: 123);
         var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [entry], Cursor: 0, Load: LoadState.Loaded));
 
-        var vms = StateProjection.Project(state);
+        var vms = StateProjection.Project(state, state.Focused);
 
         Assert.Null(vms[0].Entries[0].SizeText);
     }
@@ -124,7 +161,7 @@ public class StateProjectionTests
         var entry = new Entry("f.bin", EntryKind.File, Modified: default);
         var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [entry], Cursor: 0, Load: LoadState.Loaded));
 
-        var vms = StateProjection.Project(state);
+        var vms = StateProjection.Project(state, state.Focused);
 
         Assert.Null(vms[0].Entries[0].DateText);
     }
@@ -136,7 +173,7 @@ public class StateProjectionTests
         var entry = new Entry("f.bin", EntryKind.File, Modified: modified);
         var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [entry], Cursor: 0, Load: LoadState.Loaded));
 
-        var vms = StateProjection.Project(state);
+        var vms = StateProjection.Project(state, state.Focused);
 
         Assert.Equal("2026-07-15 09:30", vms[0].Entries[0].DateText);
     }
@@ -149,7 +186,7 @@ public class StateProjectionTests
         var file = new Entry("a.txt", EntryKind.File);
         var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [drive, dir, file], Cursor: 0, Load: LoadState.Loaded));
 
-        var vms = StateProjection.Project(state);
+        var vms = StateProjection.Project(state, state.Focused);
 
         Assert.Equal(Controls.EntryKind.Drive, vms[0].Entries[0].Kind);
         Assert.Equal(Controls.EntryKind.Directory, vms[0].Entries[1].Kind);
@@ -162,7 +199,7 @@ public class StateProjectionTests
         var entry = new Entry("a.txt", EntryKind.File, IsMarked: true);
         var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [entry], Cursor: 0, Load: LoadState.Loaded));
 
-        var vms = StateProjection.Project(state);
+        var vms = StateProjection.Project(state, state.Focused);
 
         Assert.Equal(0, vms[0].CursorIndex);
         Assert.True(vms[0].Entries[0].IsMarked);
@@ -178,7 +215,7 @@ public class StateProjectionTests
             ],
             focusedColumn: 1);
 
-        var vms = StateProjection.Project(state);
+        var vms = StateProjection.Project(state, state.Focused);
 
         Assert.False(vms[0].IsFocused);
         Assert.True(vms[1].IsFocused);
@@ -189,7 +226,7 @@ public class StateProjectionTests
     {
         var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [], Load: LoadState.Loaded));
 
-        var vms = StateProjection.Project(state);
+        var vms = StateProjection.Project(state, state.Focused);
 
         Assert.Empty(vms[0].Entries);
     }
@@ -203,7 +240,7 @@ public class StateProjectionTests
             with
         { CutPending = [@"C:\cut.txt"] };
 
-        var vms = StateProjection.Project(state);
+        var vms = StateProjection.Project(state, state.Focused);
 
         Assert.True(vms[0].Entries[0].IsCut);
         Assert.False(vms[0].Entries[1].IsCut);
@@ -217,7 +254,7 @@ public class StateProjectionTests
             with
         { CutPending = [@"c:\cut.txt"] };
 
-        var vms = StateProjection.Project(state);
+        var vms = StateProjection.Project(state, state.Focused);
 
         Assert.True(vms[0].Entries[0].IsCut);
     }
@@ -228,7 +265,7 @@ public class StateProjectionTests
         var entry = new Entry("a.txt", EntryKind.File);
         var state = StateWithColumns(new Column(new Location.RealDirectory(@"C:\"), [entry], Cursor: 0, Load: LoadState.Loaded));
 
-        var vms = StateProjection.Project(state);
+        var vms = StateProjection.Project(state, state.Focused);
 
         Assert.False(vms[0].Entries[0].IsCut);
     }
@@ -247,7 +284,7 @@ public class StateProjectionTests
             CutPending = [@"C:\a\same-name.txt"],
         };
 
-        var vms = StateProjection.Project(state);
+        var vms = StateProjection.Project(state, state.Focused);
 
         Assert.True(vms[0].Entries[0].IsCut);
         Assert.False(vms[1].Entries[0].IsCut);
@@ -266,8 +303,8 @@ public class StateProjectionTests
         var state = StateWithColumns(column);
         var cache = new ProjectionCache();
 
-        var first = StateProjection.Project(state, null, cache);
-        var second = StateProjection.Project(StateWithColumns(column with { Cursor = 1 }), null, cache);
+        var first = StateProjection.Project(state, state.Focused, null, cache);
+        var second = ProjectFocused(StateWithColumns(column with { Cursor = 1 }), cache);
 
         Assert.Same(first[0].Entries, second[0].Entries);
 
@@ -283,12 +320,12 @@ public class StateProjectionTests
             new Location.RealDirectory(@"C:\"), [new Entry("a.txt", EntryKind.File)], Cursor: 0, Load: LoadState.Loaded);
         var cache = new ProjectionCache();
 
-        var first = StateProjection.Project(StateWithColumns(column), null, cache);
+        var first = ProjectFocused(StateWithColumns(column), cache);
 
         // A mark lives on the Entry, so toggling one produces a new Entries array - and must produce
         // new rows, or the mark would not render.
         var marked = column with { Entries = [new Entry("a.txt", EntryKind.File, IsMarked: true)] };
-        var second = StateProjection.Project(StateWithColumns(marked), null, cache);
+        var second = ProjectFocused(StateWithColumns(marked), cache);
 
         Assert.NotSame(first[0].Entries, second[0].Entries);
         Assert.True(second[0].Entries[0].IsMarked);
@@ -301,12 +338,12 @@ public class StateProjectionTests
             new Location.RealDirectory(@"C:\"), [new Entry("a.txt", EntryKind.File)], Cursor: 0, Load: LoadState.Loaded);
         var cache = new ProjectionCache();
 
-        var first = StateProjection.Project(StateWithColumns(column), null, cache);
+        var first = ProjectFocused(StateWithColumns(column), cache);
 
         // IsCut is derived from state.CutPending rather than from the Entry, so it is part of the
         // key too - otherwise Ctrl+X would not dim the rows until something else invalidated them.
         var cut = StateWithColumns(column) with { CutPending = [@"C:\a.txt"] };
-        var second = StateProjection.Project(cut, null, cache);
+        var second = ProjectFocused(cut, cache);
 
         Assert.NotSame(first[0].Entries, second[0].Entries);
         Assert.True(second[0].Entries[0].IsCut);
@@ -319,8 +356,8 @@ public class StateProjectionTests
             new Location.RealDirectory(@"C:\"), [new Entry("a.txt", EntryKind.File)], Cursor: 0, Load: LoadState.Loaded);
         var state = StateWithColumns(column);
 
-        var first = StateProjection.Project(state);
-        var second = StateProjection.Project(state);
+        var first = StateProjection.Project(state, state.Focused);
+        var second = StateProjection.Project(state, state.Focused);
 
         Assert.NotSame(first[0].Entries, second[0].Entries);
     }

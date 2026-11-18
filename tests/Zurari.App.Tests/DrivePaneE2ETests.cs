@@ -48,7 +48,7 @@ public class DrivePaneE2ETests
         Assert.Equal(EntryKind.Header, column.Entries[0].Kind);
 
         // The projection agrees - this is what the control is handed.
-        var vms = StateProjection.Project(loop.State);
+        var vms = StateProjection.Project(loop.State, loop.State.Focused);
         Assert.Equal(0, vms[0].CursorIndex);
         Assert.Equal(Zurari.Controls.EntryKind.Header, vms[0].Entries[0].Kind);
 
