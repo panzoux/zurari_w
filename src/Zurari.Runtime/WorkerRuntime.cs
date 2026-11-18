@@ -83,7 +83,14 @@ public sealed class WorkerRuntime : IDisposable
     /// so this sits above the measured worst case with room to spare, and bites only a handler that
     /// is pathologically slow.
     /// </remarks>
-    private static readonly TimeSpan ShellThumbnailBudget = TimeSpan.FromMilliseconds(1500);
+    private static readonly TimeSpan DefaultShellThumbnailBudget = TimeSpan.FromMilliseconds(1500);
+
+    /// <summary>
+    /// How long a preview waits for the shell's thumbnail before showing something else. Production
+    /// uses <see cref="DefaultShellThumbnailBudget"/>; tests that must hold a preview in flight pass
+    /// <see cref="Timeout.InfiniteTimeSpan"/>.
+    /// </summary>
+    private readonly TimeSpan _shellThumbnailBudget;
 
     /// <summary>
     /// Extensions treated as video even when <see cref="FileTypeDetector"/>'s magic-number sniff
@@ -169,6 +176,10 @@ public sealed class WorkerRuntime : IDisposable
     ///
     /// Nothing may block while holding this lock. <see cref="RunPreview"/>'s finally takes it, so
     /// waiting on a preview task from inside it would deadlock; see <see cref="Dispose"/>.
+    ///
+    /// <see cref="CancellationTokenSource.Cancel()"/> runs its registered callbacks (the ffmpeg
+    /// kill, wait-handle signalling) on the calling thread while the gate is held, so such a
+    /// callback must never take <see cref="_previewGate"/>.
     /// </remarks>
     private readonly object _previewGate = new();
 
@@ -244,6 +255,21 @@ public sealed class WorkerRuntime : IDisposable
         return slot;
     }
 
+    /// <summary>Runs <paramref name="effect"/> through the workers' dispatch, synchronously on the caller.</summary>
+    internal void ExecuteForTest(Effect effect) => Execute(effect);
+
+    /// <summary>How many preview tasks have not yet unwound. Test-only observation of task cleanup.</summary>
+    internal int PreviewTaskCount
+    {
+        get
+        {
+            lock (_previewGate)
+            {
+                return _previewTasks.Count;
+            }
+        }
+    }
+
     /// <summary>How many panes currently hold a preview slot. Test-only observation of slot release.</summary>
     internal int PreviewSlotCount
     {
@@ -292,7 +318,8 @@ public sealed class WorkerRuntime : IDisposable
         Func<TrashPlace?>? trash = null,
         UserSettingsStore? settings = null,
         Func<string, string?>? displayName = null,
-        Func<string, int, byte[]?>? shellThumbnail = null)
+        Func<string, int, byte[]?>? shellThumbnail = null,
+        TimeSpan? shellThumbnailBudget = null)
     {
         ArgumentNullException.ThrowIfNull(post);
         if (workerCount < 1)
@@ -306,6 +333,7 @@ public sealed class WorkerRuntime : IDisposable
             ? CancellationTokenSource.CreateLinkedTokenSource(external.Value)
             : new CancellationTokenSource();
         _previewImageSizeLimitBytes = previewImageSizeLimitBytes ?? DefaultPreviewImageSizeLimitBytes;
+        _shellThumbnailBudget = shellThumbnailBudget ?? DefaultShellThumbnailBudget;
         _thumbnailCache = thumbnailCache is not null
             ? new Lazy<ThumbnailCache>(thumbnailCache)
             : new Lazy<ThumbnailCache>(() => new ThumbnailCache(), LazyThreadSafetyMode.ExecutionAndPublication);
@@ -447,11 +475,14 @@ public sealed class WorkerRuntime : IDisposable
             slot.Generation = effect.Generation;
             token = cts.Token;
 
-            // The task removes itself from _previewTasks in its finally, which takes _previewGate, so
-            // it cannot read `self` before this lock is released and the assignment is complete.
-            Task? self = null;
-            self = Task.Run(() => RunPreview(effect, slot, cts, self!, token), CancellationToken.None);
-            _previewTasks.Add(self);
+            // The task removes itself from _previewTasks in its finally. It is created unstarted and
+            // added to the set before it is started, so `task` is assigned and the set entry exists
+            // before any thread can run the body - a task started by Task.Run could be running
+            // (and reading a still-null `task`) before this assignment happened.
+            Task? task = null;
+            task = new Task(() => RunPreview(effect, slot, cts, task!, token), CancellationToken.None);
+            _previewTasks.Add(task);
+            task.Start(TaskScheduler.Default);
         }
     }
 
@@ -516,6 +547,14 @@ public sealed class WorkerRuntime : IDisposable
             // must not create one.
             if (!_previewSlots.TryGetValue(pane, out var slot) || slot.Generation != generation)
             {
+                // Nothing to cancel, but the cancel may have overtaken its own load. Fence that
+                // load: Core only cancels the generation it is loading, so g+1 still passes, while a
+                // reordered Load(g) for a dropped pane no longer starts a wasted run.
+                if (!_highestPreviewGeneration.TryGetValue(pane, out var highest) || highest < generation)
+                {
+                    _highestPreviewGeneration[pane] = generation;
+                }
+
                 return;
             }
 
@@ -1410,7 +1449,7 @@ public sealed class WorkerRuntime : IDisposable
 
         try
         {
-            if (!request.Wait((int)ShellThumbnailBudget.TotalMilliseconds, token))
+            if (!request.Wait((int)_shellThumbnailBudget.TotalMilliseconds, token))
             {
                 // Budget spent. The caller shows something now; the extraction carries on, because
                 // there is no way to stop it, and its result is still worth having.
@@ -1438,7 +1477,7 @@ public sealed class WorkerRuntime : IDisposable
     }
 
     /// <summary>
-    /// Keeps and shows an extraction that outran <see cref="ShellThumbnailBudget"/>, once it
+    /// Keeps and shows an extraction that outran <see cref="_shellThumbnailBudget"/>, once it
     /// finishes. Posting is unconditional: <see cref="Msg.PreviewLoaded"/> carries the generation,
     /// so Core applies it if that file is still under the cursor and discards it otherwise.
     /// </summary>
@@ -1661,11 +1700,11 @@ public sealed class WorkerRuntime : IDisposable
             thumbnails.Value.Dispose();
         }
 
-        // _previewCts is deliberately not disposed here; see the CA2213 note in .editorconfig.
-        // Only the task that created it may dispose it, and only when it has stopped reading the
-        // token - a preview still unwinding after the budget above would otherwise see its token
-        // disposed mid-wait. Superseded previews are cancelled but not waited for; they hold
-        // nothing but their own token and die on their own.
+        // The per-slot cancellation sources are deliberately not disposed here; see the CA2213 note
+        // in .editorconfig. Only the task that created one may dispose it, and only when it has
+        // stopped reading the token - a preview still unwinding after the budget above would
+        // otherwise see its token disposed mid-wait. Every tracked preview task is waited for above,
+        // superseded and cancelled ones included.
         _cts.Dispose();
     }
 }

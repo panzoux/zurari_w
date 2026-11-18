@@ -485,6 +485,22 @@ public class WorkerRuntimeTests
         TempDirectory.Delete(dir);
     }
 
+    /// <summary>
+    /// A runtime whose shell extractor blocks until <paramref name="release"/> and whose thumbnail
+    /// budget is infinite, so a video preview stays in flight until it is cancelled.
+    /// </summary>
+    private static WorkerRuntime BlockedShellRuntime(string dir, ManualResetEventSlim release, ConcurrentQueue<Msg> posted) =>
+        new(
+            posted.Enqueue,
+            thumbnailCache: new ThumbnailCache(Path.Combine(dir, "cache")),
+            shellThumbnail: (_, _) =>
+            {
+                release.Wait(TimeSpan.FromSeconds(30));
+                return null;
+            },
+            settings: new UserSettingsStore(IsolatedSettings.NewDirectory()),
+            shellThumbnailBudget: Timeout.InfiniteTimeSpan);
+
     [Fact]
     public void Cancelling_one_panes_preview_leaves_the_others_at_the_same_generation_running()
     {
@@ -495,25 +511,17 @@ public class WorkerRuntimeTests
             var paneA = new PaneId(0);
             var paneB = new PaneId(1);
             var posted = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(
-                posted.Enqueue,
-                thumbnailCache: new ThumbnailCache(Path.Combine(dir, "cache")),
-                shellThumbnail: (_, _) =>
-                {
-                    release.Wait(TimeSpan.FromSeconds(30));
-                    return null;
-                },
-                settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
+            using var runtime = BlockedShellRuntime(dir, release, posted);
 
-            // Both panes are at generation 3 and both are held in the (blocked) shell extractor.
-            runtime.Submit(new Effect.LoadPreview(paneA, 3, VideoFile(dir, "a.mp4")));
-            runtime.Submit(new Effect.LoadPreview(paneB, 3, VideoFile(dir, "b.mp4")));
-            Assert.True(PollUntil(() => runtime.PreviewSlotCount == 2), "Both previews should be in flight.");
+            // Both panes are at generation 3 and both are held in the (blocked) shell extractor,
+            // which has no budget, so nothing ends them but a cancel.
+            runtime.ExecuteForTest(new Effect.LoadPreview(paneA, 3, VideoFile(dir, "a.mp4")));
+            runtime.ExecuteForTest(new Effect.LoadPreview(paneB, 3, VideoFile(dir, "b.mp4")));
+            Assert.Equal(2, runtime.PreviewSlotCount);
 
-            runtime.Submit(new Effect.CancelPreview(paneA, 3));
+            runtime.ExecuteForTest(new Effect.CancelPreview(paneA, 3));
 
-            // A's cancel also releases A's slot, which is how we know it has been applied.
-            Assert.True(PollUntil(() => runtime.PreviewSlotCount == 1), "Pane A's cancel was never applied.");
+            Assert.Equal(1, runtime.PreviewSlotCount);
             Assert.False(runtime.IsPreviewInFlight(paneA));
             Assert.True(runtime.IsPreviewInFlight(paneB), "Cancelling pane A must not cancel pane B.");
         }
@@ -560,19 +568,18 @@ public class WorkerRuntimeTests
             var posted = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(posted.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
 
-            runtime.Submit(new Effect.LoadPreview(pane, 5, file));
-            WaitFor(posted, TimeSpan.FromSeconds(10), seen => PreviewsIn(seen).Count >= 1);
+            runtime.ExecuteForTest(new Effect.LoadPreview(pane, 5, file));
             Assert.True(PollUntil(() => runtime.PreviewSlotCount == 0), "The slot should be released.");
 
-            // Older generation, then a newer one. If the older were accepted its result would be
-            // posted; once the newer one has arrived, nothing else for this pane may be there.
-            runtime.Submit(new Effect.LoadPreview(pane, 4, file));
+            // Older generation: refused synchronously, no slot. A newer one still starts.
+            runtime.ExecuteForTest(new Effect.LoadPreview(pane, 4, file));
             Assert.Equal(0, runtime.PreviewSlotCount);
-            runtime.Submit(new Effect.LoadPreview(pane, 6, file));
+            Assert.False(runtime.IsPreviewInFlight(pane));
 
-            var loaded = PreviewsIn(WaitFor(posted, TimeSpan.FromSeconds(10), seen => HasGeneration(seen, 6)));
-            Assert.True(HasGeneration(new List<Msg>(posted), 6), "The newer generation should still start.");
-            AssertNoGeneration(loaded, 4);
+            runtime.ExecuteForTest(new Effect.LoadPreview(pane, 6, file));
+            Assert.True(runtime.PreviewSlotCount == 1 || HasGeneration(new List<Msg>(posted), 6));
+            Assert.True(PollUntil(() => HasGeneration(new List<Msg>(posted), 6)), "The newer generation should start.");
+            AssertNoGeneration(PreviewsIn(new List<Msg>(posted)), 4);
         }
         finally
         {
@@ -589,30 +596,22 @@ public class WorkerRuntimeTests
         {
             var pane = new PaneId(2);
             var posted = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(
-                posted.Enqueue,
-                thumbnailCache: new ThumbnailCache(Path.Combine(dir, "cache")),
-                shellThumbnail: (_, _) =>
-                {
-                    release.Wait(TimeSpan.FromSeconds(30));
-                    return null;
-                },
-                settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
+            using var runtime = BlockedShellRuntime(dir, release, posted);
             var text = Path.Combine(dir, "a.txt");
             File.WriteAllText(text, "alpha");
 
-            runtime.Submit(new Effect.LoadPreview(pane, 5, VideoFile(dir, "a.mp4")));
-            Assert.True(PollUntil(() => runtime.IsPreviewInFlight(pane)), "The preview should be in flight.");
-            runtime.Submit(new Effect.CancelPreview(pane, 5));
-            Assert.True(PollUntil(() => runtime.PreviewSlotCount == 0), "The cancel should release the slot.");
-
-            runtime.Submit(new Effect.LoadPreview(pane, 4, text));
+            runtime.ExecuteForTest(new Effect.LoadPreview(pane, 5, VideoFile(dir, "a.mp4")));
+            Assert.True(runtime.IsPreviewInFlight(pane));
+            runtime.ExecuteForTest(new Effect.CancelPreview(pane, 5));
             Assert.Equal(0, runtime.PreviewSlotCount);
-            runtime.Submit(new Effect.LoadPreview(pane, 6, text));
 
-            var seen = WaitFor(posted, TimeSpan.FromSeconds(10), msgs => HasGeneration(msgs, 6));
-            Assert.True(HasGeneration(seen, 6), "The newer generation should still start.");
-            AssertNoGeneration(PreviewsIn(seen), 4);
+            runtime.ExecuteForTest(new Effect.LoadPreview(pane, 4, text));
+            Assert.Equal(0, runtime.PreviewSlotCount);
+            Assert.False(runtime.IsPreviewInFlight(pane));
+
+            runtime.ExecuteForTest(new Effect.LoadPreview(pane, 6, text));
+            Assert.True(PollUntil(() => HasGeneration(new List<Msg>(posted), 6)), "The newer generation should start.");
+            AssertNoGeneration(PreviewsIn(new List<Msg>(posted)), 4);
         }
         finally
         {
@@ -651,26 +650,70 @@ public class WorkerRuntimeTests
         {
             var pane = new PaneId(4);
             var posted = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(
-                posted.Enqueue,
-                thumbnailCache: new ThumbnailCache(Path.Combine(dir, "cache")),
-                shellThumbnail: (_, _) =>
-                {
-                    release.Wait(TimeSpan.FromSeconds(30));
-                    return null;
-                },
-                settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
+            using var runtime = BlockedShellRuntime(dir, release, posted);
 
-            runtime.Submit(new Effect.LoadPreview(pane, 1, VideoFile(dir, "a.mp4")));
-            Assert.True(PollUntil(() => runtime.IsPreviewInFlight(pane)), "The preview should be in flight.");
+            runtime.ExecuteForTest(new Effect.LoadPreview(pane, 1, VideoFile(dir, "a.mp4")));
+            Assert.True(runtime.IsPreviewInFlight(pane), "The preview should be in flight.");
 
-            runtime.Submit(new Effect.CancelPreview(pane, 1));
+            runtime.ExecuteForTest(new Effect.CancelPreview(pane, 1));
 
-            Assert.True(PollUntil(() => runtime.PreviewSlotCount == 0), "A cancelled pane's slot should be released.");
+            // The extractor is still blocked, so the cancel alone released the slot.
+            Assert.Equal(0, runtime.PreviewSlotCount);
         }
         finally
         {
             release.Set();
+            TempDirectory.Delete(dir);
+        }
+    }
+
+    [Fact]
+    public void A_cancel_that_arrives_before_its_load_fences_that_load()
+    {
+        var dir = TempDirectory.Create("zurari-cancel-first");
+        try
+        {
+            var pane = new PaneId(3);
+            var file = Path.Combine(dir, "a.txt");
+            File.WriteAllText(file, "alpha");
+            var posted = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(posted.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
+
+            runtime.ExecuteForTest(new Effect.CancelPreview(pane, 7));
+            runtime.ExecuteForTest(new Effect.LoadPreview(pane, 7, file));
+            Assert.Equal(0, runtime.PreviewSlotCount);
+
+            runtime.ExecuteForTest(new Effect.LoadPreview(pane, 8, file));
+            Assert.Equal(1, runtime.PreviewSlotCount);
+            Assert.True(PollUntil(() => runtime.PreviewSlotCount == 0), "The newer preview should finish.");
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
+
+    [Fact]
+    public void Finished_preview_tasks_do_not_accumulate()
+    {
+        var dir = TempDirectory.Create("zurari-task-leak");
+        try
+        {
+            var file = Path.Combine(dir, "a.txt");
+            File.WriteAllText(file, "alpha");
+            var posted = new ConcurrentQueue<Msg>();
+            using var runtime = new WorkerRuntime(posted.Enqueue, settings: new UserSettingsStore(IsolatedSettings.NewDirectory()));
+
+            for (var generation = 1; generation <= 200; generation++)
+            {
+                runtime.ExecuteForTest(new Effect.LoadPreview(new PaneId(0), generation, file));
+            }
+
+            Assert.True(PollUntil(() => runtime.PreviewTaskCount == 0), "Every preview task should unwind and leave the set.");
+            Assert.True(PollUntil(() => runtime.PreviewSlotCount == 0), "Every slot should be released.");
+        }
+        finally
+        {
             TempDirectory.Delete(dir);
         }
     }
