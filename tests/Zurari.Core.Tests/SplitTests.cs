@@ -439,6 +439,31 @@ public class SplitTests
         Assert.Contains("それ自身", next.Notice);
     }
 
+    [Fact]
+    public void Refuses_copying_a_folder_into_itself_when_the_other_pane_is_written_with_forward_slashes()
+    {
+        var state = SplitWith(Mixed(@"C:\src", cursor: 0), Mixed("C:/src/sub", cursor: 1));
+
+        AssertRefused(state, "それ自身");
+    }
+
+    [Fact]
+    public void Refuses_copying_into_the_same_folder_when_one_pane_is_written_with_forward_slashes()
+    {
+        AssertRefused(SplitWith(Mixed(@"C:\src", cursor: 1), Mixed("C:/src/", cursor: 1)), "同じフォルダー");
+    }
+
+    [Fact]
+    public void An_external_change_matches_a_column_whatever_separator_the_path_uses()
+    {
+        var state = SplitWith(Files(@"C:\a", "x"), Files(@"D:\b", "y"));
+
+        var (_, effects) = Transition.Apply(state, new Msg.ExternalDirectoryChanged("C:/a/"));
+
+        var read = Assert.Single(TestEffects.Of<Effect.ReadDirectory>(effects));
+        Assert.Equal(new ColumnRef(new PaneId(0), 0), read.At);
+    }
+
     private static Column InBin(params Entry[] entries) => new(
         Location.RecycleBin.Instance, [.. entries], Cursor: entries.Length > 0 ? 0 : -1, Load: LoadState.Loaded);
 

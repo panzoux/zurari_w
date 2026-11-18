@@ -1223,13 +1223,21 @@ public static partial class Transition
     /// A key for comparing two paths for "same directory", not a path.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Trailing separators are dropped so that <c>C:\Users\</c> and <c>C:\Users</c> compare equal.
     /// That also turns a bare drive root <c>C:\</c> into <c>C:</c>, which Windows would read as a
     /// *relative* path (the current directory on drive C) if it were ever used as one - so it must
     /// not be. Every caller compares the result and discards it; nothing builds a path from it.
     /// The name says so, to keep it that way.
+    /// </para>
+    /// <para>
+    /// <c>/</c> becomes <c>\</c>, so a path written with forward slashes (a favorite target, say)
+    /// compares equal to the same path written the Windows way. This is string work only:
+    /// <c>\\?\</c> prefixes, 8.3 short names and junction aliases are out of scope, since resolving
+    /// them needs the filesystem and Core has none.
+    /// </para>
     /// </remarks>
-    private static string PathComparisonKey(string path) => path.TrimEnd('\\', '/');
+    private static string PathComparisonKey(string path) => path.Replace('/', '\\').TrimEnd('\\');
 
     /// <summary>Whether <paramref name="dest"/> is <paramref name="source"/> itself or lies inside it.</summary>
     private static bool IsSameOrInside(string dest, string source)
