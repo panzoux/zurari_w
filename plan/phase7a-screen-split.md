@@ -26,7 +26,7 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
 | 7a.1 | `PaneId` / `ColumnRef` / `Pane`; state moves into `Pane` behind a compatibility shim | `[x]` | `55770c0` `05460e3` |
 | 7a.2 | Column-addressed Msgs and Effects carry `ColumnRef` | `[x]` | `267963f` `b022607` |
 | 7a.3 | Preview Msgs/Effects carry `PaneId`; post-steps run per pane; `ViewRestored` per pane | `[x]` | `6afba7f` `e4c72bc` |
-| 7a.4 | Remove the compatibility shim | `[ ]` | |
+| 7a.4 | Remove the compatibility shim | `[x]` | `c0024a9` `537a62d` |
 | 7a.5 | Property tests: refs to panes that do not exist; per-pane invariants | `[ ]` | |
 | **7a-back** | **Split UI** | `[ ]` | |
 | 7a.6 | `ToggleSplit` / `FocusPane` | `[ ]` | |
@@ -1114,12 +1114,97 @@ In `Any_msg_sequence_yields_valid_state_and_effects`, replace the single generat
     }
 ```
 
-- [ ] **Step 4: Run, check, commit**
+- [ ] **Step 4: The focused pane is not always pane 0 (7a.4 review)**
+
+Until 7a.6 adds `FocusPane`, no valid test state has `FocusedPane = 1`, so a regression from "the
+focused pane" to "`Panes[0]`" in `Rederive`, `RememberFocusedCursor`, `ProjectStatusBar`,
+`InputTrace.State` or `Render` would pass every test. Give `PaneTests.TwoPanes` a third parameter
+`int focused = 0` (set `FocusedPane = focused`), fix its stale doc line about "7a.3 may add its own
+`TwoPanes`", and add:
+
+```csharp
+    [Fact]
+    public void Sorting_with_the_bottom_pane_focused_changes_only_the_bottom_view()
+    {
+        var state = TwoPanes(Dir(@"C:\a", "x"), Dir(@"C:\b", "p"), focused: 1);
+
+        var (next, _) = Transition.Apply(state, new Msg.SetSortMode(SortMode.Size));
+
+        Assert.Equal(SortMode.Size, next.Panes[1].View.Sort.Mode);
+        Assert.Equal(state.Panes[0].View, next.Panes[0].View);
+    }
+
+    [Fact]
+    public void A_cursor_move_in_the_focused_bottom_pane_is_remembered()
+    {
+        var state = TwoPanes(Dir(@"C:\a", "x"), Dir(@"C:\b", "p", "q"), focused: 1);
+
+        var (next, _) = Transition.Apply(state, new Msg.CursorDown(new ColumnRef(new PaneId(1), 0)));
+
+        Assert.Equal("q", next.RecallCursor(new Location.RealDirectory(@"C:\b")));
+        Assert.Null(next.RecallCursor(new Location.RealDirectory(@"C:\a")));
+    }
+```
+
+and in `tests/Zurari.App.Tests/StatusBarProjectionTests.cs` one case whose state has
+`FocusedPane = 1` (bottom pane at a different path), asserting the path bar shows the bottom pane's
+path.
+
+Add a test-side helper per test project where the pattern `x.WithPane(x.Focused with { ... })`
+repeats (about 15 sites): an extension `state.WithFocused(Func<Pane, Pane> change)` in
+`tests/TestSupport/` (linked like `TestPanes.cs`), and use it where it removes an intermediate local.
+In `InputTraceTests.cs` and `StatusBarProjectionTests.cs` the locals named `withView` hold the state
+*before* the view is set - inline them or rename them `initial`.
+
+- [ ] **Step 5: Make the determinism property compare everything (7a.4 review)**
+
+`AssertStatesEqual` in `TransitionProperties` is a hand-kept field list that has drifted: it skips
+`CursorMemory`, `Notice`, `InputMode`, `Rename`, `RevealTarget`, most of `PreviewState` (`Metadata`,
+`Attempt`, `TimedOut`, `OriginalPath`, `Capacity`) and `Column.AllEntries`/`CollapsedGroups`.
+Replace it with record equality on copies whose array fields are blanked, plus element-wise
+comparison of those arrays, so a new scalar field is covered without anyone remembering to add it:
+
+```csharp
+    private static void AssertStatesEqual(AppState expected, AppState actual)
+    {
+        Assert.Equal(
+            expected with { Panes = default, Jobs = default, CursorMemory = default, CutPending = default },
+            actual with { Panes = default, Jobs = default, CursorMemory = default, CutPending = default });
+        Assert.Equal(expected.Jobs, actual.Jobs);
+        Assert.Equal(expected.CursorMemory, actual.CursorMemory);
+        Assert.Equal(expected.CutPending, actual.CutPending);
+        Assert.Equal(expected.Panes.Length, actual.Panes.Length);
+        for (var p = 0; p < expected.Panes.Length; p++)
+        {
+            var e = expected.Panes[p];
+            var a = actual.Panes[p];
+            Assert.Equal(e with { Columns = default, Preview = PreviewState.Initial }, a with { Columns = default, Preview = PreviewState.Initial });
+            Assert.Equal(e.Preview with { ImageBytes = default }, a.Preview with { ImageBytes = default });
+            Assert.Equal(e.Preview.ImageBytes, a.Preview.ImageBytes);
+            Assert.Equal(e.Columns.Length, a.Columns.Length);
+            for (var c = 0; c < e.Columns.Length; c++)
+            {
+                var ec = e.Columns[c];
+                var ac = a.Columns[c];
+                Assert.Equal(ec with { Entries = default, AllEntries = default }, ac with { Entries = default, AllEntries = default });
+                Assert.Equal(ec.Entries, ac.Entries);
+                Assert.Equal(ec.AllEntries, ac.AllEntries);
+            }
+        }
+    }
+```
+
+Adjust to the records' real members if any differ (e.g. if `Job` or `PreviewCapacity` hold arrays,
+blank and compare them the same way). `with { AllEntries = default }` goes through `Column`'s
+`init` accessor; if that throws or misbehaves on `default`, compare `AllEntries` before blanking and
+blank only `Entries`.
+
+- [ ] **Step 6: Run, check, commit**
 
 Run: `dotnet test tests/Zurari.Core.Tests` → PASS. `pwsh scripts/check.ps1` → green.
 
 ```bash
-git add tests/Zurari.Core.Tests
+git add tests
 git commit -m "Generate messages for other panes, including ones that do not exist"
 ```
 
@@ -2144,9 +2229,10 @@ speculative read inside the debounce window replaces pane A's and A's child colu
 
 **Address by pane, not by focus (from the 7a.2 review).** The MainWindow helpers that take a bare
 column index and read the focused pane - `OnEntryDragRequested`, `ResolveFullPath`, `IsEntryMarked`,
-`ResolveMarkedFullPaths`, `ShowContextMenu`, `RenderRename` - take a `ColumnRef` instead and resolve
-through `state.ColumnAt`. Do not convert them to `state.Focused.Columns` (that bakes in the
-assumption 7a.11 must remove). `RenderRename` draws the editor in the `PaneView` showing
+`ResolveMarkedFullPaths`, `ShowContextMenu`, `ResolveShellName`, `RenderRename` - take a `ColumnRef` instead and resolve
+through `state.ColumnAt`. Do not convert them to `state.Focused.Columns` or `state.Focused.Ref(i)`
+(that bakes in the assumption 7a.11 must remove). The keyboard-only actions (`TryCopyToClipboard`,
+`TryDelete`, `TryDeleteFocusedEntry`) legitimately mean the focused pane and follow automatically. `RenderRename` draws the editor in the `PaneView` showing
 `rename.At.Pane` and clears it in the other.
 
 `Render(state)` renders `state.Panes[0]` into `TopPane` (`Project(state, state.Panes[0], …)`,
@@ -2278,7 +2364,13 @@ is not the focused pane — clicking a pane focuses it.
 
 Keyboard focus: after `Render`, if `state.FocusedPane` changed since the last render, call
 `Keyboard.Focus` on that row's `ColumnBrowser` (the same call the window uses for its single
-browser today).
+browser today). The window's `Loaded += (_, _) => Browser.Focus();` likewise focuses the row showing
+`state.Focused`, not `TopPane`. `ShowContextMenuAtCursor` (the menu key) calls
+`TryGetRowScreenRect` on a browser: resolve the `PaneView` of the row showing `state.Focused`, or
+the menu appears over the wrong pane whenever the bottom one is focused.
+
+`InputTrace.State` adds `pane={state.Focused.Id.Value}/{state.Panes.Length}` so a trace line says
+which pane it describes.
 
 `RetryRequested` from row `r` → `Dispatch(new Msg.RetryPreview(PaneInRow(r)))`.
 `PreviewWidthChanged` from either → set the other's `PreviewWidth` to match and save (decision 8).
@@ -2682,3 +2774,19 @@ anticipate. Stop and ask rather than deciding unilaterally when something contra
   (7a.9); and, in 7a.12, restoring each pane's view from the App rather than from whichever drive
   read finishes first - with the split restored at startup the bottom pane's read can win, which
   would apply the top pane's stored view to the bottom one.
+
+## 7a.4 (2026-11-19)
+
+- Shim deleted; `Panes` is `required` again; `AppState.ViewAt` replaces six `PaneOf(at.Pane)!.View`
+  uses; `Apply` skips reconciling a pane reference-equal to its pre-message snapshot. 877 tests (the
+  one removed test exercised only the shim). `check.ps1` green.
+- The implementer's session stalled before reporting, with eight files rewritten from CRLF to LF
+  (a 7,600-line diff that was really 490 lines). The controller restored CRLF, refreshed the counts
+  and committed; both reviews then ran against the commit.
+- Spec review: compliant. Quality review: no critical issues. It confirmed the skip is exactly
+  behaviour-preserving - both reconcilers read only `before` and the pane, never shared state - and
+  that precondition is now written next to the skip and on both reconcilers (follow-up commit).
+- Deferred (plan updated): a focused pane other than pane 0 is untested until `FocusPane` exists,
+  and `AssertStatesEqual` had drifted behind the records - both into 7a.5, with a `WithFocused` test
+  helper; `ResolveShellName` joins 7a.10's list of helpers to address by pane; the menu key's
+  context-menu position, the window's initial `Focus()` and a pane id in the input trace into 7a.11.

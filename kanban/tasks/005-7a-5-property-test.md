@@ -1,10 +1,10 @@
 ---
 id: 5
 title: 7a.5 他ペインのproperty test
-status: todo
+status: in-progress
 priority: high
 created: 2026-09-19T20:04:40.4109612+09:00
-updated: 2026-09-19T20:04:40.4109612+09:00
+updated: 2026-11-19T01:17:20.6220502+09:00
 tags:
     - phase7a
 depends_on:
