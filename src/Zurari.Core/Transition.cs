@@ -457,7 +457,7 @@ public static partial class Transition
         var entry = column.Entries[column.Cursor];
         return entry.Kind is EntryKind.Header or EntryKind.Drive
             ? state
-            : state with { Rename = new RenameState(at, entry.Name) };
+            : state with { Rename = new RenameState(at, column.Location, entry.Name) };
     }
 
     /// <summary>
@@ -470,9 +470,17 @@ public static partial class Transition
     /// </remarks>
     private static (AppState, IReadOnlyList<Effect>) SubmitRename(AppState state, string newName)
     {
-        if (state.Rename is not { } editing || state.ColumnAt(editing.At) is not { } column)
+        if (state.Rename is not { } editing)
         {
             return (state, NoEffects);
+        }
+
+        // The editor is pinned to the folder it opened in. If that column is gone or another folder
+        // has moved into its index, renaming "the same name" there would hit the wrong file - close
+        // the editor and say so instead of acting on, or silently ignoring, the submission.
+        if (state.ColumnAt(editing.At) is not { } column || column.Location != editing.Location)
+        {
+            return (state with { Rename = null, Notice = "名前を変更するフォルダーが変わったため中止しました" }, NoEffects);
         }
 
         var trimmed = newName.Trim();

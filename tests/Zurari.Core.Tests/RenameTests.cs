@@ -20,6 +20,33 @@ public class RenameTests
     }
 
     [Fact]
+    public void Submitting_after_the_column_was_truncated_closes_the_editor_with_a_notice()
+    {
+        var state = Editing(out _).WithFocused(p => p with { Columns = [] });
+
+        var (next, effects) = Transition.Apply(state, new Msg.RenameSubmitted("other.txt"));
+
+        Assert.Null(next.Rename);
+        Assert.NotNull(next.Notice);
+        Assert.Empty(TestEffects.Of<Effect.RenameEntry>(effects));
+    }
+
+    [Fact]
+    public void Submitting_after_another_folder_took_the_index_closes_the_editor_with_a_notice()
+    {
+        var state = Editing(out _);
+        var elsewhere = new Column(
+            new Location.RealDirectory(@"C:\elsewhere"), [new Entry("notes.txt", EntryKind.File)], Cursor: 0, Load: LoadState.Loaded);
+        state = state.WithColumn(Col(0), elsewhere);
+
+        var (next, effects) = Transition.Apply(state, new Msg.RenameSubmitted("other.txt"));
+
+        Assert.Null(next.Rename);
+        Assert.NotNull(next.Notice);
+        Assert.Empty(TestEffects.Of<Effect.RenameEntry>(effects));
+    }
+
+    [Fact]
     public void F2_opens_the_editor_on_the_row_under_the_cursor()
     {
         var state = Editing(out _);

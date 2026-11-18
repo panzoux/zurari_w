@@ -665,6 +665,10 @@ public sealed record PreviewMetadata(
 /// A rename in progress: which row is being edited, and why the last attempt was refused.
 /// </summary>
 /// <param name="At">The column the row is in.</param>
+/// <param name="Location">
+/// The folder the row was in when the editor opened. The column at <paramref name="At"/> may since
+/// have been truncated or replaced by another folder; the rename must not follow the index.
+/// </param>
 /// <param name="EntryName">The <see cref="Entry.Name"/> being renamed - the row's identity while editing.</param>
 /// <param name="Error">
 /// Why the last submission was refused, or <c>null</c>. The editor stays open showing this rather
@@ -675,7 +679,7 @@ public sealed record PreviewMetadata(
 /// it is submitted; routing every keystroke through the state machine would buy nothing and would
 /// make IME composition - where a keystroke is not yet a character - something Core had to model.
 /// </remarks>
-public sealed record RenameState(ColumnRef At, string EntryName, string? Error = null);
+public sealed record RenameState(ColumnRef At, Location Location, string EntryName, string? Error = null);
 
 /// <summary>
 /// A name to put the cursor on when a listing containing it arrives. <paramref name="At"/> names the
