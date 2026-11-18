@@ -150,7 +150,7 @@ public class RenameTests
         var (done, effects) = Transition.Apply(asked, new Msg.RenameCompleted(Col(0), Here, "readme.txt"));
 
         Assert.Null(done.Rename);
-        Assert.Equal("readme.txt", done.RevealTarget);
+        Assert.Equal(new Reveal("readme.txt", Col(0)), done.RevealTarget);
         Assert.Single(TestEffects.Of<Effect.ReadDirectory>(effects));
 
         var (loaded, _) = Transition.Apply(

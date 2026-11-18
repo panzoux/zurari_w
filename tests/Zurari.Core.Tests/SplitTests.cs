@@ -589,4 +589,71 @@ public class SplitTests
         Assert.Empty(bin.PathsToActOn());
         Assert.Empty(drives.PathsToActOn());
     }
+
+    [Fact]
+    public void A_rename_reveal_lands_in_the_pane_that_renamed_even_if_the_other_loads_first()
+    {
+        var dir = new Location.RealDirectory(@"C:\x");
+        var shown = new Column(dir, [new Entry("old", EntryKind.File)], Cursor: 0, Load: LoadState.Loaded);
+        var state = SplitWith(shown, shown);
+        var mine = new ColumnRef(new PaneId(0), 0);
+        var theirs = new ColumnRef(new PaneId(1), 0);
+        var (renamed, _) = Transition.Apply(state, new Msg.RenameCompleted(mine, dir, "new"));
+
+        var listing = ImmutableArray.Create(new Entry("a", EntryKind.File), new Entry("new", EntryKind.File));
+        var (otherFirst, _) = Transition.Apply(renamed, new Msg.DirectoryLoaded(theirs, dir, listing));
+        var (both, _) = Transition.Apply(otherFirst, new Msg.DirectoryLoaded(mine, dir, listing));
+
+        Assert.Equal("new", both.Panes[0].Columns[0].CursorName);
+        Assert.Equal("a", both.Panes[1].Columns[0].CursorName);   // kept its index, not pulled to "new"
+        Assert.Null(both.RevealTarget);
+    }
+
+    [Fact]
+    public void A_mounted_image_is_revealed_by_whichever_drive_list_loads_first()
+    {
+        var drives = new Column(Location.Drives.Instance, [new Entry(@"C:\", EntryKind.Drive)], Cursor: 0, Load: LoadState.Loaded);
+        var state = SplitWith(drives, drives);
+        var (mounted, _) = Transition.Apply(state, new Msg.ImageMounted(@"E:\"));
+
+        var listing = ImmutableArray.Create(new Entry(@"C:\", EntryKind.Drive), new Entry(@"E:\", EntryKind.Drive));
+        var (next, _) = Transition.Apply(
+            mounted, new Msg.DirectoryLoaded(new ColumnRef(new PaneId(1), 0), Location.Drives.Instance, listing));
+
+        Assert.Equal(@"E:\", next.Panes[1].Columns[0].CursorName);
+    }
+
+    [Fact]
+    public void A_reveal_for_a_pane_closed_during_the_reread_does_not_jump_a_later_listing()
+    {
+        var dir = new Location.RealDirectory(@"C:\x");
+        var shown = new Column(dir, [new Entry("old", EntryKind.File)], Cursor: 0, Load: LoadState.Loaded);
+        var state = SplitWith(shown, shown);
+        var bottom = new ColumnRef(new PaneId(1), 0);
+        var top = new ColumnRef(new PaneId(0), 0);
+        var (renamed, _) = Transition.Apply(state, new Msg.RenameCompleted(bottom, dir, "new"));
+        var (closed, _) = Transition.Apply(renamed, new Msg.ToggleSplit());
+        Assert.Single(closed.Panes);
+        Assert.Equal(new PaneId(0), closed.Panes[0].Id);
+
+        var listing = ImmutableArray.Create(new Entry("a", EntryKind.File), new Entry("new", EntryKind.File));
+        var (loaded, _) = Transition.Apply(closed, new Msg.DirectoryLoaded(top, dir, listing));
+
+        Assert.Equal("a", loaded.Panes[0].Columns[0].CursorName);
+        Assert.Null(loaded.RevealTarget);
+    }
+
+    [Fact]
+    public void A_scoped_reveal_is_ignored_by_another_pane_and_kept_for_its_own()
+    {
+        var dir = new Location.RealDirectory(@"C:\x");
+        var shown = new Column(dir, [new Entry("old", EntryKind.File)], Cursor: 0, Load: LoadState.Loaded);
+        var state = SplitWith(shown, shown) with { RevealTarget = new Reveal("new", new ColumnRef(new PaneId(0), 0)) };
+
+        var listing = ImmutableArray.Create(new Entry("a", EntryKind.File), new Entry("new", EntryKind.File));
+        var (next, _) = Transition.Apply(state, new Msg.DirectoryLoaded(new ColumnRef(new PaneId(1), 0), dir, listing));
+
+        Assert.Equal("a", next.Panes[1].Columns[0].CursorName);
+        Assert.Equal(new Reveal("new", new ColumnRef(new PaneId(0), 0)), next.RevealTarget);
+    }
 }

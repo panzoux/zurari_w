@@ -90,7 +90,7 @@ public class OpenAndCreateTests
 
         var (asked, effects) = Transition.Apply(state, new Msg.FolderCreated(Col(0), Here, "新しいフォルダー"));
 
-        Assert.Equal("新しいフォルダー", asked.RevealTarget);
+        Assert.Equal(new Reveal("新しいフォルダー", Col(0)), asked.RevealTarget);
         Assert.Equal(LoadState.Loading, asked.Focused.Columns[0].Load);
         Assert.Equal(new Effect.ReadDirectory(Col(0), Here), Assert.Single(TestEffects.Of<Effect.ReadDirectory>(effects)));
 

@@ -677,6 +677,14 @@ public sealed record PreviewMetadata(
 /// </remarks>
 public sealed record RenameState(ColumnRef At, string EntryName, string? Error = null);
 
+/// <summary>
+/// A name to put the cursor on when a listing containing it arrives. <paramref name="At"/> names the
+/// one column that may consume it (a rename or a new folder happened there, and the same directory
+/// shown in the other pane must not take it); <c>null</c> lets any listing consume it (a mounted
+/// image appears in every drive list).
+/// </summary>
+public sealed record Reveal(string Name, ColumnRef? At);
+
 /// <summary>Where the cursor was in one place the user has been.</summary>
 /// <param name="Location">The place.</param>
 /// <param name="EntryName">The <see cref="Entry.Name"/> the cursor was on.</param>
@@ -801,14 +809,16 @@ public sealed record AppState
 
     /// <summary>
     /// An entry name to put the cursor on as soon as a listing containing it arrives, or
-    /// <c>null</c>. Consumed and cleared by the first <see cref="Msg.DirectoryLoaded"/> that has it.
+    /// <c>null</c>. Consumed and cleared by the first <see cref="Msg.DirectoryLoaded"/> that may take
+    /// it (see <see cref="Reveal"/>). Dropped by a <see cref="Msg.DirectoryLoaded"/> once the pane it
+    /// names has been closed.
     /// </summary>
     /// <remarks>
     /// Mounting an image is the first use: the new drive does not exist until the listing is re-read,
     /// so "put the cursor on it" cannot be done at the moment the request is made. The same shape is
     /// what "the cursor lands on the folder you just created" will need.
     /// </remarks>
-    public string? RevealTarget { get; init; }
+    public Reveal? RevealTarget { get; init; }
 
     /// <summary>
     /// Full paths of entries the user has cut (Ctrl+X) but not yet pasted - Explorer-style "dim the

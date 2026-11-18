@@ -216,7 +216,7 @@ public class PaneTests
         var otherColumn = Dir(@"D:\other", "y");
         var state = TwoPanes(top, loadingColumn);
         var pane1 = state.Panes[1] with { Columns = [loadingColumn, otherColumn], FocusedColumn = 1 };
-        state = state.WithPane(pane1) with { RevealTarget = "b" };
+        state = state.WithPane(pane1) with { RevealTarget = new Reveal("b", null) };
         var at = new ColumnRef(new PaneId(1), 0);
 
         var (next, _) = Transition.Apply(

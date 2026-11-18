@@ -207,7 +207,7 @@ public static partial class Transition
             Msg.PinFocusedLocation m => PinFocusedLocation(state, m.At),
             Msg.PinEntryAtCursor m => PinEntryAtCursor(state, m.At),
             Msg.PlacesChanged => ReloadDrivePanes(state),
-            Msg.ImageMounted m => ReloadDrivePanes(state with { RevealTarget = m.DriveRoot }),
+            Msg.ImageMounted m => ReloadDrivePanes(state with { RevealTarget = new Reveal(m.DriveRoot, null) }),
             Msg.NoticeRaised m => (state with { Notice = m.Message }, NoEffects),
             Msg.RenameRequested m => (BeginRename(state, m.At), NoEffects),
             Msg.RenameCancelled => (state with { Rename = null }, NoEffects),
@@ -536,7 +536,7 @@ public static partial class Transition
 
         var loading = state.WithColumn(at, column with { Load = LoadState.Loading });
         return (
-            loading with { RevealTarget = reveal },
+            loading with { RevealTarget = reveal is null ? null : new Reveal(reveal, at) },
             new Effect[] { new Effect.ReadDirectory(at, location) });
     }
 
@@ -579,7 +579,16 @@ public static partial class Transition
 
         // Something was waiting for this listing to exist before it could be pointed at - the drive
         // a disc image was just mounted as. Now that its row is here, put the cursor on it.
-        var revealed = state.RevealTarget is { } target ? IndexOfName(updated.Entries, target) : -1;
+        // A reveal made in a pane that has since been closed names a column that no longer exists;
+        // it is dropped here (rather than in ToggleSplit) so it cannot jump a later listing.
+        if (state.RevealTarget is { At: { } scope } && state.PaneOf(scope.Pane) is null)
+        {
+            state = state with { RevealTarget = null };
+        }
+
+        var revealed = state.RevealTarget is { } target && (target.At is null || target.At == at)
+            ? IndexOfName(updated.Entries, target.Name)
+            : -1;
         if (revealed >= 0)
         {
             var revealedColumns = pane.Columns.SetItem(at.Index, updated with { Cursor = revealed });

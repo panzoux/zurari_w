@@ -108,7 +108,7 @@ public class CursorMemoryTests
             Columns = [new Column(Home, [], Cursor: -1, Load: LoadState.Loading)],
         }) with
         {
-            RevealTarget = "a.txt",
+            RevealTarget = new Reveal("a.txt", null),
         };
 
         var (loaded, _) = Transition.Apply(
