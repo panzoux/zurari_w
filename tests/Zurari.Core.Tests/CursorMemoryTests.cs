@@ -37,7 +37,7 @@ public class CursorMemoryTests
         var (moved, _) = Transition.Apply(state, new Msg.CursorTo(Col(0), 2));
 
         // Somewhere else, then back - and in the meantime a file appeared above the one we want.
-        var elsewhere = moved.WithPane(moved.Focused with
+        var elsewhere = moved.WithFocused(p => p with
         {
             Columns = [new Column(Home, [], Cursor: -1, Load: LoadState.Loading)],
         });
@@ -52,7 +52,7 @@ public class CursorMemoryTests
     public void A_place_never_visited_starts_at_the_top()
     {
         var state = At(Home, File("a.txt"));
-        var opening = state.WithPane(state.Focused with { Columns = [new Column(Away, [], Cursor: -1, Load: LoadState.Loading)] });
+        var opening = state.WithFocused(p => p with { Columns = [new Column(Away, [], Cursor: -1, Load: LoadState.Loading)] });
 
         var (loaded, _) = Transition.Apply(
             opening, new Msg.DirectoryLoaded(Col(0), Away, [File("x.txt"), File("y.txt")]));
@@ -69,7 +69,7 @@ public class CursorMemoryTests
     {
         var state = At(Home, File("a.txt"), File("gone.txt"));
         var (moved, _) = Transition.Apply(state, new Msg.CursorTo(Col(0), 1));
-        var reopening = moved.WithPane(moved.Focused with { Columns = [new Column(Home, [], Cursor: -1, Load: LoadState.Loading)] });
+        var reopening = moved.WithFocused(p => p with { Columns = [new Column(Home, [], Cursor: -1, Load: LoadState.Loading)] });
 
         var (loaded, _) = Transition.Apply(reopening, new Msg.DirectoryLoaded(Col(0), Home, [File("a.txt")]));
 
@@ -103,7 +103,7 @@ public class CursorMemoryTests
     {
         var state = At(Home, File("a.txt"), File("b.txt"));
         var (moved, _) = Transition.Apply(state, new Msg.CursorTo(Col(0), 1));
-        var reopening = moved.WithPane(moved.Focused with
+        var reopening = moved.WithFocused(p => p with
         {
             Columns = [new Column(Home, [], Cursor: -1, Load: LoadState.Loading)],
         }) with

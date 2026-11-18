@@ -2721,10 +2721,13 @@ public class TransitionProperties
     private static Gen<int> GenColumnIndex => Gen.Int[-2, 4];
 
     /// <summary>
-    /// A <see cref="ColumnRef"/> into the single pane every pre-split property covers. 7a.5 widens
-    /// this to other panes.
+    /// Pane 0 exists from the start; 1 exists once a split is opened (7a.6 adds ToggleSplit to
+    /// GenMsg); 7 never does, so results addressed to it exercise the closed-pane path.
     /// </summary>
-    private static Gen<ColumnRef> GenColumnRef => GenColumnIndex.Select(i => new ColumnRef(TestPanes.First, i));
+    private static Gen<PaneId> GenPaneId => Gen.OneOfConst(new PaneId(0), new PaneId(1), new PaneId(7));
+
+    private static Gen<ColumnRef> GenColumnRef =>
+        Gen.Select(GenPaneId, GenColumnIndex).Select(t => new ColumnRef(t.Item1, t.Item2));
 
     private static Gen<int> GenEntryIndex => Gen.Int[-2, 4];
 
@@ -2838,11 +2841,12 @@ public class TransitionProperties
         Gen.Select(GenJobId, GenPaths).Select(t => (Msg)new Msg.JobCancelled(t.Item1, t.Item2)),
         GenJobId.Select(i => (Msg)new Msg.JobCancelRequested(i)),
         GenJobId.Select(i => (Msg)new Msg.JobDismissed(i)),
-        Gen.Select(Gen.Select(GenJobId, GenPreviewKind), Gen.Select(GenImageBytes, GenPreviewMetadata))
-            .Select(t => (Msg)new Msg.PreviewLoaded(First, t.Item1.Item1, t.Item1.Item2, "text", t.Item2.Item1, "label", t.Item2.Item2)),
-        GenJobId.Select(i => (Msg)new Msg.PreviewFailed(First, i, "error")),
-        GenJobId.Select(i => (Msg)new Msg.PreviewLoaded(First, i, PreviewKind.Binary, null, [], "timed out", null, TimedOut: true)),
-        Gen.Const<Msg>(new Msg.RetryPreview(First)),
+        Gen.Select(GenPaneId, Gen.Select(GenJobId, GenPreviewKind), Gen.Select(GenImageBytes, GenPreviewMetadata))
+            .Select(t => (Msg)new Msg.PreviewLoaded(t.Item1, t.Item2.Item1, t.Item2.Item2, "text", t.Item3.Item1, "label", t.Item3.Item2)),
+        Gen.Select(GenPaneId, GenJobId).Select(t => (Msg)new Msg.PreviewFailed(t.Item1, t.Item2, "error")),
+        Gen.Select(GenPaneId, GenJobId)
+            .Select(t => (Msg)new Msg.PreviewLoaded(t.Item1, t.Item2, PreviewKind.Binary, null, [], "timed out", null, TimedOut: true)),
+        GenPaneId.Select(p => (Msg)new Msg.RetryPreview(p)),
         GenPaths.Select(paths => (Msg)new Msg.SetCutPending(paths)),
         Gen.Select(GenJobId, Gen.Int[0, 5]).Select(t => (Msg)new Msg.JobConflictsFound(t.Item1, t.Item2)),
         Gen.Select(GenJobId, GenConflictDecision).Select(t => (Msg)new Msg.JobConflictResolved(t.Item1, t.Item2)),
@@ -2870,12 +2874,13 @@ public class TransitionProperties
         Gen.Const<Msg>(new Msg.RenameFailed("nope")),
         Gen.Select(GenColumnRef, GenLocation).Select(t => (Msg)new Msg.FolderCreated(t.Item1, t.Item2, "new")),
         Gen.Select(
+                GenPaneId,
                 Gen.OneOfConst(SortMode.Name, SortMode.Size),
                 Gen.OneOfConst(true, false),
                 Gen.OneOfConst(true, false))
-            .Select(t => (Msg)new Msg.ViewRestored(First, new ViewOptions(new SortOrder(t.Item1, t.Item2, t.Item3)))),
-        GenJobId.Select(g => (Msg)new Msg.PreviewCapacityLoaded(
-            First, g, new PreviewCapacity("vol", "kind", UsedBytes: 1, TotalBytes: 2))),
+            .Select(t => (Msg)new Msg.ViewRestored(t.Item1, new ViewOptions(new SortOrder(t.Item2, t.Item3, t.Item4)))),
+        Gen.Select(GenPaneId, GenJobId).Select(t => (Msg)new Msg.PreviewCapacityLoaded(
+            t.Item1, t.Item2, new PreviewCapacity("vol", "kind", UsedBytes: 1, TotalBytes: 2))),
         Gen.Const<Msg>(new Msg.PlacesChanged()));
 
     [Fact]
@@ -2892,7 +2897,14 @@ public class TransitionProperties
                 Assert.Empty(next.CheckInvariants());
                 // Preview.Generation only ever increases - PreviewLoaded/PreviewFailed never bump
                 // it themselves, and ReconcilePreview only bumps forward.
-                Assert.True(next.Focused.Preview.Generation >= state.Focused.Preview.Generation);
+                foreach (var pane in next.Panes)
+                {
+                    if (state.PaneOf(pane.Id) is { } before)
+                    {
+                        Assert.True(pane.Preview.Generation >= before.Preview.Generation);
+                    }
+                }
+
                 state = next;
             }
         });
@@ -2911,45 +2923,42 @@ public class TransitionProperties
         });
     }
 
-    // Pane.Columns is an ImmutableArray<Column>, and ImmutableArray<T>.Equals compares the
-    // underlying array by reference, not by content. Two independently-built states with equal
-    // content but different array instances would otherwise (incorrectly) compare unequal, so
-    // this compares field by field; xunit's Assert.Equal already does element-wise comparison
-    // for the IEnumerable<Entry> members (ImmutableArray<Entry>).
+    // ImmutableArray<T> and ImmutableHashSet<T> compare by reference under record equality, so two
+    // independently built states with equal content would compare unequal. Every such member is
+    // blanked on a copy, which leaves record equality to cover every scalar member - a field added
+    // later is compared without anyone remembering to list it - and the blanked members are then
+    // compared element by element. ImmutableArray<T> goes through Assert.Equal's IEnumerable path.
     private static void AssertStatesEqual(AppState expected, AppState actual)
     {
-        Assert.Equal(expected.FocusedPane, actual.FocusedPane);
-        Assert.Equal(expected.NextPaneId, actual.NextPaneId);
-        Assert.Equal(expected.NextJobId, actual.NextJobId);
+        Assert.Equal(
+            expected with { Panes = default, Jobs = default, CursorMemory = default, CutPending = default },
+            actual with { Panes = default, Jobs = default, CursorMemory = default, CutPending = default });
         Assert.Equal(expected.Jobs, actual.Jobs);
+        Assert.Equal(expected.CursorMemory, actual.CursorMemory);
         Assert.Equal(expected.CutPending, actual.CutPending);
         Assert.Equal(expected.Panes.Length, actual.Panes.Length);
-
         for (var p = 0; p < expected.Panes.Length; p++)
         {
-            var expectedPane = expected.Panes[p];
-            var actualPane = actual.Panes[p];
-            Assert.Equal(expectedPane.Id, actualPane.Id);
-            Assert.Equal(expectedPane.FocusedColumn, actualPane.FocusedColumn);
-            Assert.Equal(expectedPane.View, actualPane.View);
-            Assert.Equal(expectedPane.Preview.Generation, actualPane.Preview.Generation);
-            Assert.Equal(expectedPane.Preview.Path, actualPane.Preview.Path);
-            Assert.Equal(expectedPane.Preview.Kind, actualPane.Preview.Kind);
-            Assert.Equal(expectedPane.Preview.Text, actualPane.Preview.Text);
-            Assert.Equal(expectedPane.Preview.ImageBytes, actualPane.Preview.ImageBytes);
-            Assert.Equal(expectedPane.Preview.Error, actualPane.Preview.Error);
-            Assert.Equal(expectedPane.Columns.Length, actualPane.Columns.Length);
-
-            for (var i = 0; i < expectedPane.Columns.Length; i++)
+            var e = expected.Panes[p];
+            var a = actual.Panes[p];
+            Assert.Equal(e with { Columns = default, Preview = PreviewState.Initial }, a with { Columns = default, Preview = PreviewState.Initial });
+            Assert.Equal(e.Preview with { ImageBytes = default }, a.Preview with { ImageBytes = default });
+            Assert.Equal(e.Preview.ImageBytes, a.Preview.ImageBytes);
+            Assert.Equal(e.Columns.Length, a.Columns.Length);
+            for (var c = 0; c < e.Columns.Length; c++)
             {
-                var e = expectedPane.Columns[i];
-                var a = actualPane.Columns[i];
-                Assert.Equal(e.Location, a.Location);
-                Assert.Equal(e.Cursor, a.Cursor);
-                Assert.Equal(e.ScrollOffset, a.ScrollOffset);
-                Assert.Equal(e.Load, a.Load);
-                Assert.Equal(e.ErrorMessage, a.ErrorMessage);
-                Assert.Equal(e.Entries, a.Entries);
+                var ec = e.Columns[c];
+                var ac = a.Columns[c];
+                var allExpected = ec.AllEntries;
+                var allActual = ac.AllEntries;
+                Assert.Equal(ec with { Entries = default, AllEntries = default, CollapsedGroups = ImmutableHashSet<string>.Empty }, ac with { Entries = default, AllEntries = default, CollapsedGroups = ImmutableHashSet<string>.Empty });
+                Assert.Equal(ec.Entries, ac.Entries);
+                Assert.Equal(allExpected, allActual);
+                Assert.Equal(ec.CollapsedGroups.Count, ac.CollapsedGroups.Count);
+                foreach (var group in ec.CollapsedGroups)
+                {
+                    Assert.Contains(group, ac.CollapsedGroups);
+                }
             }
         }
     }

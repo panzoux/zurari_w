@@ -77,12 +77,28 @@ public class StatusBarProjectionTests
         Assert.Contains("Ctrl+Shift+. 隠しファイル", hints);
     }
 
+    [Fact]
+    public void The_path_bar_shows_the_focused_bottom_panes_path()
+    {
+        var top = Folder(new Entry("t.txt", EntryKind.File));
+        var bottom = new Column(
+            new Location.RealDirectory(@"C:\other"), [new Entry("b.txt", EntryKind.File)], Cursor: 0, Load: LoadState.Loaded);
+        var state = AppState.Initial with
+        {
+            Panes = [new Pane(new PaneId(0), [top], 0), new Pane(new PaneId(1), [bottom], 0)],
+            FocusedPane = 1,
+            NextPaneId = 2,
+        };
+
+        Assert.Equal(@"C:\other\b.txt", StateProjection.ProjectStatusBar(state).Path);
+    }
+
     /// <summary>Sort mode has to show itself: otherwise it is open and nothing on screen says so.</summary>
     [Fact]
     public void In_sort_mode_the_hints_show_the_current_order_and_the_field_keys()
     {
-        var withView = StateWith(Folder(new Entry("b.txt", EntryKind.File)));
-        var state = withView.WithPane(withView.Focused with { View = new ViewOptions(new SortOrder(SortMode.Size, Descending: true)) }) with
+        var state = StateWith(Folder(new Entry("b.txt", EntryKind.File)))
+            .WithFocused(p => p with { View = new ViewOptions(new SortOrder(SortMode.Size, Descending: true)) }) with
         {
             InputMode = InputMode.Sort,
         };

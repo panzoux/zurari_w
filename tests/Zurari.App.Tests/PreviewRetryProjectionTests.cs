@@ -16,7 +16,7 @@ public class PreviewRetryProjectionTests
             Attempt = attempt,
             TimedOut = timedOut,
         };
-        var state = AppState.Initial.WithPane(AppState.Initial.Focused with { Preview = preview });
+        var state = AppState.Initial.WithFocused(p => p with { Preview = preview });
 
         return StateProjection.ProjectPreview(state);
     }

@@ -12,6 +12,8 @@
     <Compile Include="$(MSBuildThisFileDirectory)TestSupport/IsolatedSettings.cs" Link="TestSupport/IsolatedSettings.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)TestSupport/TestPanes.cs" Link="TestSupport/TestPanes.cs"
              Condition="'$(MSBuildProjectName)' == 'Zurari.Core.Tests' Or '$(MSBuildProjectName)' == 'Zurari.App.Tests' Or '$(MSBuildProjectName)' == 'Zurari.Runtime.Tests' Or '$(MSBuildProjectName)' == 'Zurari.Shell.Tests' Or '$(MSBuildProjectName)' == 'Zurari.Arch.Tests'" />
+    <Compile Include="$(MSBuildThisFileDirectory)TestSupport/StateTestExtensions.cs" Link="TestSupport/StateTestExtensions.cs"
+             Condition="'$(MSBuildProjectName)' == 'Zurari.Core.Tests' Or '$(MSBuildProjectName)' == 'Zurari.App.Tests' Or '$(MSBuildProjectName)' == 'Zurari.Runtime.Tests' Or '$(MSBuildProjectName)' == 'Zurari.Shell.Tests' Or '$(MSBuildProjectName)' == 'Zurari.Arch.Tests'" />
     <Compile Include="$(MSBuildThisFileDirectory)TestSupport/EffectPicks.cs" Link="TestSupport/EffectPicks.cs"
              Condition="'$(MSBuildProjectName)' == 'Zurari.Core.Tests' Or '$(MSBuildProjectName)' == 'Zurari.App.Tests' Or '$(MSBuildProjectName)' == 'Zurari.Runtime.Tests' Or '$(MSBuildProjectName)' == 'Zurari.Shell.Tests' Or '$(MSBuildProjectName)' == 'Zurari.Arch.Tests'" />
     <Using Include="Zurari.TestSupport" />

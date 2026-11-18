@@ -15,7 +15,7 @@ public class SortTests
     private static AppState With(SortOrder sort, params Entry[] entries)
     {
         var state = AppState.SinglePane([new Column(new Location.RealDirectory(@"C:\"), [], Cursor: -1, Load: LoadState.Loaded)]);
-        return state.WithPane(state.Focused with { View = new ViewOptions(sort) });
+        return state.WithFocused(p => p with { View = new ViewOptions(sort) });
     }
 
     /// <summary>Runs a listing through the real path a listing takes: a load, then the derived view.</summary>
@@ -352,8 +352,7 @@ public class SortTests
     [Fact]
     public void Cursor_on_a_hidden_row_moves_somewhere_visible_when_it_disappears()
     {
-        var withHidden = With(SortOrder.Default);
-        var state = withHidden.WithPane(withHidden.Focused with { View = ViewOptions.Default with { ShowHidden = true } });
+        var state = With(SortOrder.Default).WithFocused(p => p with { View = ViewOptions.Default with { ShowHidden = true } });
         var (loaded, _) = Transition.Apply(
             state,
             new Msg.DirectoryLoaded(Col(0), new Location.RealDirectory(@"C:\"), [File("a.txt"), Hidden("hidden.txt")]));

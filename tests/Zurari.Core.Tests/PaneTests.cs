@@ -23,14 +23,14 @@ public class PaneTests
     /// <summary>
     /// Two panes, top (id 0, focused) and bottom (id 1), each showing one column. Every test that
     /// uses this addresses pane 1 - the unfocused one - to prove a Msg reaches the pane it names
-    /// rather than always landing on the focused pane. 7a.3 may add its own <c>TwoPanes</c> helper
-    /// elsewhere; this one stays here for reuse.
+    /// rather than always landing on the focused pane. <paramref name="focused"/> picks which pane is
+    /// focused, for tests that need the bottom one to be.
     /// </summary>
-    private static AppState TwoPanes(Column top, Column bottom) =>
+    private static AppState TwoPanes(Column top, Column bottom, int focused = 0) =>
         AppState.Initial with
         {
             Panes = [new Pane(new PaneId(0), [top], 0), new Pane(new PaneId(1), [bottom], 0)],
-            FocusedPane = 0,
+            FocusedPane = focused,
             NextPaneId = 2,
         };
 
@@ -307,5 +307,76 @@ public class PaneTests
 
         Assert.True(next.Panes[1].View.ShowHidden);
         Assert.False(next.Panes[0].View.ShowHidden);
+    }
+
+    [Fact]
+    public void A_preview_result_for_one_pane_is_ignored_by_the_other_at_the_same_generation()
+    {
+        // Both panes count generations from their own start, so the same number means two different
+        // files. An implementation that checked only the generation would pass the earlier tests.
+        // Each cursor starts on a file but nothing is loading yet; moving to the second file starts
+        // a load, so both panes reach generation 1.
+        var state = TwoPanes(Dir(@"C:\a", "x.txt", "y.txt"), Dir(@"C:\b", "p.txt", "q.txt"));
+        var (loadedA, _) = Transition.Apply(state, new Msg.CursorTo(new ColumnRef(new PaneId(0), 0), 1));
+        var (both, _) = Transition.Apply(loadedA, new Msg.CursorTo(new ColumnRef(new PaneId(1), 0), 1));
+        Assert.Equal(1, both.Panes[0].Preview.Generation);
+        Assert.Equal(both.Panes[0].Preview.Generation, both.Panes[1].Preview.Generation);
+
+        var (next, _) = Transition.Apply(
+            both, new Msg.PreviewLoaded(new PaneId(1), both.Panes[1].Preview.Generation, PreviewKind.Text, "hello", [], null));
+
+        Assert.Equal("hello", next.Panes[1].Preview.Text);
+        Assert.Null(next.Panes[0].Preview.Text);
+    }
+
+    [Fact]
+    public void Leaving_a_file_cancels_that_panes_preview_and_names_the_pane()
+    {
+        var state = TwoPanes(Dir(@"C:\a", "x.txt"), Dir(@"C:\b", "p.txt", "q.txt"));
+        var (loading, _) = Transition.Apply(state, new Msg.CursorTo(new ColumnRef(new PaneId(1), 0), 1));
+        Assert.Equal(PreviewKind.Loading, loading.Panes[1].Preview.Kind);
+        var generation = loading.Panes[1].Preview.Generation;
+
+        var (_, effects) = Transition.Apply(loading, new Msg.CursorTo(new ColumnRef(new PaneId(1), 0), 0));
+
+        var cancelled = Assert.Single(TestEffects.Of<Effect.CancelPreview>(effects));
+        Assert.Equal(new PaneId(1), cancelled.Pane);
+        Assert.Equal(generation, cancelled.Generation);
+    }
+
+    [Fact]
+    public void Refreshing_both_panes_leaves_both_previews_alone()
+    {
+        var state = TwoPanes(Dir(@"C:\a", "x.txt"), Dir(@"C:\b", "p.txt"));
+
+        var (next, effects) = Transition.Apply(state, new Msg.Refresh());
+
+        Assert.Equal(2, TestEffects.Of<Effect.ReadDirectory>(effects).Count);
+        Assert.Empty(TestEffects.Of<Effect.LoadPreview>(effects));
+        Assert.Empty(TestEffects.Of<Effect.CancelPreview>(effects));
+        Assert.Equal(state.Panes[0].Preview, next.Panes[0].Preview);
+        Assert.Equal(state.Panes[1].Preview, next.Panes[1].Preview);
+    }
+
+    [Fact]
+    public void Sorting_with_the_bottom_pane_focused_changes_only_the_bottom_view()
+    {
+        var state = TwoPanes(Dir(@"C:\a", "x"), Dir(@"C:\b", "p"), focused: 1);
+
+        var (next, _) = Transition.Apply(state, new Msg.SetSortMode(SortMode.Size));
+
+        Assert.Equal(SortMode.Size, next.Panes[1].View.Sort.Mode);
+        Assert.Equal(state.Panes[0].View, next.Panes[0].View);
+    }
+
+    [Fact]
+    public void A_cursor_move_in_the_focused_bottom_pane_is_remembered()
+    {
+        var state = TwoPanes(Dir(@"C:\a", "x"), Dir(@"C:\b", "p", "q"), focused: 1);
+
+        var (next, _) = Transition.Apply(state, new Msg.CursorDown(new ColumnRef(new PaneId(1), 0)));
+
+        Assert.Equal("q", next.RecallCursor(new Location.RealDirectory(@"C:\b")));
+        Assert.Null(next.RecallCursor(new Location.RealDirectory(@"C:\a")));
     }
 }

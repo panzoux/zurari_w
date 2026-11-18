@@ -8,8 +8,8 @@ public class PreviewProjectionTests
 {
     private static AppState StateWithPreview(PreviewState preview)
     {
-        var state = AppState.SinglePane([new Column(Location.Drives.Instance, [], Load: LoadState.Loaded)]);
-        return state.WithPane(state.Focused with { Preview = preview });
+        return AppState.SinglePane([new Column(Location.Drives.Instance, [], Load: LoadState.Loaded)])
+            .WithFocused(p => p with { Preview = preview });
     }
 
     [Fact]

@@ -26,7 +26,7 @@ public class PreviewRetryTests
             Attempt = attempt,
             TimedOut = true,
         };
-        return state.WithPane(state.Focused with { Preview = preview });
+        return state.WithFocused(p => p with { Preview = preview });
     }
 
     [Fact]
@@ -58,7 +58,7 @@ public class PreviewRetryTests
     public void A_preview_that_did_not_time_out_is_not_retried()
     {
         var timedOut = TimedOut(1);
-        var state = timedOut.WithPane(timedOut.Focused with { Preview = timedOut.Focused.Preview with { TimedOut = false } });
+        var state = timedOut.WithFocused(p => p with { Preview = p.Preview with { TimedOut = false } });
 
         var (next, effects) = Transition.Apply(state, new Msg.RetryPreview(First));
 

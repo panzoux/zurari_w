@@ -39,8 +39,7 @@ public class InputTraceTests
             [new Entry("ドライブ", EntryKind.Header), new Entry(@"C:\", EntryKind.Drive), new Entry(@"D:\", EntryKind.Drive), new Entry(@"E:\", EntryKind.Drive)],
             Cursor: 0,
             Load: LoadState.Loaded);
-        var withView = AppState.SinglePane([drives]);
-        var state = withView.WithPane(withView.Focused with { View = new ViewOptions(new SortOrder(SortMode.Name, Descending: true)) }) with
+        var state = AppState.SinglePane([drives]).WithFocused(p => p with { View = new ViewOptions(new SortOrder(SortMode.Name, Descending: true)) }) with
         {
             InputMode = Core.InputMode.Sort,
         };
