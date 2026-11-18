@@ -24,17 +24,21 @@ public static class StateProjection
     /// reference) and focused column, whether the pane is the focused one (an unfocused pane draws no
     /// focused column), and <see cref="AppState.CutPending"/> (by array reference; it dims rows).
     /// Add to it whenever <see cref="Project"/> starts reading something else.
+    /// The guard that compares keys is kept per screen row, not per pane, so the key also names the
+    /// pane: a swap puts the other pane in the row, and that pane's untouched <c>Columns</c> array
+    /// must not look like "nothing changed".
     /// </remarks>
     public static RenderKeyValue RenderKey(AppState state, Pane pane)
     {
         ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(pane);
 
-        return new RenderKeyValue(pane.Columns, pane.FocusedColumn, pane.Id == state.Focused.Id, state.CutPending);
+        return new RenderKeyValue(pane.Id, pane.Columns, pane.FocusedColumn, pane.Id == state.Focused.Id, state.CutPending);
     }
 
     /// <summary>See <see cref="RenderKey"/>. Arrays compare by reference, which is the point.</summary>
     public readonly record struct RenderKeyValue(
+        PaneId Pane,
         System.Collections.Immutable.ImmutableArray<Column> Columns,
         int FocusedColumn,
         bool PaneFocused,
@@ -559,6 +563,90 @@ public static class StateProjection
         }
 
         return label + "\n\n" + HexDump.Format(preview.ImageBytes.AsSpan());
+    }
+
+    /// <summary>What <see cref="ProjectRename"/> decided about one pane's rename editor.</summary>
+    public abstract record RenameView
+    {
+        private protected RenameView()
+        {
+        }
+
+        /// <summary>No editor in this pane: there is no rename, or it belongs to another pane.</summary>
+        public sealed record Hidden : RenameView;
+
+        /// <summary>
+        /// The rename no longer matches the screen (its column now shows another folder, or its row is
+        /// gone). Hide the editor and cancel <paramref name="Rename"/>.
+        /// </summary>
+        public sealed record Stale(RenameState Rename) : RenameView;
+
+        /// <summary>Put the editor on row <paramref name="EntryIndex"/> of column <paramref name="ColumnIndex"/>.</summary>
+        public sealed record Shown(int ColumnIndex, int EntryIndex, string Label, string? Error) : RenameView;
+    }
+
+    /// <summary>
+    /// Decides whether <paramref name="pane"/> shows the rename editor, and where. Pure - see
+    /// <see cref="RenameView"/>.
+    /// </summary>
+    /// <remarks>
+    /// The editor belongs to the pane the rename's column is in; any other pane shows none. A column
+    /// index that now holds a different folder than the rename started in (a navigation, a swap)
+    /// would put the editor on a same-named row of whatever occupies that index, so that is stale.
+    /// </remarks>
+    public static RenameView ProjectRename(AppState state, Pane pane)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(pane);
+
+        if (state.Rename is not { } rename
+            || rename.At.Pane != pane.Id
+            || state.ColumnAt(rename.At) is not { } column)
+        {
+            return new RenameView.Hidden();
+        }
+
+        if (column.Location != rename.Location)
+        {
+            return new RenameView.Stale(rename);
+        }
+
+        for (var i = 0; i < column.Entries.Length; i++)
+        {
+            if (string.Equals(column.Entries[i].Name, rename.EntryName, StringComparison.Ordinal))
+            {
+                return new RenameView.Shown(rename.At.Index, i, column.Entries[i].Label, rename.Error);
+            }
+        }
+
+        // The row went away underneath the editor - a refresh, a delete from elsewhere.
+        return new RenameView.Stale(rename);
+    }
+
+    /// <summary>
+    /// The real directories of every column of every pane, each once. Only those can be watched: a
+    /// virtual location (the drive list, and later the recycle bin or the inside of an archive) has
+    /// no path for FileSystemWatcher to point at, so it is filtered out here rather than relying on
+    /// the watcher to reject it.
+    /// </summary>
+    public static IReadOnlyList<string> WatchedPaths(AppState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+
+        var watchedPaths = new List<string>();
+        var seenPaths = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var pane in state.Panes)
+        {
+            foreach (var column in pane.Columns)
+            {
+                if (column.Location is Location.RealDirectory directory && seenPaths.Add(directory.Path))
+                {
+                    watchedPaths.Add(directory.Path);
+                }
+            }
+        }
+
+        return watchedPaths;
     }
 
     /// <summary>

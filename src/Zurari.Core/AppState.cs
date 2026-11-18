@@ -226,7 +226,8 @@ public sealed record Column(
     /// section is never acted on (see <see cref="AllEntries"/>). Headers and drives have no
     /// operations, and a column without a filesystem path of its own (the recycle bin, the drive
     /// list) yields nothing at all: <see cref="PathOf"/> would hand back the shell's internal
-    /// <c>$R…</c> names for the bin, which are not something to copy or move.
+    /// <c>$R…</c> names for the bin, which are not something to copy or move. The shell menu's own
+    /// rule is <see cref="ShellSelection"/>.
     /// </remarks>
     public ImmutableArray<string> PathsToActOn()
     {
@@ -255,6 +256,37 @@ public sealed record Column(
             && PathOf(cursorEntry) is { } path
                 ? [path]
                 : [];
+    }
+
+    /// <summary>
+    /// What the shell context menu acts on: the shell's name for every marked row, wherever the
+    /// column lives. Empty when nothing is marked.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not <see cref="PathsToActOn"/>, which is for file operations by path (Ctrl+C/X,
+    /// drag, <c>c</c>/<c>m</c>) and yields nothing for the bin or the drive list. The shell has its
+    /// own selection, so several marked bin rows can be restored at once, and the bin row itself
+    /// (named by its parsing name, which <see cref="PathOf"/> cannot give) can be marked together
+    /// with drives. A section header is never a shell item.
+    /// </remarks>
+    public ImmutableArray<string> ShellSelection()
+    {
+        var result = ImmutableArray.CreateBuilder<string>();
+        foreach (var entry in Entries)
+        {
+            if (!entry.IsMarked || entry.Kind == EntryKind.Header)
+            {
+                continue;
+            }
+
+            var name = entry.Target is { } target ? target.ShellParsingName : Location.ChildPath(entry.Name);
+            if (name is not null)
+            {
+                result.Add(name);
+            }
+        }
+
+        return result.ToImmutable();
     }
 
     /// <summary>

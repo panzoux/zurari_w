@@ -8,6 +8,14 @@ using Zurari.Core;
 
 namespace Zurari.App;
 
+/// <summary>The preview width a splitter drag ended on, read from the view that was dragged.</summary>
+/// <param name="width">The preview column's width in device-independent pixels.</param>
+public sealed class PreviewWidthChangedEventArgs(double width) : EventArgs
+{
+    /// <summary>The preview column's width in device-independent pixels.</summary>
+    public double Width { get; } = width;
+}
+
 /// <summary>
 /// One pane on screen: its column browser, its preview, and the splitter between them. Holds no
 /// state of its own beyond what WPF needs; MainWindow renders into it and listens to it.
@@ -23,12 +31,19 @@ public partial class PaneView : UserControl
     private const int PreviewDecodePixelWidth = 1024;
 
     /// <summary>
-    /// The <see cref="StateProjection.PreviewVm.Generation"/> of the image most recently decoded
-    /// into <see cref="PreviewImage"/>'s source - lets <see cref="RenderPreview"/> skip re-decoding
-    /// the same <c>BitmapImage</c> on every unrelated re-render (e.g. a job progress tick) and only
-    /// pay the decode cost when the previewed file actually changed.
+    /// Which preview the image most recently decoded into <see cref="PreviewImage"/>'s source came
+    /// from - lets <see cref="RenderPreview"/> skip re-decoding the same <c>BitmapImage</c> on every
+    /// unrelated re-render (e.g. a job progress tick) and only pay the decode cost when the previewed
+    /// file actually changed.
     /// </summary>
-    private int lastDecodedImageGeneration = -1;
+    /// <remarks>
+    /// The generation alone is not enough: it counts per pane, and this view shows a different pane
+    /// after a swap (or when the split closes), so two panes' previews can share a generation number.
+    /// </remarks>
+    private DecodedImage? lastDecodedImage;
+
+    /// <summary>The pane and <see cref="StateProjection.PreviewVm.Generation"/> an image was decoded for.</summary>
+    private readonly record struct DecodedImage(PaneId Pane, int Generation);
 
     /// <summary>The preview header's two lines, kept so a pane resize can re-fit them - see <see cref="FitPreviewHeader"/>.</summary>
     private string? previewFileName;
@@ -47,15 +62,22 @@ public partial class PaneView : UserControl
     /// <summary>The pane's column browser, for MainWindow to wire events to and focus.</summary>
     public ColumnBrowser ColumnBrowser => Browser;
 
-    /// <summary>The preview column's width, shared by both panes (MainWindow keeps them equal).</summary>
+    /// <summary>
+    /// The preview column's width, shared by both panes (MainWindow keeps them equal). Reads
+    /// <c>ActualWidth</c>, which is 0 while this row is collapsed: only ever read it from the view a
+    /// drag just happened in (see <see cref="PreviewWidthChanged"/>), never from "the other" one.
+    /// </summary>
     public double PreviewWidth
     {
         get => PreviewColumn.ActualWidth;
         set => PreviewColumn.Width = new GridLength(value);
     }
 
-    /// <summary>Raised when the preview splitter finishes a drag, so MainWindow can store and mirror the width.</summary>
-    public event EventHandler? PreviewWidthChanged;
+    /// <summary>
+    /// Raised when the preview splitter finishes a drag, carrying the new width, so MainWindow can
+    /// store it and mirror it into the other row.
+    /// </summary>
+    public event EventHandler<PreviewWidthChangedEventArgs>? PreviewWidthChanged;
 
     /// <summary>Raised when the timed-out preview's retry link is clicked.</summary>
     public event EventHandler? RetryRequested;
@@ -66,7 +88,7 @@ public partial class PaneView : UserControl
     {
         // The width is read from ActualWidth, so let the last drag delta's layout pass finish first.
         UpdateLayout();
-        PreviewWidthChanged?.Invoke(this, EventArgs.Empty);
+        PreviewWidthChanged?.Invoke(this, new PreviewWidthChangedEventArgs(PreviewWidth));
     }
 
     /// <summary>
@@ -126,10 +148,12 @@ public partial class PaneView : UserControl
     /// <see cref="PreviewKind.Text"/> - its <c>vm.Text</c> is already the label header plus hex
     /// dump, composed in the projection. The only decision made here rather than in the projection
     /// is the <c>ImageBytes</c> -&gt; <c>BitmapImage</c> decode, which is wiring (WPF-specific, not
-    /// a display-formatting choice) - cached by <see cref="lastDecodedImageGeneration"/> so it only
+    /// a display-formatting choice) - cached by <see cref="lastDecodedImage"/> so it only
     /// runs once per distinct preview, not on every unrelated re-render.
     /// </summary>
-    public void RenderPreview(StateProjection.PreviewVm vm)
+    /// <param name="pane">The pane <paramref name="vm"/> belongs to; part of the decode cache's key.</param>
+    /// <param name="vm">What to show.</param>
+    public void RenderPreview(PaneId pane, StateProjection.PreviewVm vm)
     {
         ArgumentNullException.ThrowIfNull(vm);
 
@@ -149,10 +173,11 @@ public partial class PaneView : UserControl
         switch (vm.Kind)
         {
             case PreviewKind.Image:
-                if (lastDecodedImageGeneration != vm.Generation)
+                var key = new DecodedImage(pane, vm.Generation);
+                if (lastDecodedImage != key)
                 {
                     PreviewImage.Source = DecodeImage(vm.ImageBytes);
-                    lastDecodedImageGeneration = vm.Generation;
+                    lastDecodedImage = key;
                 }
 
                 PreviewImage.Visibility = Visibility.Visible;

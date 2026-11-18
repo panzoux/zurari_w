@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
@@ -42,22 +41,28 @@ public sealed partial class MainWindow : Window, IDisposable
     private readonly Dictionary<PaneId, ProjectionCache> projectionCaches = [];
 
     /// <summary>
-    /// The job strip's actual <c>ItemsSource</c>, assigned once in the constructor and never
-    /// replaced - <see cref="RenderJobs"/> reconciles it in place (update/insert/remove/move) on
-    /// every render instead, which is what keeps a running job's row (and its "キャンセル" button
-    /// container) alive across the frequent <see cref="Msg.JobProgress"/>-driven renders. See
-    /// <see cref="JobRowVm"/>'s remarks for why that matters (Phase 5 bug B1).
+    /// The job strip's rows, bound once in the constructor and reconciled in place on every render -
+    /// see <see cref="JobStripRows"/>.
     /// </summary>
-    private readonly ObservableCollection<JobRowVm> jobRows = new();
+    private readonly JobStripRows jobStrip;
+
+    /// <summary>The panes on screen, top row first. A row is a place on screen; which pane it shows changes (swap, close).</summary>
+    private readonly PaneView[] rows;
 
     /// <summary>
-    /// What each pane's <see cref="Controls.ColumnBrowser"/> was most recently handed.
+    /// What each ROW's <see cref="Controls.ColumnBrowser"/> was most recently handed, by row.
     /// <see cref="Render"/> only reassigns <see cref="Controls.ColumnBrowser.Columns"/> when this
     /// differs from the incoming state's, so unrelated renders (job progress, preview loads, ...)
     /// do not force <see cref="Controls.ColumnBrowser"/> to rebuild/re-sync every column, which
     /// otherwise yanks back any in-progress user scrolling (Phase 5 bug B3).
     /// </summary>
-    private readonly Dictionary<PaneId, StateProjection.RenderKeyValue> lastRendered = [];
+    /// <remarks>
+    /// Keyed by row because what changes on screen is the row: a swap moves pane 1 into row 0 with
+    /// its columns untouched. The key names the pane (<see cref="StateProjection.RenderKey"/>), so
+    /// that counts as a change. A row with no pane holds <c>null</c>, so a pane that opens in it
+    /// later is always drawn.
+    /// </remarks>
+    private readonly StateProjection.RenderKeyValue?[] lastRendered = new StateProjection.RenderKeyValue?[2];
 
     /// <summary>
     /// How many items <see cref="TrashPlaceRow"/> last saw in the recycle bin. Only
@@ -69,9 +74,10 @@ public sealed partial class MainWindow : Window, IDisposable
     /// <summary>
     /// How long <see cref="RunEffect"/> holds the latest <see cref="Effect.LoadPreview"/> before
     /// submitting it (Phase 5 fix P1). Every newer <c>LoadPreview</c> replaces the held one and
-    /// restarts <see cref="previewDebounceTimer"/>, so a fast cursor never queues more than one
-    /// outstanding preview load - the fix that stops preview I/O from making cursor movement feel
-    /// sluggish. Non-preview effects are unaffected; they still flow to their executor immediately.
+    /// restarts its pane's timer (see <see cref="DebouncedGate{T}"/>), so a fast cursor never queues
+    /// more than one outstanding preview load - the fix that stops preview I/O from making cursor
+    /// movement feel sluggish. Non-preview effects are unaffected; they still flow to their executor
+    /// immediately.
     /// </summary>
     private static readonly TimeSpan PreviewDebounceInterval = TimeSpan.FromMilliseconds(150);
 
@@ -83,23 +89,37 @@ public sealed partial class MainWindow : Window, IDisposable
     private static readonly TimeSpan PlacesRefreshDelay = TimeSpan.FromMilliseconds(400);
 
     /// <summary>
-    /// One gate per pane: a gate holds only the newest effect, so a single shared one would let a
-    /// preview request for pane B replace pane A's inside the debounce window, and A would stay
-    /// "loading" forever. The timer tick drains every gate.
+    /// One gate (and timer) per pane: a gate holds only the newest effect, so a single shared one
+    /// would let a preview request for pane B replace pane A's inside the debounce window, and A
+    /// would stay "loading" forever; a shared timer would let steady cursor movement in A keep
+    /// restarting it and delay B's held request for as long as A stays busy.
     /// </summary>
-    private readonly Dictionary<PaneId, PendingEffectGate<Effect.LoadPreview>> previewGates = [];
-    private DispatcherTimer? previewDebounceTimer;
+    private readonly Dictionary<PaneId, DebouncedGate<Effect.LoadPreview>> previewGates = [];
 
     /// <summary>
     /// The same coalescing as <see cref="previewGates"/>, for the column that fills in beside the
     /// cursor, per pane (keyed by the column's pane). Held for the same reason and with the same
     /// interval: a held-down arrow key would otherwise put one directory listing on the worker pool
     /// per keystroke, and on a network share that is exactly the stall the preview slot was
-    /// separated out to avoid. Without one gate per pane, pane B's read inside the window would
-    /// replace pane A's and A's child column would stay "loading" forever.
+    /// separated out to avoid.
     /// </summary>
-    private readonly Dictionary<PaneId, PendingEffectGate<Effect.ReadDirectory>> speculativeReadGates = [];
-    private DispatcherTimer? speculativeReadTimer;
+    private readonly Dictionary<PaneId, DebouncedGate<Effect.ReadDirectory>> speculativeReadGates = [];
+
+    /// <summary>
+    /// The pane's gate in <paramref name="map"/>, created on first use. Submits straight to the
+    /// <see cref="runtime"/> once its quiet period ends.
+    /// </summary>
+    private DebouncedGate<T> GateFor<T>(Dictionary<PaneId, DebouncedGate<T>> map, PaneId pane)
+        where T : Effect
+    {
+        if (!map.TryGetValue(pane, out var gate))
+        {
+            gate = new DebouncedGate<T>(PreviewDebounceInterval, effect => runtime.Submit(effect));
+            map.Add(pane, gate);
+        }
+
+        return gate;
+    }
 
     private static T For<T>(Dictionary<PaneId, T> map, PaneId pane)
         where T : new()
@@ -130,7 +150,8 @@ public sealed partial class MainWindow : Window, IDisposable
     {
         InitializeComponent();
 
-        JobStrip.ItemsSource = jobRows;
+        jobStrip = new JobStripRows(JobStrip);
+        rows = [TopPane];
 
         runtime = new WorkerRuntime(
             post: PostToLoop, places: RootPlaces, trash: TrashPlaceRow, settings: settingsStore,
@@ -141,34 +162,21 @@ public sealed partial class MainWindow : Window, IDisposable
         directoryWatcher = new DirectoryWatcher(post: PostToLoop);
         loop = new MessageLoop(AppState.Initial, RunEffect, Render);
 
-        TopPane.ColumnBrowser.CursorMoveRequested += (_, e) => Dispatch(ToCursorMsg(e, TopRef(e.ColumnIndex)));
-        TopPane.ColumnBrowser.ColumnFocusRequested += (_, e) => Dispatch(new Msg.FocusColumn(TopRef(e.ColumnIndex)));
-        TopPane.ColumnBrowser.EntryActivated += (_, e) => Dispatch(
-            new Msg.EnterDirectory(TopRef(e.ColumnIndex), e.EntryIndex));
-        TopPane.ColumnBrowser.NavigateUpRequested += (_, e) => Dispatch(new Msg.GoToParent(TopRef(e.ColumnIndex)));
-        TopPane.ColumnBrowser.EntryPointerPressed += OnEntryPointerPressed;
-        TopPane.ColumnBrowser.EntryClicked += OnEntryClicked;
-        TopPane.ColumnBrowser.EntryDragRequested += OnEntryDragRequested;
-        TopPane.ColumnBrowser.FileDropRequested += (_, e) => Dispatch(
-            new Msg.DropFiles(
-                TopRef(e.ColumnIndex), e.TargetEntryIndex, [.. e.Paths], e.ShiftHeld, e.CtrlHeld));
-        TopPane.ColumnBrowser.MarkRangeRequested += (_, e) => Dispatch(
-            new Msg.MarkRange(TopRef(e.ColumnIndex), e.FromIndex, e.ToIndex, e.Additive));
-        TopPane.ColumnBrowser.RubberBandStarted += OnRubberBandStarted;
-        TopPane.ColumnBrowser.SectionToggleRequested += (_, e) => Dispatch(
-            new Msg.ToggleSection(TopRef(e.ColumnIndex), e.EntryIndex));
-        TopPane.ColumnBrowser.RenameSubmitted += (_, e) => Dispatch(new Msg.RenameSubmitted(e.NewName));
-        TopPane.ColumnBrowser.RenameCancelled += (_, _) => Dispatch(new Msg.RenameCancelled());
-
-        // Restore the persisted preview-pane width (clamped: the XAML Min/star sizing keeps it
-        // on-screen even if the saved value is larger than the current window).
-        if (settingsStore.Load().PreviewWidth is { } previewWidth && previewWidth >= 150)
+        for (var row = 0; row < rows.Length; row++)
         {
-            TopPane.PreviewWidth = Math.Min(previewWidth, 2000);
+            WirePane(rows[row], row);
         }
 
-        TopPane.PreviewWidthChanged += OnPreviewWidthChanged;
-        TopPane.RetryRequested += OnPreviewRetryRequested;
+        // Restore the persisted preview-pane width (clamped: the XAML Min/star sizing keeps it
+        // on-screen even if the saved value is larger than the current window). Every row gets it,
+        // including one that is collapsed right now.
+        if (settingsStore.Load().PreviewWidth is { } previewWidth && previewWidth >= 150)
+        {
+            foreach (var view in rows)
+            {
+                view.PreviewWidth = Math.Min(previewWidth, 2000);
+            }
+        }
 
         Closed += (_, _) => Dispose();
         Loaded += (_, _) => TopPane.ColumnBrowser.Focus();
@@ -197,6 +205,46 @@ public sealed partial class MainWindow : Window, IDisposable
 
         Dispatch(new Msg.Refresh());
     }
+
+    /// <summary>
+    /// Subscribes to everything <paramref name="view"/> raises, with the row it sits in. Every
+    /// handler turns that row into a pane at the moment of the event (<see cref="PaneInRow"/>), never
+    /// at wiring time: a swap moves panes between rows.
+    /// </summary>
+    private void WirePane(PaneView view, int row)
+    {
+        var browser = view.ColumnBrowser;
+        browser.CursorMoveRequested += (_, e) => Dispatch(ToCursorMsg(e, RefIn(row, e.ColumnIndex)));
+        browser.ColumnFocusRequested += (_, e) => Dispatch(new Msg.FocusColumn(RefIn(row, e.ColumnIndex)));
+        browser.EntryActivated += (_, e) => Dispatch(new Msg.EnterDirectory(RefIn(row, e.ColumnIndex), e.EntryIndex));
+        browser.NavigateUpRequested += (_, e) => Dispatch(new Msg.GoToParent(RefIn(row, e.ColumnIndex)));
+        browser.EntryPointerPressed += (_, e) => OnEntryPointerPressed(row, e);
+        browser.EntryClicked += (_, e) => OnEntryClicked(row, e);
+        browser.EntryDragRequested += (s, e) => OnEntryDragRequested(row, s, e);
+        browser.FileDropRequested += (_, e) => Dispatch(
+            new Msg.DropFiles(
+                RefIn(row, e.ColumnIndex), e.TargetEntryIndex, [.. e.Paths], e.ShiftHeld, e.CtrlHeld));
+        browser.MarkRangeRequested += (_, e) => Dispatch(
+            new Msg.MarkRange(RefIn(row, e.ColumnIndex), e.FromIndex, e.ToIndex, e.Additive));
+        browser.RubberBandStarted += (_, e) => OnRubberBandStarted(row, e);
+        browser.SectionToggleRequested += (_, e) => Dispatch(
+            new Msg.ToggleSection(RefIn(row, e.ColumnIndex), e.EntryIndex));
+        browser.RenameSubmitted += (_, e) => Dispatch(new Msg.RenameSubmitted(e.NewName));
+        browser.RenameCancelled += (_, _) => Dispatch(new Msg.RenameCancelled());
+
+        view.PreviewWidthChanged += OnPreviewWidthChanged;
+        view.RetryRequested += (_, _) => Dispatch(new Msg.RetryPreview(PaneInRow(row)));
+    }
+
+    /// <summary>
+    /// The pane shown in <paramref name="row"/> right now. By position at the moment of the event,
+    /// not captured at wiring time: a swap moves panes between rows.
+    /// </summary>
+    private PaneId PaneInRow(int row) =>
+        row < loop.State.Panes.Length ? loop.State.Panes[row].Id : loop.State.Focused.Id;
+
+    /// <summary>Column <paramref name="columnIndex"/> of the pane shown in <paramref name="row"/>. Addresses a pane by its id, never by focus.</summary>
+    private ColumnRef RefIn(int row, int columnIndex) => new(PaneInRow(row), columnIndex);
 
     /// <summary>
     /// The places the drive pane lists above the drives. Resolved here because it needs both layers:
@@ -327,8 +375,16 @@ public sealed partial class MainWindow : Window, IDisposable
     /// </summary>
     public void Dispose()
     {
-        previewDebounceTimer?.Stop();
-        speculativeReadTimer?.Stop();
+        foreach (var gate in previewGates.Values)
+        {
+            gate.Stop();
+        }
+
+        foreach (var gate in speculativeReadGates.Values)
+        {
+            gate.Stop();
+        }
+
         placesRefreshTimer?.Stop();
         shellWatcher?.Dispose();
         runtime.Dispose();
@@ -381,68 +437,19 @@ public sealed partial class MainWindow : Window, IDisposable
 
     /// <summary>
     /// Holds <paramref name="effect"/> in its pane's gate in <see cref="previewGates"/> (replacing
-    /// whatever that pane had pending) and (re)starts <see cref="previewDebounceTimer"/> at
-    /// <see cref="PreviewDebounceInterval"/>.
-    /// Only the timer tick (<see cref="OnPreviewDebounceTick"/>) ever actually submits a
-    /// <see cref="Effect.LoadPreview"/> to <see cref="runtime"/> - this method never does, which is
-    /// the coalescing behavior itself (Phase 5 fix P1). The timer is created lazily on first use and
-    /// reused afterward.
+    /// whatever that pane had pending) and restarts that gate's timer. Only the timer firing ever
+    /// actually submits a <see cref="Effect.LoadPreview"/> to <see cref="runtime"/> - this method
+    /// never does, which is the coalescing behavior itself (Phase 5 fix P1).
     /// </summary>
-    private void SchedulePreviewLoad(Effect.LoadPreview effect)
-    {
-        For(previewGates, effect.Pane).Hold(effect);
-
-        if (previewDebounceTimer is null)
-        {
-            previewDebounceTimer = new DispatcherTimer { Interval = PreviewDebounceInterval };
-            previewDebounceTimer.Tick += OnPreviewDebounceTick;
-        }
-
-        previewDebounceTimer.Stop();
-        previewDebounceTimer.Start();
-    }
+    private void SchedulePreviewLoad(Effect.LoadPreview effect) =>
+        GateFor(previewGates, effect.Pane).Hold(effect);
 
     /// <summary>
-    /// Holds the newest speculative listing and (re)starts its timer, exactly as
+    /// Holds the newest speculative listing and restarts its pane's timer, exactly as
     /// <see cref="SchedulePreviewLoad"/> does for previews.
     /// </summary>
-    private void ScheduleSpeculativeRead(Effect.ReadDirectory effect)
-    {
-        For(speculativeReadGates, effect.At.Pane).Hold(effect);
-
-        if (speculativeReadTimer is null)
-        {
-            speculativeReadTimer = new DispatcherTimer { Interval = PreviewDebounceInterval };
-            speculativeReadTimer.Tick += OnSpeculativeReadTick;
-        }
-
-        speculativeReadTimer.Stop();
-        speculativeReadTimer.Start();
-    }
-
-    private void OnSpeculativeReadTick(object? sender, EventArgs e)
-    {
-        speculativeReadTimer?.Stop();
-        foreach (var gate in speculativeReadGates.Values)
-        {
-            if (gate.Take() is { } effect)
-            {
-                runtime.Submit(effect);
-            }
-        }
-    }
-
-    private void OnPreviewDebounceTick(object? sender, EventArgs e)
-    {
-        previewDebounceTimer?.Stop();
-        foreach (var gate in previewGates.Values)
-        {
-            if (gate.Take() is { } effect)
-            {
-                runtime.Submit(effect);
-            }
-        }
-    }
+    private void ScheduleSpeculativeRead(Effect.ReadDirectory effect) =>
+        GateFor(speculativeReadGates, effect.At.Pane).Hold(effect);
 
     private void PostToLoop(Msg msg) => Dispatcher.BeginInvoke(() => Dispatch(msg));
 
@@ -477,16 +484,31 @@ public sealed partial class MainWindow : Window, IDisposable
         }
     }
 
-    /// <summary>The link under a timed-out preview: try again, waiting longer.</summary>
-    private void OnPreviewRetryRequested(object? sender, EventArgs e) => Dispatch(new Msg.RetryPreview(loop.State.Panes[0].Id));
-
     /// <summary>
-    /// A preview splitter drag finished: store the width. Update, not Save: a bare Save writes the
-    /// whole file, so saving just the width threw away every pinned place and collapsed section.
+    /// A preview splitter drag finished in <paramref name="sender"/>: mirror the width into the other
+    /// rows and store it (both panes share one preview width). The width comes from the sender, never
+    /// read back from another row: a collapsed row's <c>ActualWidth</c> is 0.
     /// </summary>
-    private void OnPreviewWidthChanged(object? sender, EventArgs e)
+    /// <remarks>
+    /// Update, not Save: a bare Save writes the whole file, so saving just the width threw away every
+    /// pinned place and collapsed section.
+    /// </remarks>
+    private void OnPreviewWidthChanged(object? sender, PreviewWidthChangedEventArgs e)
     {
-        var width = ((PaneView)sender!).PreviewWidth;
+        var width = e.Width;
+        if (width < 1)
+        {
+            return;
+        }
+
+        foreach (var view in rows)
+        {
+            if (!ReferenceEquals(view, sender))
+            {
+                view.PreviewWidth = width;
+            }
+        }
+
         settingsStore.Update(s => s with { PreviewWidth = width });
     }
 
@@ -519,7 +541,7 @@ public sealed partial class MainWindow : Window, IDisposable
     /// - if a command was invoked - dispatches <see cref="Msg.Refresh"/> since the shell may have
     /// renamed/deleted/pasted something that this pane needs to reflect.
     /// </summary>
-    private void OnEntryPointerPressed(object? sender, EntryPointerPressedEventArgs e)
+    private void OnEntryPointerPressed(int row, EntryPointerPressedEventArgs e)
     {
         if (ColumnBrowser.InputTraceEnabled)
         {
@@ -530,7 +552,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
         if (!(e.Button == MouseButton.Left && e.Modifiers == ModifierKeys.Control))
         {
-            Dispatch(new Msg.CursorTo(TopRef(e.ColumnIndex), e.EntryIndex));
+            Dispatch(new Msg.CursorTo(RefIn(row, e.ColumnIndex), e.EntryIndex));
         }
 
         if (e.Button != MouseButton.Right)
@@ -538,14 +560,8 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
-        ShowContextMenu(TopRef(e.ColumnIndex), e.EntryIndex, e.ScreenPosition);
+        ShowContextMenu(RefIn(row, e.ColumnIndex), e.EntryIndex, e.ScreenPosition);
     }
-
-    /// <summary>
-    /// The column <paramref name="columnIndex"/> of the pane the one on-screen
-    /// <see cref="Controls.ColumnBrowser"/> shows. Addresses a pane by its id, never by focus.
-    /// </summary>
-    private ColumnRef TopRef(int columnIndex) => loop.State.Panes[0].Ref(columnIndex);
 
     /// <summary>
     /// Opens the shell context menu for one row at <paramref name="screenPosition"/>, on the row's
@@ -564,12 +580,13 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
-        // A marked row stands for the shell's whole selection (ShellSelection); a row that is
+        // A marked row stands for the shell's whole selection (Column.ShellSelection); a row that is
         // not marked is just itself, whatever else is marked.
-        var paths = IsEntryMarked(at, entryIndex) ? ShellSelection(at) : [shellName];
-        if (paths.Count == 0)
+        IReadOnlyList<string> paths = [shellName];
+        if (IsEntryMarked(at, entryIndex)
+            && loop.State.ColumnAt(at)?.ShellSelection() is { IsEmpty: false } selection)
         {
-            paths = [shellName];
+            paths = selection;
         }
 
         var ownerHwnd = new WindowInteropHelper(this).Handle;
@@ -602,7 +619,7 @@ public sealed partial class MainWindow : Window, IDisposable
     /// A press that turns into a real drag never reaches here at all (no <see cref="EntryClicked"/>
     /// is raised for it), which is what lets dragging a marked set keep every mark.
     /// </summary>
-    private void OnEntryClicked(object? sender, EntryClickedEventArgs e)
+    private void OnEntryClicked(int row, EntryClickedEventArgs e)
     {
         if (ColumnBrowser.InputTraceEnabled)
         {
@@ -612,12 +629,12 @@ public sealed partial class MainWindow : Window, IDisposable
 
         if ((Keyboard.Modifiers & ModifierKeys.Control) != 0)
         {
-            Dispatch(new Msg.ToggleMark(TopRef(e.ColumnIndex), e.EntryIndex));
+            Dispatch(new Msg.ToggleMark(RefIn(row, e.ColumnIndex), e.EntryIndex));
             return;
         }
 
-        Dispatch(new Msg.ClearMarks(TopRef(e.ColumnIndex)));
-        Dispatch(new Msg.EnterDirectory(TopRef(e.ColumnIndex), e.EntryIndex, FocusChild: false));
+        Dispatch(new Msg.ClearMarks(RefIn(row, e.ColumnIndex)));
+        Dispatch(new Msg.EnterDirectory(RefIn(row, e.ColumnIndex), e.EntryIndex, FocusChild: false));
     }
 
     /// <summary>
@@ -630,11 +647,11 @@ public sealed partial class MainWindow : Window, IDisposable
     /// since the click's own <see cref="OnEntryClicked"/> dispatches an equivalent
     /// <see cref="Msg.ClearMarks"/> right before its <see cref="Msg.EnterDirectory"/> anyway.
     /// </summary>
-    private void OnRubberBandStarted(object? sender, RubberBandStartedEventArgs e)
+    private void OnRubberBandStarted(int row, RubberBandStartedEventArgs e)
     {
         if (!e.Additive)
         {
-            Dispatch(new Msg.ClearMarks(TopRef(e.ColumnIndex)));
+            Dispatch(new Msg.ClearMarks(RefIn(row, e.ColumnIndex)));
         }
     }
 
@@ -647,9 +664,9 @@ public sealed partial class MainWindow : Window, IDisposable
     /// source location may no longer contain the entry, so a <see cref="Msg.Refresh"/> is
     /// dispatched afterward.
     /// </summary>
-    private void OnEntryDragRequested(object? sender, EntryDragRequestedEventArgs e)
+    private void OnEntryDragRequested(int row, object? sender, EntryDragRequestedEventArgs e)
     {
-        var at = TopRef(e.ColumnIndex);
+        var at = RefIn(row, e.ColumnIndex);
         if (loop.State.ColumnAt(at) is not { } column || column.Location.FilesystemPath is null)
         {
             return;
@@ -668,7 +685,7 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         var data = new DataObject(DataFormats.FileDrop, paths.ToArray());
-        var result = DragDrop.DoDragDrop(sender as DependencyObject ?? TopPane.ColumnBrowser, data, DragDropEffects.Copy | DragDropEffects.Move);
+        var result = DragDrop.DoDragDrop(sender as DependencyObject ?? rows[row].ColumnBrowser, data, DragDropEffects.Copy | DragDropEffects.Move);
         if (result == DragDropEffects.Move)
         {
             Dispatch(new Msg.Refresh());
@@ -729,31 +746,6 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         return entryIndex >= 0 && entryIndex < column.Entries.Length && column.Entries[entryIndex].IsMarked;
-    }
-
-    /// <summary>
-    /// What the shell context menu acts on: every marked row of the column, wherever the column
-    /// lives. Unlike <see cref="Column.PathsToActOn"/> (file operations by path: Ctrl+C/X, drag,
-    /// <c>c</c>/<c>m</c>, which yield nothing for the bin or drive list) the shell has its own
-    /// selection, so several marked bin rows can be restored at once.
-    /// </summary>
-    private List<string> ShellSelection(ColumnRef at)
-    {
-        var result = new List<string>();
-        if (loop.State.ColumnAt(at) is not { } column)
-        {
-            return result;
-        }
-
-        foreach (var entry in column.Entries)
-        {
-            if (entry.IsMarked && column.PathOf(entry) is { } path)
-            {
-                result.Add(path);
-            }
-        }
-
-        return result;
     }
 
     /// <summary>
@@ -993,19 +985,11 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
-        try
+        // A failed placement (a transient clipboard-ownership failure) also skips the cut-pending
+        // dispatch below: dimming rows for a cut that never actually reached the clipboard would be
+        // misleading.
+        if (!FileClipboard.TrySet(paths, isMove))
         {
-            var data = new DataObject();
-            data.SetData(DataFormats.FileDrop, (string[])[.. paths]);
-            var effect = isMove ? DragDropEffects.Move : DragDropEffects.Copy;
-            data.SetData("Preferred DropEffect", new MemoryStream(BitConverter.GetBytes((int)effect)));
-            Clipboard.SetDataObject(data, copy: true);
-        }
-        catch (System.Runtime.InteropServices.ExternalException)
-        {
-            // CLIPBRD_E_CANT_OPEN or similar transient clipboard-ownership failure - nothing to do,
-            // including the cut-pending dispatch below (dimming rows for a cut that never actually
-            // reached the clipboard would be misleading).
             return;
         }
 
@@ -1013,27 +997,15 @@ public sealed partial class MainWindow : Window, IDisposable
     }
 
     /// <summary>
-    /// Ctrl+V: reads a <see cref="DataFormats.FileDrop"/> payload back off the clipboard (via
-    /// <see cref="ClipboardFileDropParser.TryParse"/>, shared with tests) and dispatches
-    /// <see cref="Msg.PasteRequested"/> for the focused column 1:1. No-op if the clipboard holds
-    /// nothing usable. Swallows the same transient clipboard-access failures as
-    /// <see cref="TryCopyToClipboard"/>.
+    /// Ctrl+V: reads the file list back off the clipboard (<see cref="FileClipboard.TryGet"/>) and
+    /// dispatches <see cref="Msg.PasteRequested"/> for the focused column 1:1. No-op if the clipboard
+    /// holds nothing usable.
     /// </summary>
     private void TryPasteFromClipboard()
     {
-        try
+        if (FileClipboard.TryGet(out var paths, out var isMove))
         {
-            var data = Clipboard.GetDataObject();
-            if (data is null || !ClipboardFileDropParser.TryParse(data, out var paths, out var isMove))
-            {
-                return;
-            }
-
-            Dispatch(new Msg.PasteRequested(loop.State.Focused.FocusedRef, [.. paths], isMove));
-        }
-        catch (System.Runtime.InteropServices.ExternalException)
-        {
-            // CLIPBRD_E_CANT_OPEN or similar transient clipboard-ownership failure - nothing to do.
+            Dispatch(new Msg.PasteRequested(loop.State.Focused.FocusedRef, paths, isMove));
         }
     }
 
@@ -1150,9 +1122,15 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void Render(AppState state)
     {
-        // Only the top pane is on screen so far; a second PaneView is a matter of rendering
-        // state.Panes[1] into it the same way.
-        var watchedChanged = RenderPane(state, state.Panes[0], TopPane);
+        // Render state.Panes[i] into row i. A row with no pane (the split is closed) is cleared in
+        // DropGonePanes, below.
+        var visibleRows = Math.Min(state.Panes.Length, rows.Length);
+        var watchedChanged = false;
+        for (var row = 0; row < visibleRows; row++)
+        {
+            watchedChanged |= RenderPane(state, row);
+        }
+
         watchedChanged |= DropGonePanes(state);
 
         // Cheap reconcile (see DirectoryWatcher.SetWatchedPaths' remarks) - only worth doing when
@@ -1161,12 +1139,17 @@ public sealed partial class MainWindow : Window, IDisposable
         // does not churn watchers.
         if (watchedChanged)
         {
-            directoryWatcher.SetWatchedPaths(WatchedPaths(state));
+            directoryWatcher.SetWatchedPaths(StateProjection.WatchedPaths(state));
         }
 
-        RenderJobs(state);
-        TopPane.RenderPreview(StateProjection.ProjectPreview(state, state.Panes[0]));
-        RenderRename(state, state.Panes[0], TopPane.ColumnBrowser);
+        jobStrip.Reconcile(StateProjection.ProjectJobs(state));
+        for (var row = 0; row < visibleRows; row++)
+        {
+            var pane = state.Panes[row];
+            rows[row].RenderPreview(pane.Id, StateProjection.ProjectPreview(state, pane));
+        }
+
+        RenderRename(state);
 
         var statusBar = StateProjection.ProjectStatusBar(state);
         PathBarText.Text = statusBar.Path;
@@ -1175,11 +1158,14 @@ public sealed partial class MainWindow : Window, IDisposable
     }
 
     /// <summary>
-    /// Pushes <paramref name="pane"/>'s columns into the browser showing it, unless nothing that
-    /// feeds the projection changed since last time. Returns whether it did.
+    /// Pushes the columns of the pane shown in <paramref name="row"/> into that row's browser, unless
+    /// nothing that feeds the projection changed since the row was last drawn. Returns whether it did.
     /// </summary>
-    private bool RenderPane(AppState state, Pane pane, PaneView view)
+    private bool RenderPane(AppState state, int row)
     {
+        var pane = state.Panes[row];
+        var view = rows[row];
+
         // Reference comparison, not value comparison: Transition returns the very same
         // ImmutableArray<Column> instance (same underlying array) whenever a Msg does not touch the
         // pane's Columns at all (JobProgress/JobFailed/JobCancelRequested/JobDismissed, and the
@@ -1188,7 +1174,7 @@ public sealed partial class MainWindow : Window, IDisposable
         // ColumnView.SyncFromColumn from running - and yanking back user scroll/hover state - on
         // renders that have nothing to do with the browsed columns (Phase 5 bug B3).
         var rendered = StateProjection.RenderKey(state, pane);
-        if (lastRendered.TryGetValue(pane.Id, out var last) && last == rendered)
+        if (lastRendered[row] == rendered)
         {
             return false;
         }
@@ -1205,24 +1191,36 @@ public sealed partial class MainWindow : Window, IDisposable
                 + $"shown=[{InputTrace.FirstNames(projected[pane.FocusedColumn].Entries, vm => vm.Name)}]");
         }
 
-        lastRendered[pane.Id] = rendered;
+        lastRendered[row] = rendered;
         return true;
     }
 
     /// <summary>
-    /// Forgets the per-pane gates, caches and last-rendered records of panes that no longer exist,
-    /// so closing the split does not pin their row arrays or leave a stale preview request to be
-    /// submitted. Returns whether any pane had been rendered and is now gone.
+    /// Forgets the per-pane gates and caches of panes that no longer exist, and the last-rendered
+    /// record of rows that no longer show a pane, so closing the split does not pin their row arrays
+    /// or leave a stale preview request to be submitted - and a pane that opens in the row later is
+    /// always drawn. Returns whether any row had been rendered and is now empty.
     /// </summary>
     private bool DropGonePanes(AppState state)
     {
-        DropUnknownKeys(state, previewGates);
-        DropUnknownKeys(state, speculativeReadGates);
-        DropUnknownKeys(state, projectionCaches);
-        return DropUnknownKeys(state, lastRendered) > 0;
+        DropUnknownKeys(state, previewGates, gate => gate.Stop());
+        DropUnknownKeys(state, speculativeReadGates, gate => gate.Stop());
+        DropUnknownKeys(state, projectionCaches, null);
+
+        var rowEmptied = false;
+        for (var row = state.Panes.Length; row < lastRendered.Length; row++)
+        {
+            if (lastRendered[row] is not null)
+            {
+                lastRendered[row] = null;
+                rowEmptied = true;
+            }
+        }
+
+        return rowEmptied;
     }
 
-    private static int DropUnknownKeys<T>(AppState state, Dictionary<PaneId, T> map)
+    private static void DropUnknownKeys<T>(AppState state, Dictionary<PaneId, T> map, Action<T>? release)
     {
         var gone = new List<PaneId>();
         foreach (var id in map.Keys)
@@ -1235,10 +1233,9 @@ public sealed partial class MainWindow : Window, IDisposable
 
         foreach (var id in gone)
         {
+            release?.Invoke(map[id]);
             map.Remove(id);
         }
-
-        return gone.Count;
     }
 
     private static bool HasPane(AppState state, PaneId id)
@@ -1255,151 +1252,48 @@ public sealed partial class MainWindow : Window, IDisposable
     }
 
     /// <summary>
-    /// The real directories of every column of every pane. Only those can be watched: a virtual
-    /// location (the drive list, and later the recycle bin or the inside of an archive) has no path
-    /// for FileSystemWatcher to point at, so it is filtered out here rather than relying on the
-    /// watcher to reject it.
-    /// </summary>
-    private static List<string> WatchedPaths(AppState state)
-    {
-        var watchedPaths = new List<string>();
-        var seenPaths = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var pane in state.Panes)
-        {
-            foreach (var column in pane.Columns)
-            {
-                if (column.Location is Location.RealDirectory directory && seenPaths.Add(directory.Path))
-                {
-                    watchedPaths.Add(directory.Path);
-                }
-            }
-        }
-
-        return watchedPaths;
-    }
-
-    /// <summary>
-    /// Reconciles <see cref="jobRows"/> (the job strip's stable <c>ItemsSource</c>) against the
-    /// freshly-projected job list: existing rows are updated in place via
-    /// <see cref="JobRowVm.UpdateFrom"/> (raising only property-level <c>PropertyChanged</c>, never
-    /// touching the collection), a job no longer tracked in <see cref="AppState.Jobs"/> (dismissed,
-    /// or auto-removed on a clean completion - see <c>Transition.JobFinished</c>) has its row
-    /// removed, and a brand-new job gets a brand-new row inserted/moved into position. This is what
-    /// keeps a running job's row container - including its "キャンセル" button - alive across the
-    /// ~10/second <see cref="Msg.JobProgress"/>-driven renders instead of the whole list being
-    /// discarded and rebuilt every tick (Phase 5 bug B1 - see <see cref="JobRowVm"/>'s remarks).
-    /// </summary>
-    private void RenderJobs(AppState state)
-    {
-        var jobs = StateProjection.ProjectJobs(state);
-
-        for (var i = jobRows.Count - 1; i >= 0; i--)
-        {
-            var jobId = jobRows[i].JobId;
-            var stillTracked = false;
-            for (var j = 0; j < jobs.Count; j++)
-            {
-                if (jobs[j].JobId == jobId)
-                {
-                    stillTracked = true;
-                    break;
-                }
-            }
-
-            if (!stillTracked)
-            {
-                jobRows.RemoveAt(i);
-            }
-        }
-
-        for (var i = 0; i < jobs.Count; i++)
-        {
-            var vm = jobs[i];
-            var existingIndex = FindJobRowIndex(vm.JobId);
-            if (existingIndex < 0)
-            {
-                jobRows.Insert(i, new JobRowVm(vm));
-                continue;
-            }
-
-            if (existingIndex != i)
-            {
-                jobRows.Move(existingIndex, i);
-            }
-
-            jobRows[i].UpdateFrom(vm);
-        }
-
-        JobStrip.Visibility = jobRows.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    private int FindJobRowIndex(int jobId)
-    {
-        for (var i = 0; i < jobRows.Count; i++)
-        {
-            if (jobRows[i].JobId == jobId)
-            {
-                return i;
-            }
-        }
-
-        return -1;
-    }
-
-    /// <summary>
-    /// Shows or hides the rename editor from whatever the state says, on every render.
+    /// Shows or hides the rename editor in every row from whatever the state says, on every render.
     /// </summary>
     /// <remarks>
-    /// A projection like everything else: the editor exists because <see cref="AppState.Rename"/>
-    /// says a row is being renamed, and goes away when it stops saying so. Nothing here decides
-    /// anything - the control raises what the user did, and Core decides what that meant.
+    /// A projection like everything else (<see cref="StateProjection.ProjectRename"/> decides): the
+    /// editor exists because <see cref="AppState.Rename"/> says a row is being renamed, and goes away
+    /// when it stops saying so. Nothing here decides anything - the control raises what the user did,
+    /// and Core decides what that meant.
     /// </remarks>
-    private void RenderRename(AppState state, Pane pane, ColumnBrowser browser)
+    private void RenderRename(AppState state)
     {
-        // The editor belongs to the pane the rename's column is in; any other pane shows none.
-        if (state.Rename is not { } rename
-            || rename.At.Pane != pane.Id
-            || state.ColumnAt(rename.At) is not { } column)
+        RenameState? stale = null;
+        var shown = false;
+        for (var row = 0; row < rows.Length; row++)
         {
-            browser.SyncRenameEditor(-1, -1, null, null);
-            if (state.Rename is null)
+            var view = row < state.Panes.Length
+                ? StateProjection.ProjectRename(state, state.Panes[row])
+                : new StateProjection.RenameView.Hidden();
+            var browser = rows[row].ColumnBrowser;
+            switch (view)
             {
-                cancelPostedFor = null;
-            }
-
-            return;
-        }
-
-        // The column index now holds a different folder than the one the rename started in (a
-        // navigation, a swap). Without this the editor would land on a same-named row of whatever
-        // occupies that index.
-        if (column.Location != rename.Location)
-        {
-            browser.SyncRenameEditor(-1, -1, null, null);
-            PostRenameCancel(rename);
-            return;
-        }
-
-        var index = -1;
-        for (var i = 0; i < column.Entries.Length; i++)
-        {
-            if (string.Equals(column.Entries[i].Name, rename.EntryName, StringComparison.Ordinal))
-            {
-                index = i;
-                break;
+                case StateProjection.RenameView.Shown editor:
+                    browser.SyncRenameEditor(editor.ColumnIndex, editor.EntryIndex, editor.Label, editor.Error);
+                    shown = true;
+                    break;
+                case StateProjection.RenameView.Stale staleView:
+                    browser.SyncRenameEditor(-1, -1, null, null);
+                    stale = staleView.Rename;
+                    break;
+                default:
+                    browser.SyncRenameEditor(-1, -1, null, null);
+                    break;
             }
         }
 
-        if (index < 0)
+        if (stale is { } staleRename)
         {
-            // The row went away underneath the editor - a refresh, a delete from elsewhere.
-            browser.SyncRenameEditor(-1, -1, null, null);
-            PostRenameCancel(rename);
-            return;
+            PostRenameCancel(staleRename);
         }
-
-        cancelPostedFor = null;
-        browser.SyncRenameEditor(rename.At.Index, index, column.Entries[index].Label, rename.Error);
+        else if (shown || state.Rename is null)
+        {
+            cancelPostedFor = null;
+        }
     }
 
     /// <summary>The stale rename a cancel was last posted for, so a render posts it at most once.</summary>
