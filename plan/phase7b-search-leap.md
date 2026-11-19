@@ -16,16 +16,16 @@
 
 # Status
 
-1047 tests, `scripts/check.ps1` green.
+1063 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`; do not edit it by hand. Write `(this commit)`
 in a row's commit cell (no backticks) and `status.ps1` fills in the hash after the commit lands.</sub>
 
 | | Item | Status | Commit |
 |---|---|---|---|
-| 7b.0 | This plan | `[x]` | (this commit) |
+| 7b.0 | This plan | `[x]` | `cb6613a` |
 | 7b.1 | Core: `NameQuery` matcher (segments, tiers, regex, migemo slots) | `[ ]` | |
-| 7b.2 | Runtime: built-in migemo (rustmigemo port + embedded dictionary + golden test) | `[ ]` | |
+| 7b.2 | Runtime: built-in migemo (rustmigemo port + embedded dictionary + golden test) | `[x]` | (this commit) |
 | 7b.3 | Core: `/` search (`Pane.Search`, Msgs, migemo round trip, deferred rereads) | `[ ]` | |
 | 7b.4 | Core: Leap (`Column` filter in `Derive`, `Pane.Leap`, auto-enter, blank preview) | `[ ]` | |
 | 7b.5 | Runtime: `ExpandMigemo` executor (cmigemo → built-in), word LRU, a-z prewarm | `[ ]` | |
