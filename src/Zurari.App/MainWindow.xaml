@@ -36,12 +36,12 @@
         <Border DockPanel.Dock="Bottom" BorderBrush="#FFB0B0B0" BorderThickness="0,1,0,0" Padding="6,2">
             <TextBlock x:Name="PathBarText" TextTrimming="CharacterEllipsis" />
         </Border>
-        <!-- Capped: an unbounded strip would squeeze the panes below their MinHeight and clip the
-             bottom row. Window MinHeight 400 = 2 x 120 panes + 6 splitter + status bar ~24 + path bar
-             ~21 + this strip 4 margin + 60 cap + ~39 title bar and frame, rounded up. -->
-        <ScrollViewer DockPanel.Dock="Bottom" Margin="8,0,8,4" MaxHeight="60"
-                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <ItemsControl x:Name="JobStrip">
+        <!-- Deliberately uncapped: a job row can hold the conflict prompt's buttons, and a waiting
+             prompt must never scroll out of sight. Window MinHeight 400 = 2 x 120 panes + 6 splitter
+             + status bar ~24 + path bar ~21 + this strip (4 margin + one job row ~55) + ~39 title bar
+             and frame, rounded up. It allows for one job row; with more jobs on a minimum-size window
+             the panes are squeezed, by choice. -->
+        <ItemsControl x:Name="JobStrip" DockPanel.Dock="Bottom" Margin="8,0,8,4">
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
                     <Border BorderBrush="#FFB0B0B0" BorderThickness="0,0,0,1" Padding="0,4">
@@ -81,7 +81,6 @@
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
         </ItemsControl>
-        </ScrollViewer>
         <!-- Two rows of panes. The second row and the splitter are collapsed (height 0) until the
              split opens; Render sizes them. -->
         <Grid x:Name="PaneRows">
