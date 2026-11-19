@@ -15,7 +15,7 @@
 
 # Status
 
-1007 tests, `scripts/check.ps1` green.
+1019 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`; do not edit it by hand. Write `(this commit)`
 in a row's commit cell (no backticks) and `status.ps1` fills in the hash after the commit lands.</sub>
@@ -36,7 +36,7 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
 | 7a.9 | Runtime: one preview slot per pane | `[x]` | `479a15e` `53cbc2b` `d4350ce` |
 | 7a.10 | App: coalescing gates and projection cache per pane; `PaneView` extracted (still one row) | `[x]` | `04307fa` `c6301eb` `efab33d` `15c75f1` `719623c` `bc437a5` |
 | 7a.11 | App: second row, splitter, focus routing, dimming, keys | `[x]` | `7cfebdc` `e9824cd` `472bf92` `dc0fc33` `d9171c8` |
-| 7a.12 | Persistence: split open/ratio, per-position view options | `[ ]` | |
+| 7a.12 | Persistence: split open/ratio, per-position view options | `[x]` | `12c77ec` `c6df2ac` `0ba6a95` |
 | 7a.13 | Headless E2E: split, copy top → bottom | `[ ]` | |
 | 7a.14 | Manual verification; roadmap/summary updated | `[ ]` | |
 
@@ -91,6 +91,10 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
 7. **Persisting view options becomes `Effect.SetPaneViews(ImmutableArray<ViewOptions> TopFirst)`**,
    emitted with every pane's view whenever any of them changes, and on swap and toggle. Settings keep
    entries beyond the current pane count, so closing the split does not forget the bottom view.
+   *As built (7a.12 spec review):* that kept entry is effectively inert. It is read only when the app
+   starts with the split open, and then it was written by the open itself; a reopen by key press copies
+   the focused pane's view (the design's rule), and a closed split is not restored at startup. Making a
+   closed bottom view survive a key-press reopen would mean `ToggleSplit` reading settings - not done.
 8. **Both panes share one preview width.** Dragging either preview splitter sets both, and the one
    stored `PreviewWidth` keeps its meaning.
 9. **The Runtime keeps each pane's preview high-water mark for the life of the process** (7a.9
@@ -2853,6 +2857,18 @@ public class SplitE2ETests
 
 The initial listing puts the cursor on the first entry, which is `hello.txt` (the only one).
 
+**From the 7a.12 review.**
+- Extract the startup restore into a pure, tested `static IReadOnlyList<Msg> StartupMsgs(UserSettings
+  settings, PaneId top)` (returns `ViewRestored(top, ...)`, `Refresh`, and `ToggleSplit(bottom)` when
+  the split was open), and have `MainWindow.RestoreFromSettings` dispatch its result. Tests: a legacy
+  file, split open with one stored view, split open with two, null view entries. Then run those Msgs
+  through `MessageLoop` against an `IsolatedSettings` store in this task's harness.
+- Make `MeasuredSplitRatio`/`ClampRatio` a static `(double top, double bottom, double min) -> double?`
+  and test a too-small window, the clamp edges and a zero bottom row.
+- Core tests: closing with the *bottom* pane focused saves `[bottomView]` as position 0; and a
+  property that `SetPaneViews` is emitted only by the sort/hidden Msgs, `ToggleSplit` and `SwapPanes`
+  (never on a cursor move).
+
 **From the 7a.11 review.** `MainWindow.PaneInRow(row)` falls back to the focused pane for a row
 that has no pane, so a late event from the collapsed bottom view (the release watchdog finishing a
 press, a `DoDragDrop` return) is silently retargeted to the focused pane. Make it return `PaneId?`
@@ -2918,7 +2934,10 @@ git commit -m "E2E: copy from the top pane lands in the bottom pane's directory"
 - [ ] **Step 1b: Two small UI items (7a.11 review)**
   - Give the window a `MinHeight` (about 360) or cap the job strip with a `MaxHeight` and a
     `ScrollViewer`, so both rows' `MinHeight` of 120 fit and the bottom row is never clipped.
-  - Backlog note (not required here): `MainWindow.xaml.cs` is ~1430 lines; the next extractions are the
+  - Move the split-layout block of `MainWindow` (ratio constants and helpers, `ApplyLayout`,
+    `DropGonePanes` and friends, ~180 lines) into a `MainWindow.Split.cs` partial, mirroring
+    `Transition.Split.cs` (7a.12 review; `MainWindow.xaml.cs` is ~1540 lines).
+  - Backlog note (not required here): `MainWindow.xaml.cs` was ~1430 lines before 7a.12; the next extractions are the
     shell context menu, drag and drop, and turning the `OnWindowKeyDown` if/else chain into a KeyMap
     table so it is unit-testable like `ResolveNormal`.
 
@@ -3158,3 +3177,26 @@ anticipate. Stop and ask rather than deciding unilaterally when something contra
 - One full-suite run during the follow-up commit reported a single Runtime test failure (170/171)
   that was not identified; six isolated Runtime runs afterwards were all green. Most likely the known
   JobEngine cancel race (6f-2), which only shows under full-suite load - unconfirmed.
+
+## 7a.12 (2026-11-19)
+
+- Persistence in two commits: `Effect.SetPaneViews` replaces `SetViewOptions` and is emitted on any
+  view change, swap and toggle; `UserSettings` gains `SplitOpen`, `SplitRatio` and `PaneViews` with a
+  lossless migration from the old single view (`12c77ec`). The App restores at startup -
+  `ViewRestored(top)`, `Refresh`, then `ToggleSplit(bottom)` if the split was open - and the Runtime
+  no longer posts `ViewRestored` from whichever drive read finished first, which could hand the top
+  pane's stored view to the bottom; collapsed sections now restore into every drive list; the split
+  ratio is measured from the rows and clamped so both minimum heights fit (`c6df2ac`).
+- The implementer smoke-launched once against the user's real `settings.json`; the controller backed
+  it up beforehand and verified it byte-identical afterwards (sha256 `47b28de1...`).
+- Spec review: compliant, and showed decision 7's "closing does not forget the bottom view" is inert in
+  practice - the plan's wording now says what the code does.
+- Quality review fixes in the follow-up: a `null` entry in the stored views crashed startup on every
+  launch; two quick view changes could be saved out of order because two workers raced to the settings
+  lock (settings effects now go through one ordered writer); `SplitOpen` was written from inside
+  `Render` and twice per startup (now part of the `SetPaneViews` write); a cleared preview kept its text.
+- Deferred (plan updated): a pure, tested `StartupMsgs`, a testable ratio function and two Core tests
+  (7a.13); moving the split-layout code into a `MainWindow.Split.cs` partial (7a.14).
+- The follow-up's implementer did not deliver a report; the controller reviewed the serial writer
+  (settings effects diverted at Submit to a single-reader FIFO channel, drained on Dispose) and ran the
+  Runtime tests three times: 177/177 each.
