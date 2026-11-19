@@ -144,10 +144,9 @@ public partial class PaneView : UserControl
     /// </summary>
     public void ClearPreview()
     {
-        RenderPreview(
-            new PaneId(-1),
-            new StateProjection.PreviewVm(0, null, null, null, PreviewKind.None, null, [], null, string.Empty));
+        RenderPreview(new PaneId(-1), StateProjection.PreviewVm.Empty);
         PreviewImage.Source = null;
+        PreviewTextBox.Text = string.Empty;
         lastDecodedImage = null;
     }
 

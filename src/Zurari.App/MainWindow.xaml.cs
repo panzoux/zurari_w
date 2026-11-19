@@ -1337,7 +1337,6 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         splitShown = split;
-        settingsStore.Update(s => s with { SplitOpen = split });
         if (split)
         {
             TopRow.Height = new GridLength(splitRatio, GridUnitType.Star);

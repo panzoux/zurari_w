@@ -350,4 +350,26 @@ public class UserSettingsStoreTests
             TempDirectory.Delete(dir);
         }
     }
+
+    [Fact]
+    public void A_null_pane_view_entry_reads_as_the_default_view()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "settings.json"), """{ "PaneViews": [null, {}] }""");
+
+            var views = new UserSettingsStore(dir).Load().EffectivePaneViews();
+
+            Assert.Equal(2, views.Count);
+            foreach (var view in views)
+            {
+                Assert.Equal(Zurari.Core.ViewOptions.Default, WorkerRuntime.ReadViewOptions(view));
+            }
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
 }

@@ -9,15 +9,20 @@ namespace Zurari.Runtime;
 /// Sections of the drive pane the user had collapsed. Names, not indices, so adding a section does
 /// not silently collapse a different one.
 /// </param>
-/// <param name="SortMode">Name of the <c>Zurari.Core.SortMode</c> last chosen.</param>
-/// <param name="SortDescending">Whether that mode was reversed.</param>
-/// <param name="DirectoriesFirst">Whether folders were kept above files.</param>
-/// <param name="ShowHidden">Whether hidden and system entries were being shown.</param>
+/// <param name="SortMode">
+/// Name of the <c>Zurari.Core.SortMode</c> last chosen. Legacy single-view parameter (with the
+/// next three): kept so an older build can still read the file, and no longer written. A file that
+/// has no <paramref name="PaneViews"/> is read through them as the top pane's view.
+/// </param>
+/// <param name="SortDescending">Whether that mode was reversed. Legacy, see <paramref name="SortMode"/>.</param>
+/// <param name="DirectoriesFirst">Whether folders were kept above files. Legacy, see <paramref name="SortMode"/>.</param>
+/// <param name="ShowHidden">Whether hidden and system entries were being shown. Legacy, see <paramref name="SortMode"/>.</param>
 /// <param name="SplitOpen">Whether the window was showing two panes.</param>
 /// <param name="SplitRatio">The top pane's share of the height when it was split, 0..1.</param>
 /// <param name="PaneViews">
-/// Each pane position's view options, top first. Entries beyond the open panes are kept, so closing
-/// the split does not forget the bottom pane's setup.
+/// Each pane position's view options, top first. Entries beyond the open panes are kept, but the
+/// bottom entry is only read when the app starts with the split open, and by then opening it has
+/// rewritten it; a key-press reopen copies the focused pane's view instead.
 /// </param>
 public sealed record UserSettings(
     double? PreviewWidth = null,
@@ -33,16 +38,29 @@ public sealed record UserSettings(
 {
     /// <summary>
     /// The stored per-position views. A file from before the split has none; its single set of
-    /// fields is what the one pane used, so it reads as the top pane's.
+    /// fields is what the one pane used, so it reads as the top pane's. A <c>null</c> entry (valid
+    /// JSON, from a damaged file) reads as an all-default view rather than crashing the caller.
     /// </summary>
-    public IReadOnlyList<PaneViewSettings> EffectivePaneViews() =>
-        PaneViews is { Count: > 0 } views
-            ? views
-            : [new PaneViewSettings(SortMode, SortDescending, DirectoriesFirst, ShowHidden)];
+    public IReadOnlyList<PaneViewSettings> EffectivePaneViews()
+    {
+        if (PaneViews is not { Count: > 0 } views)
+        {
+            return [new PaneViewSettings(SortMode, SortDescending, DirectoriesFirst, ShowHidden)];
+        }
+
+        var cleaned = new List<PaneViewSettings>(views.Count);
+        foreach (var view in views)
+        {
+            cleaned.Add(view ?? new PaneViewSettings(null, null, null, null));
+        }
+
+        return cleaned;
+    }
 
     /// <summary>
-    /// Stores <paramref name="topFirst"/>, keeping any stored positions beyond it: closing the split
-    /// saves one view, and that must not forget how the bottom pane was set up.
+    /// Stores <paramref name="topFirst"/>, keeping any stored positions beyond it. In practice the
+    /// bottom entry is read only when the app starts with the split open, and by then opening the
+    /// split has rewritten it; a key-press reopen copies the focused pane's view.
     /// </summary>
     public UserSettings WithPaneViews(IReadOnlyList<PaneViewSettings> topFirst)
     {

@@ -195,4 +195,65 @@ public class CollapsedSectionsTests
         Assert.Equal(SortOrder.Default.Mode, view.Sort.Mode);
         Assert.Equal(ViewOptions.Default, view with { Sort = view.Sort with { Mode = SortOrder.Default.Mode } });
     }
+
+    /// <summary>
+    /// Two workers could run two settings effects in either order and save the older snapshot last.
+    /// They go through one serial writer, so the last one submitted is the last one stored.
+    /// </summary>
+    [Fact]
+    public void Settings_effects_are_stored_in_submission_order()
+    {
+        for (var round = 0; round < 5; round++)
+        {
+            var dir = CreateTempDir();
+            try
+            {
+                var store = new UserSettingsStore(Path.Combine(dir, "cfg"));
+                var runtime = new WorkerRuntime(new ConcurrentQueue<Msg>().Enqueue, settings: store);
+                for (var i = 0; i < 50; i++)
+                {
+                    var mode = i % 2 == 0 ? SortMode.Size : SortMode.Name;
+                    runtime.Submit(new Effect.SetPaneViews(
+                        [new ViewOptions(new SortOrder(mode, Descending: i % 3 == 0, DirectoriesFirst: i % 5 == 0), ShowHidden: i % 7 == 0)]));
+                }
+
+                // Dispose drains the writer, so what is stored is what was written last.
+                runtime.Dispose();
+
+                var last = Assert.Single(store.Load().EffectivePaneViews());
+                Assert.Equal("Name", last.SortMode);
+                Assert.Equal(49 % 3 == 0, last.SortDescending);
+                Assert.Equal(49 % 5 == 0, last.DirectoriesFirst);
+                Assert.Equal(49 % 7 == 0, last.ShowHidden);
+            }
+            finally
+            {
+                TempDirectory.Delete(dir);
+            }
+        }
+    }
+
+    [Fact]
+    public void Saving_pane_views_records_whether_the_split_is_open()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var store = new UserSettingsStore(Path.Combine(dir, "cfg"));
+            var runtime = new WorkerRuntime(new ConcurrentQueue<Msg>().Enqueue, settings: store);
+
+            runtime.Submit(new Effect.SetPaneViews([ViewOptions.Default, ViewOptions.Default]));
+            runtime.Dispose();
+            Assert.True(store.Load().SplitOpen);
+
+            runtime = new WorkerRuntime(new ConcurrentQueue<Msg>().Enqueue, settings: store);
+            runtime.Submit(new Effect.SetPaneViews([ViewOptions.Default]));
+            runtime.Dispose();
+            Assert.False(store.Load().SplitOpen);
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
 }

@@ -382,6 +382,10 @@ public static class StateProjection
 
         /// <summary>Said instead of the link once the last try has timed out too. <c>null</c> otherwise.</summary>
         public string? GaveUp { get; init; }
+
+        /// <summary>Nothing to show: no file, no error, no metadata.</summary>
+        public static PreviewVm Empty { get; } =
+            new(0, null, null, null, PreviewKind.None, null, [], null, string.Empty);
     }
 
     /// <summary>

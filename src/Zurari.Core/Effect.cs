@@ -164,8 +164,9 @@ public abstract record Effect
 
     /// <summary>
     /// Remembers every pane's view options, top first, so each position comes back the way it was
-    /// left. Sent whole, like <see cref="SetCollapsedGroups"/>, so a lost or reordered effect cannot
-    /// leave storage disagreeing with the screen.
+    /// left. Sent whole, like <see cref="SetCollapsedGroups"/>, so the last one written is the whole
+    /// truth; that relies on the Runtime writing settings effects in submission order (one serial
+    /// writer). Also records whether the split is open: more than one view means it is.
     /// </summary>
     public sealed record SetPaneViews(ImmutableArray<ViewOptions> TopFirst) : Effect;
 
@@ -174,8 +175,8 @@ public abstract record Effect
     /// </summary>
     /// <remarks>
     /// Carries the whole set rather than the one section that just changed: the set is what gets
-    /// written, and sending it whole means a lost or reordered effect cannot leave the stored value
-    /// disagreeing with what is on screen. Reports nothing back - the collapse has already been
+    /// written, and sending it whole means the last one written is the whole truth - provided the
+    /// Runtime writes settings effects in submission order, which its serial writer does. Reports nothing back - the collapse has already been
     /// applied to the state that emitted this, so there is nothing to wait for.
     /// </remarks>
     public sealed record SetCollapsedGroups(ImmutableArray<string> Groups) : Effect;

@@ -100,6 +100,16 @@ public sealed class WorkerRuntime : IDisposable
     private static readonly string[] VideoExtensions = [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".webm"];
 
     private readonly Channel<Effect> _channel;
+
+    /// <summary>
+    /// Settings-writing effects, in the order <see cref="Submit"/> received them, drained by one
+    /// task. Two workers could otherwise run two of them in either order and save the older
+    /// snapshot last; <see cref="UserSettingsStore"/>'s lock serialises the write, not the order.
+    /// </summary>
+    private readonly Channel<Effect> _settingsChannel = Channel.CreateUnbounded<Effect>(
+        new UnboundedChannelOptions { SingleReader = true });
+
+    private readonly Task _settingsWriter;
     private readonly Action<Msg> _post;
     private readonly CancellationTokenSource _cts;
     private readonly Task[] _workers;
@@ -346,6 +356,8 @@ public sealed class WorkerRuntime : IDisposable
             : new Lazy<ShellThumbnailThread>(
                 () => new ShellThumbnailThread(shellThumbnail), LazyThreadSafetyMode.ExecutionAndPublication);
 
+        _settingsWriter = Task.Run(RunSettingsWriterAsync);
+
         _workers = new Task[workerCount];
         for (var i = 0; i < workerCount; i++)
         {
@@ -357,7 +369,27 @@ public sealed class WorkerRuntime : IDisposable
     public void Submit(Effect effect)
     {
         ArgumentNullException.ThrowIfNull(effect);
-        _channel.Writer.TryWrite(effect);
+
+        // Routed here, at the point of submission, so nothing between a caller's two Submit calls
+        // can reorder them: the writer channel is FIFO with a single reader.
+        var target = effect is Effect.SetPaneViews or Effect.SetCollapsedGroups or Effect.SetPinned
+            ? _settingsChannel
+            : _channel;
+        target.Writer.TryWrite(effect);
+    }
+
+    private async Task RunSettingsWriterAsync()
+    {
+        // No cancellation token: Dispose completes the channel and waits for this to drain, so a
+        // preference the user just changed is not lost to closing the window.
+        var reader = _settingsChannel.Reader;
+        while (await reader.WaitToReadAsync().ConfigureAwait(false))
+        {
+            while (reader.TryRead(out var effect))
+            {
+                Execute(effect);
+            }
+        }
     }
 
     private async Task RunWorkerAsync(CancellationToken token)
@@ -415,7 +447,7 @@ public sealed class WorkerRuntime : IDisposable
                         view.Sort.Mode.ToString(), view.Sort.Descending, view.Sort.DirectoriesFirst, view.ShowHidden));
                 }
 
-                _settings.Update(s => s.WithPaneViews(mapped));
+                _settings.Update(s => s.WithPaneViews(mapped) with { SplitOpen = mapped.Count > 1 });
                 break;
             case Effect.SetCollapsedGroups setCollapsedGroups:
                 _settings.Update(s => s with { CollapsedGroups = [.. setCollapsedGroups.Groups] });
@@ -1665,6 +1697,7 @@ public sealed class WorkerRuntime : IDisposable
     public void Dispose()
     {
         _channel.Writer.TryComplete();
+        _settingsChannel.Writer.TryComplete();
         _cts.Cancel();
 
         Task[] previewTasks;
@@ -1682,6 +1715,7 @@ public sealed class WorkerRuntime : IDisposable
         try
         {
             Task.WaitAll(_workers, TimeSpan.FromSeconds(5));
+            _settingsWriter.Wait(TimeSpan.FromSeconds(5));
 
             // The in-flight preview runs off the pool, so waiting on the workers does not cover it.
             // It is given its own budget to unwind: cancellation kills any ffmpeg it started, but
