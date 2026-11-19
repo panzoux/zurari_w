@@ -197,6 +197,10 @@ public sealed record AppState
 ### migemo(7b、Runtime)
 
 Core は `Effect.ExpandMigemo(PaneId, query)` を出し、Runtime が `Msg.MigemoExpanded(PaneId, query, pattern?)` を返す。
+**実装(7b)**: 単語単位・`PaneId` なしの `Effect.ExpandMigemo(Word)` → `Msg.MigemoExpanded(Word, Regex?)`。パターンは
+Runtime がコンパイル済みの `Regex` で返す(1文字の展開は数十KBあり、UI スレッドでコンパイルしない)。migemo 段も AND、
+Leap は並び順を保ちカーソルだけを最良の一致へ、入力欄はローカルフィルタのみ(経路はラベル)。
+理由と他の確定事項は [phase7b 計画](../../../plan/phase7b-search-leap.md) の「Decisions made while planning」と Records。
 Core は literal の一致を即座に適用し、パターンが届いたら migemo の一致を足す。現在のクエリと違う応答は捨てる。
 **Core に時計もデバウンスも要らない**(App が打鍵をまとめてよい)。展開は UI スレッドで走らせない。
 

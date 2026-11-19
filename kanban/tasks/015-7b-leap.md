@@ -1,10 +1,12 @@
 ---
 id: 15
 title: 7b 検索/Leap の計画作成
-status: backlog
+status: done
 priority: medium
 created: 2026-09-19T20:04:41.5782894+09:00
-updated: 2026-09-19T20:04:41.5782894+09:00
+updated: 2026-11-19T23:06:09.8564882+09:00
+started: 2026-11-19T23:06:09.8596168+09:00
+completed: 2026-11-19T23:06:09.8596168+09:00
 tags:
     - phase7b
 class: standard
