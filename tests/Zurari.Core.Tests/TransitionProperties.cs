@@ -220,6 +220,28 @@ public class TransitionProperties
     }
 
     [Fact]
+    public void Only_view_changing_msgs_emit_SetPaneViews()
+    {
+        Gen.Select(Gen.Bool, GenMsg.List[0, 50]).Sample(t =>
+        {
+            var state = Start(t.Item1);
+            foreach (var msg in t.Item2)
+            {
+                var (next, effects) = Transition.Apply(state, msg);
+                var mayPersistViews = msg is Msg.SetSortMode or Msg.SetSortDescending
+                    or Msg.ToggleDirectoriesFirst or Msg.ToggleHiddenFiles
+                    or Msg.ToggleSplit or Msg.SwapPanes;
+                if (!mayPersistViews)
+                {
+                    Assert.Empty(TestEffects.Of<Effect.SetPaneViews>(effects));
+                }
+
+                state = next;
+            }
+        });
+    }
+
+    [Fact]
     public void Apply_is_deterministic()
     {
         // A prefix first, so jobs, cursor memory, collapsed sections and two panes are present for

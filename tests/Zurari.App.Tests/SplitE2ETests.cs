@@ -101,6 +101,65 @@ public class SplitE2ETests
     }
 
     [Fact]
+    public void Startup_restores_the_split_and_each_panes_stored_view_from_a_settings_file()
+    {
+        var dir = TempDirectory.Create("zurari-split-startup");
+        var settingsDir = IsolatedSettings.NewDirectory();
+        var store = new UserSettingsStore(settingsDir);
+        var queue = new ConcurrentQueue<Msg>();
+        var runtime = new WorkerRuntime(queue.Enqueue, settings: store);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "a.txt"), "a");
+            store.Update(s => s with
+            {
+                SplitOpen = true,
+                SplitRatio = 0.4,
+                PaneViews =
+                [
+                    new PaneViewSettings("Size", true, false, true),
+                    new PaneViewSettings("Extension", false, true, false),
+                ],
+            });
+
+            void RunEffect(Effect effect)
+            {
+                if (effect is Effect.ReadDirectory)
+                {
+                    runtime.Submit(effect);
+                }
+            }
+
+            var loop = new MessageLoop(
+                AppState.SinglePane([new Column(new Location.RealDirectory(dir), Entries: [])]),
+                RunEffect);
+
+            foreach (var msg in SplitLayout.StartupMsgs(store.Load(), loop.State.Focused.Id))
+            {
+                loop.Dispatch(msg);
+            }
+
+            DrainUntil(
+                loop,
+                queue,
+                () => loop.State.Panes.Length == 2
+                    && loop.State.Panes[0].Columns[0].Load == LoadState.Loaded
+                    && loop.State.Panes[1].Columns[0].Load == LoadState.Loaded,
+                TimeSpan.FromSeconds(10));
+
+            Assert.Equal(new ViewOptions(new SortOrder(SortMode.Size, true, false), true), loop.State.Panes[0].View);
+            Assert.Equal(new ViewOptions(new SortOrder(SortMode.Extension, false, true), false), loop.State.Panes[1].View);
+            Assert.Equal(0, loop.State.FocusedPane);
+        }
+        finally
+        {
+            runtime.Dispose();
+            TempDirectory.Delete(dir);
+            TempDirectory.Delete(settingsDir);
+        }
+    }
+
+    [Fact]
     public void Copying_to_the_other_pane_lands_in_the_directory_it_shows()
     {
         RunTransfer(

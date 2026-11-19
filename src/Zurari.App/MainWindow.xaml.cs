@@ -228,17 +228,11 @@ public sealed partial class MainWindow : Window, IDisposable
     private void RestoreFromSettings()
     {
         var settings = settingsStore.Load();
-        var views = settings.EffectivePaneViews();
-        splitRatio = ClampRatio(settings.SplitRatio ?? DefaultSplitRatio);
+        splitRatio = SplitLayout.ClampRatio(settings.SplitRatio ?? DefaultSplitRatio);
 
-        Dispatch(new Msg.ViewRestored(loop.State.Focused.Id, WorkerRuntime.ReadViewOptions(views[0])));
-
-        // Refresh first: it reads the top pane's column. Opening the split afterwards then reads
-        // only the new pane's own column, so nothing is read twice.
-        Dispatch(new Msg.Refresh());
-        if (settings.SplitOpen == true)
+        foreach (var msg in SplitLayout.StartupMsgs(settings, loop.State.Focused.Id))
         {
-            Dispatch(new Msg.ToggleSplit(views.Count > 1 ? WorkerRuntime.ReadViewOptions(views[1]) : null));
+            Dispatch(msg);
         }
     }
 
@@ -1280,7 +1274,7 @@ public sealed partial class MainWindow : Window, IDisposable
     private bool splitShown;
 
     /// <summary>Where the splitter starts when nothing has been stored: the top pane's share of the height.</summary>
-    private const double DefaultSplitRatio = 0.5;
+    private const double DefaultSplitRatio = SplitLayout.DefaultRatio;
 
     /// <summary>The smallest a pane may be dragged to, so both always have room for their columns.</summary>
     private const double PaneMinHeight = 120;
@@ -1291,27 +1285,14 @@ public sealed partial class MainWindow : Window, IDisposable
     /// </summary>
     private double splitRatio = DefaultSplitRatio;
 
-    private static double ClampRatio(double ratio) =>
-        double.IsFinite(ratio) ? Math.Clamp(ratio, 0.15, 0.85) : DefaultSplitRatio;
-
     /// <summary>
     /// The top pane's share as the rows are laid out now, or <c>null</c> when there is no usable
-    /// layout (the split is closed, or the window has not been measured). Computed from
-    /// <c>ActualHeight</c>: after a drag <c>GridSplitter</c> leaves pixel-sized star values
-    /// (<c>312*</c> and <c>188*</c>), not normalised ones. Clamped so both rows' minimum heights fit.
+    /// layout (see <see cref="SplitLayout.MeasuredRatio"/>). Computed from <c>ActualHeight</c>:
+    /// after a drag <c>GridSplitter</c> leaves pixel-sized star values (<c>312*</c> and
+    /// <c>188*</c>), not normalised ones.
     /// </summary>
-    private double? MeasuredSplitRatio()
-    {
-        var total = TopRow.ActualHeight + BottomRow.ActualHeight;
-        if (BottomRow.ActualHeight <= 0 || total <= 2 * PaneMinHeight)
-        {
-            return null;
-        }
-
-        var floor = Math.Max(0.15, PaneMinHeight / total);
-        var ceiling = Math.Min(0.85, 1 - (PaneMinHeight / total));
-        return Math.Clamp(TopRow.ActualHeight / total, floor, ceiling);
-    }
+    private double? MeasuredSplitRatio() =>
+        SplitLayout.MeasuredRatio(TopRow.ActualHeight, BottomRow.ActualHeight, PaneMinHeight);
 
     private void SaveSplitRatio()
     {

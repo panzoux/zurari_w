@@ -70,6 +70,23 @@ public class SplitTests
     }
 
     [Fact]
+    public void Closing_with_the_bottom_pane_focused_saves_its_view_as_position_zero()
+    {
+        var split = Split();
+        var (focusedBottom, _) = Transition.Apply(split, new Msg.FocusPane(split.Panes[1].Id));
+        var (hidden, _) = Transition.Apply(focusedBottom, new Msg.ToggleHiddenFiles());
+        Assert.True(hidden.Focused.View.ShowHidden);
+        Assert.False(hidden.Panes[0].View.ShowHidden);
+
+        var (closed, effects) = Transition.Apply(hidden, new Msg.ToggleSplit());
+
+        Assert.Single(closed.Panes);
+        var saved = Assert.Single(TestEffects.Of<Effect.SetPaneViews>(effects));
+        var only = Assert.Single(saved.TopFirst);
+        Assert.True(only.ShowHidden);
+    }
+
+    [Fact]
     public void Opening_adds_a_bottom_pane_at_the_focused_location_and_keeps_focus()
     {
         var state = Browsing();
