@@ -15,7 +15,7 @@
 
 # Status
 
-967 tests, `scripts/check.ps1` green.
+1007 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`; do not edit it by hand. Write `(this commit)`
 in a row's commit cell (no backticks) and `status.ps1` fills in the hash after the commit lands.</sub>
@@ -35,7 +35,7 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
 | 7a.8b | Two-pane correctness follow-ups (from the 7a.2-7a.7 reviews): scoped reveal, `ShellOpCompleted` rereads, sections in every drive pane, rename pinned to its folder | `[x]` | `f15b1dc` `2a42b22` `3a8d0a1` `f0b6278` `e8bc06c` |
 | 7a.9 | Runtime: one preview slot per pane | `[x]` | `479a15e` `53cbc2b` `d4350ce` |
 | 7a.10 | App: coalescing gates and projection cache per pane; `PaneView` extracted (still one row) | `[x]` | `04307fa` `c6301eb` `efab33d` `15c75f1` `719623c` `bc437a5` |
-| 7a.11 | App: second row, splitter, focus routing, dimming, keys | `[ ]` | |
+| 7a.11 | App: second row, splitter, focus routing, dimming, keys | `[x]` | `7cfebdc` `e9824cd` `472bf92` `dc0fc33` `d9171c8` |
 | 7a.12 | Persistence: split open/ratio, per-position view options | `[ ]` | |
 | 7a.13 | Headless E2E: split, copy top → bottom | `[ ]` | |
 | 7a.14 | Manual verification; roadmap/summary updated | `[ ]` | |
@@ -2669,6 +2669,16 @@ and these members on the record:
     }
 ```
 
+**From the 7a.11 review.**
+- The split ratio: after a drag, `GridSplitter` leaves pixel-sized star values (e.g. `312*`/`188*`),
+  not normalised ones. Compute the ratio as `TopRow.ActualHeight / (TopRow.ActualHeight +
+  BottomRow.ActualHeight)`, read it *before* `ApplyLayout`'s collapse branch zeroes the rows, and
+  clamp it so both rows' `MinHeight` fit. Restore it when the split opens.
+- When a row empties in `DropGonePanes`, clear `rows[row].ColumnBrowser.Columns` and reset its
+  preview, so a closed pane's columns and decoded image are not held until the split reopens.
+- If the split is restored with the bottom pane focused, keep `lastFocusedRow` in sync with the
+  startup `FocusRow` (assign it in `Loaded`, or let `Render` own it).
+
 **Preview width in state? (7a.10 review, optional).** Decision 8 shares one preview width; it is
 saved from the UI thread on `DragCompleted` (with a lock since the 7a.10 follow-up). Putting the
 width in `AppState` would make mirroring a projection and saving an effect like `SetPaneViews`,
@@ -2843,6 +2853,11 @@ public class SplitE2ETests
 
 The initial listing puts the cursor on the first entry, which is `hello.txt` (the only one).
 
+**From the 7a.11 review.** `MainWindow.PaneInRow(row)` falls back to the focused pane for a row
+that has no pane, so a late event from the collapsed bottom view (the release watchdog finishing a
+press, a `DoDragDrop` return) is silently retargeted to the focused pane. Make it return `PaneId?`
+and have `RefIn` and the handlers drop the event when it is null.
+
 - [ ] **Step 2: Run, check, commit**
 
 Run: `dotnet test tests/Zurari.App.Tests --filter FullyQualifiedName~SplitE2ETests` → PASS.
@@ -2867,6 +2882,21 @@ git commit -m "E2E: copy from the top pane lands in the bottom pane's directory"
   7. Drag the pane splitter; restart: split, ratio and both panes' sort/hidden settings are restored; both start at the drive list.
   8. Drag a file from one pane to the other (existing shell DnD) copies/moves it.
   9. Single-pane use is unchanged from before 7a.
+  11. Two panes, checks collected from 7a.11 (the agents verified only Ctrl+W, Tab and close-from-bottom
+      by screenshot):
+      - Ctrl+W opens a bottom row at about 50/50; dragging the row splitter resizes smoothly and the
+        arrow keys still work afterwards.
+      - Browse different folders in each row, then Shift+O: both rows redraw with each other's columns
+        and previews; no row keeps showing its old pane. Swap with an image previewed.
+      - Focus the bottom row, Ctrl+W: the top row shows what the bottom had; the next Ctrl+W redraws the
+        bottom row.
+      - Tab, Shift+Tab, a click anywhere in the other row (including its preview and empty space) and
+        the menu key all move both the highlight and the keyboard together; arrows then act in that row.
+      - `o`, `c`, `m` (a job appears in the strip); in sort mode `S` then `c` only closes the mode.
+      - The preview splitter in either row sets the other row's width; the width persists.
+      - F2 shows the editor only in its own pane; swapping or clicking the other pane cancels it.
+      - On a narrow window (~800 px) the status bar's counts on the right stay visible (the hints trim).
+      - A small window: below ~360 px tall the bottom row should not be clipped away (see below).
   10. Single pane, checks collected from 7a.10 (PaneView extraction; only smoke-launched by the agents):
       - Previews: a text file, an image, a drive's capacity, the recycle bin (figures, no bar).
       - A deleted file in the bin: its header lines are shortened from the middle and re-fit when the
@@ -2885,6 +2915,13 @@ git commit -m "E2E: copy from the top pane lands in the bottom pane's directory"
       - Left, Backspace and Right still move the strong-cursor highlight between columns.
       - Drag the preview splitter while a folder is loading or a sort is changing: after a restart the
         width and the sort are both kept.
+- [ ] **Step 1b: Two small UI items (7a.11 review)**
+  - Give the window a `MinHeight` (about 360) or cap the job strip with a `MaxHeight` and a
+    `ScrollViewer`, so both rows' `MinHeight` of 120 fit and the bottom row is never clipped.
+  - Backlog note (not required here): `MainWindow.xaml.cs` is ~1430 lines; the next extractions are the
+    shell context menu, drag and drop, and turning the `OnWindowKeyDown` if/else chain into a KeyMap
+    table so it is unit-testable like `ResolveNormal`.
+
 - [ ] **Step 2: Docs**
   - Design doc: in "7a 後段", change the `SyncToOtherPane` row to "copies the other pane's column
     chain (re-derived under this pane's view); `JumpTo` moves to 7c", and the Msg field name to `At`.
@@ -3098,3 +3135,26 @@ anticipate. Stop and ask rather than deciding unilaterally when something contra
   the rename editor from code raised `Cancelled` and undid the posted cancel; settings writes from the
   UI and worker threads were unsynchronised.
 - Only smoke-launched (the window opens). The visual checks are listed for the user under 7a.14.
+
+## 7a.11 (2026-11-19)
+
+- The second pane is on screen. Four commits: rows separated from panes - render guard per row with
+  the pane id in the key, decode cache keyed by pane, per-pane debounce timers, `WirePane`, and the
+  rename / watcher / shell-selection rules as tested pure functions (`7cfebdc`); the split keys in
+  `KeyMap` (`e9824cd`); the second row, focus routing and Tab (`472bf92`); status-bar hints
+  (`dc0fc33`). Spec compliant, no key conflicts (plain `m` stays a sort key inside sort mode).
+- The implementer drove the real window: Ctrl+W showed two rows with the focused one highlighted and
+  the other dimmed, Tab flipped them, and Ctrl+W from the bottom closed back to one row (screenshots
+  in the session scratchpad). The user's `settings.json` was not touched (last modified Oct 30).
+- Quality review found no critical defect and walked swap and close-from-bottom through every per-row
+  cache. Fixed in the follow-up: keyboard focus could land in the unfocused row (Shift+Tab, a click on
+  the preview) without moving the highlight; the longer hints could push the status-bar counts
+  off-screen; and - a decision that refines 6e.8's "close and carry on" - in sort mode, keys that
+  start a job or delete (`c`, Delete, Shift+Delete, Ctrl+V) now only close the mode, so a guessed sort
+  letter can never start a file operation. Navigation keys still close and carry on.
+- Deferred (plan updated): the split ratio and the startup focus row (7a.12), releasing a closed row's
+  columns and image (7a.12), dropping events from a row with no pane (7a.13), a window minimum height
+  (7a.14). The two-pane visual checks are listed under 7a.14.
+- One full-suite run during the follow-up commit reported a single Runtime test failure (170/171)
+  that was not identified; six isolated Runtime runs afterwards were all green. Most likely the known
+  JobEngine cancel race (6f-2), which only shows under full-suite load - unconfirmed.
