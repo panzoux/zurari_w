@@ -22,13 +22,13 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
 
 | | Item | Status | Commit |
 |---|---|---|---|
-| **7a-front** | **Pane extraction (no visible change)** — code done; hands-on "behaves as before" check pending (user) | `[~]` | `55770c0`..`8ec0f31` |
+| **7a-front** | **Pane extraction (no visible change)** | `[x]` | `55770c0`..`8ec0f31` |
 | 7a.1 | `PaneId` / `ColumnRef` / `Pane`; state moves into `Pane` behind a compatibility shim | `[x]` | `55770c0` `05460e3` |
 | 7a.2 | Column-addressed Msgs and Effects carry `ColumnRef` | `[x]` | `267963f` `b022607` |
 | 7a.3 | Preview Msgs/Effects carry `PaneId`; post-steps run per pane; `ViewRestored` per pane | `[x]` | `6afba7f` `e4c72bc` |
 | 7a.4 | Remove the compatibility shim | `[x]` | `c0024a9` `537a62d` |
 | 7a.5 | Property tests: refs to panes that do not exist; per-pane invariants | `[x]` | `d35a7ca` `8ec0f31` |
-| **7a-back** | **Split UI** — code done; hands-on checks pending (user) | `[~]` | `7aef49d`..`6a989ec` |
+| **7a-back** | **Split UI** | `[x]` | `7aef49d`..`f385f45` |
 | 7a.6 | `ToggleSplit` / `FocusPane` | `[x]` | `7aef49d` `50797e3` |
 | 7a.7 | `SwapPanes` / `SyncToOtherPane` | `[x]` | `fe89b27` `7aed1c6` `ecd5c12` `274cf9b` |
 | 7a.8 | `CopyToOtherPane` (`c` / `m`) | `[x]` | `60fc9f5` `4a8c14a` |
@@ -38,7 +38,7 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
 | 7a.11 | App: second row, splitter, focus routing, dimming, keys | `[x]` | `7cfebdc` `e9824cd` `472bf92` `dc0fc33` `d9171c8` |
 | 7a.12 | Persistence: split open/ratio, per-position view options | `[x]` | `12c77ec` `c6df2ac` `0ba6a95` |
 | 7a.13 | Headless E2E: split, copy top → bottom | `[x]` | `54ded09` `fec4b46` `e054881` |
-| 7a.14 | Manual verification; roadmap/summary updated — code and docs done, hands-on checks pending (user) | `[~]` | `ad09568` `b265201` `64b1579` `8d1d04f` |
+| 7a.14 | Manual verification; roadmap/summary updated | `[x]` | `ad09568` `b265201` `64b1579` `8d1d04f` `f385f45` (this commit) |
 
 ---
 
@@ -2889,7 +2889,7 @@ git commit -m "E2E: copy from the top pane lands in the bottom pane's directory"
 
 ### Task 7a.14: Manual verification, docs
 
-- [ ] **Step 1: Manual checks** (run `dotnet run --project src/Zurari.App`), record results under Records:
+- [x] **Step 1: Manual checks** (run `dotnet run --project src/Zurari.App`), record results under Records:
   1. Ctrl+W opens a bottom pane at the same place; focus stays top; Ctrl+W again closes the unfocused one.
   2. Tab and clicking move focus; the unfocused pane's cursor rows are the weak highlight.
   3. Each pane previews its own cursor; moving in one never changes or blanks the other's preview.
@@ -3242,6 +3242,20 @@ anticipate. Stop and ask rather than deciding unilaterally when something contra
   panes; sort mode swallowing job keys), and decision 7's wording was corrected earlier. The Phase 7
   summary and the roadmap mark 7a as code-complete with manual checks pending.
 - Step 1 (hands-on, items 1-11 above) is the user's. 7a.14 and the 7a-front row stay `[~]` until then.
+
+## 7a.14 Step 1 hands-on (2026-11-19) - done by the user
+
+- Two items were reported; everything else passed.
+- Item 5, `c` did nothing while `m` worked: the two keys share every step up to `IsMove` (key map,
+  `CopyToOtherPane`, `PasteRequested`, `JobEngine`), and the headless E2E copy passes, so no code
+  difference was found. The `--debug-input` log now records what Core decided - a new status-bar
+  notice (a refusal says nothing else) and each job's kind, status, destination, skips and error
+  (`f385f45`) - so a recurrence can be traced in one run. The user then reported it fixed; no cause
+  was identified and no code was changed for it. Likely explanations: the same-folder refusal right
+  after Ctrl+W (only a notice), or the copy landing in the folder under the other pane's cursor.
+- Item 8, dragging a file to the desktop Recycle Bin deleted it permanently: the file was on a USB
+  drive, which has no recycle bin, and Explorer does the same. Not a bug; our drag never deletes
+  (the Recycle Bin drop target does, recycling unless Shift is held or the drive has no bin).
 
 ## Final branch review (2026-11-19)
 

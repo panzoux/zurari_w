@@ -4,7 +4,7 @@
 **現状**: Phase 0〜5 完了。**Phase 6 の 6a〜6d・6f・6g を main にマージ済み**(2026-09-05、
 `phase6a-location-foundation` を fast-forward)。その後 6e.1〜6e.6 と 6c.5 も main に入った。
 **Phase 6 で残るのは 6e.9(ヘルプ画面)と 6f.2(JobEngine のキャンセル競合)で、どちらも判断により後回し。**
-**Phase 7a(二画面分割)はブランチ `phase7a-screen-split` でコード完了、手動確認待ち**(2026-11-19)。
+**Phase 7a(二画面分割)はブランチ `phase7a-screen-split` で完了、手動確認済み**(2026-11-19)。main への取り込みは未定。
 Ctrl+W 分割 / Tab・Shift+Tab・クリックでフォーカス / Shift+O 入替 / `o` 同期 / `c`・`m` で他方へコピー・移動、
 ペインごとのプレビューと並べ替え、分割状態の保存。詳細は [phase7a-screen-split.md](phase7a-screen-split.md)。
 実機での手動確認(6d-4・6c-5)は 2026-09-19 に完了。6c-12(PDF/Office サムネイル)は TBD。
