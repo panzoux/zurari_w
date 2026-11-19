@@ -9,6 +9,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Migemo\migemo-compact-dict.bin" LogicalName="migemo-compact-dict.bin" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="Zurari.Runtime.Tests" />
   </ItemGroup>
 
