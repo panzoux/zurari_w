@@ -19,7 +19,7 @@ zrr(TUI版)の操作体験の核 — 二画面分割と、キーボードでの�
 | | 内容 | 状態 | 計画 |
 |---|---|---|---|
 | **7a** | **画面分割**: 前段 `Pane` 抽出(`ColumnRef(PaneId, Index)`、見た目の変化なし)→ 後段 分割 UI(Ctrl+W / Tab / Shift+O / `o` / `c`・`m`、ペインごとのプレビューと並べ替え、分割の永続化) | `[x]` 完了 | [phase7a-screen-split.md](phase7a-screen-split.md) |
-| **7b** | **インクリメンタル検索 / Leap**: 共通マッチャ(AND セグメント・regex は NonBacktracking)、migemo(cmigemo → 内蔵 rustmigemo 移植 + BSD 辞書)、`/` 検索、Leap(F3) | `[ ]` | 未作成 |
+| **7b** | **インクリメンタル検索 / Leap**: 共通マッチャ(AND セグメント・regex は NonBacktracking)、migemo(cmigemo → 内蔵 rustmigemo 移植 + BSD 辞書)、`/` 検索、Leap(F3) | `[~]` 着手 | [phase7b-search-leap.md](phase7b-search-leap.md) |
 | 7c | ジャンプ一覧: 履歴、ブックマーク(= 既存のピン)、`ListPicker`、アドレスバー(Ctrl+L)、非分割時の `c`/`m` 宛先ピッカー | `[ ]` | 未作成 |
 | 7d | 操作ログ(Shift+L) | `[ ]` | 未作成 |
 
