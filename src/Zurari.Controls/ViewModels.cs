@@ -33,7 +33,8 @@ public sealed record EntryVm(
     string? DateText,
     ImageSource? Icon = null,
     bool IsCut = false,
-    bool IsSectionCollapsed = false)
+    bool IsSectionCollapsed = false,
+    bool IsSearchMatch = false)
 {
     /// <summary>
     /// What a header's hover control reads: "hide" while the section is showing, "show" once it is

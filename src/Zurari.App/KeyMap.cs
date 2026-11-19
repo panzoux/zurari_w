@@ -26,9 +26,14 @@ namespace Zurari.App;
 /// </para>
 /// <para>
 /// The plain letters claimed in normal mode are <c>S</c> (sort), and <c>o</c>, <c>c</c> and <c>m</c>
-/// (the split: sync to, copy to and move to the other pane). Incremental search opens on <c>/</c>, as
-/// in zrr, and letters that mean nothing yet are left free. Ctrl+C / Ctrl+X / Ctrl+V are the
-/// clipboard's and are not touched by <c>c</c>.
+/// (the split: sync to, copy to and move to the other pane). Incremental search opens on <c>/</c> and
+/// Leap on F3, as in zrr, and letters that mean nothing yet are left free. Ctrl+C / Ctrl+X / Ctrl+V are
+/// the clipboard's and are not touched by <c>c</c>.
+/// </para>
+/// <para>
+/// While a search or Leap is open its text box has the keyboard, and only the keys the mode owns are
+/// taken from it (<see cref="ResolveSearchKey"/>, <see cref="ResolveLeapKey"/>); everything else is
+/// ordinary typing, IME included.
 /// </para>
 /// </remarks>
 internal static class KeyMap
@@ -52,9 +57,62 @@ internal static class KeyMap
             (Key.O, ModifierKeys.None) => new Msg.SyncToOtherPane(),
             (Key.C, ModifierKeys.None) => new Msg.CopyToOtherPane(IsMove: false),
             (Key.M, ModifierKeys.None) => new Msg.CopyToOtherPane(IsMove: true),
+            (Key.OemQuestion or Key.Divide, ModifierKeys.None) => new Msg.BeginSearch(),
+            (Key.F3, ModifierKeys.None) => new Msg.BeginLeap(),
             _ => null,
         };
     }
+
+    /// <summary>
+    /// The message for a key the open search owns, or <c>null</c> to let the text box have it. ↑↓ and
+    /// Ctrl+P / Ctrl+N step between matches, Ctrl+R switches to a regular expression, Enter confirms
+    /// and Esc goes back to where the search started.
+    /// </summary>
+    public static Msg? ResolveSearchKey(Key key, ModifierKeys modifiers) => (key, modifiers) switch
+    {
+        (Key.Up, ModifierKeys.None) or (Key.P, ModifierKeys.Control) => new Msg.SearchStep(-1),
+        (Key.Down, ModifierKeys.None) or (Key.N, ModifierKeys.Control) => new Msg.SearchStep(1),
+        (Key.R, ModifierKeys.Control) => new Msg.ToggleSearchRegex(),
+        (Key.Enter, ModifierKeys.None) => new Msg.EndSearch(Restore: false),
+        (Key.Escape, ModifierKeys.None) => new Msg.EndSearch(Restore: true),
+        _ => null,
+    };
+
+    /// <summary>
+    /// The message for a key the open Leap owns, or <c>null</c> to let the text box have it.
+    /// </summary>
+    /// <param name="key">The key.</param>
+    /// <param name="modifiers">The modifiers held.</param>
+    /// <param name="state">Where the cursor is: → walks into a folder but confirms on a file.</param>
+    /// <param name="boxIsEmpty">
+    /// Whether the text box is empty, so Backspace has nothing left to delete and walks back out
+    /// instead - zrr's buffer, where deleting the <c>/</c> of <c>mapm/</c> goes back to <c>mapm</c>.
+    /// </param>
+    public static Msg? ResolveLeapKey(Key key, ModifierKeys modifiers, AppState state, bool boxIsEmpty)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        var at = state.Focused.FocusedRef;
+        return (key, modifiers) switch
+        {
+            (Key.Up, ModifierKeys.None) or (Key.P, ModifierKeys.Control) => new Msg.CursorUp(at),
+            (Key.Down, ModifierKeys.None) or (Key.N, ModifierKeys.Control) => new Msg.CursorDown(at),
+            (Key.Right, ModifierKeys.None) => CursorOnFolder(state) ? new Msg.LeapStepIn() : new Msg.EndLeap(Restore: false),
+            (Key.OemQuestion or Key.Divide, ModifierKeys.None) => new Msg.LeapStepIn(),
+            (Key.Left, ModifierKeys.None) => new Msg.LeapStepOut(),
+            (Key.Back, ModifierKeys.None) when boxIsEmpty => new Msg.LeapStepOut(),
+            (Key.K, ModifierKeys.Control) => new Msg.LeapToRoot(),
+            (Key.U, ModifierKeys.Control) => new Msg.LeapTextChanged(string.Empty),
+            (Key.Enter or Key.F3, ModifierKeys.None) => new Msg.EndLeap(Restore: false),
+            (Key.Escape, ModifierKeys.None) => new Msg.EndLeap(Restore: true),
+            _ => null,
+        };
+    }
+
+    private static bool CursorOnFolder(AppState state) =>
+        state.Focused.FocusedColumnOrNull is { } column
+        && column.Cursor >= 0
+        && column.Cursor < column.Entries.Length
+        && column.Entries[column.Cursor].Kind is Core.EntryKind.Directory or Core.EntryKind.Drive;
 
     /// <summary>What a key means while sort mode is open.</summary>
     public static SortKeyOutcome ResolveSortMode(Key key, ModifierKeys modifiers)

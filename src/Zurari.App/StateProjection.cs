@@ -23,6 +23,8 @@ public static class StateProjection
     /// The key must cover everything <see cref="Project"/> reads: the pane's columns (by array
     /// reference) and focused column, whether the pane is the focused one (an unfocused pane draws no
     /// focused column), and <see cref="AppState.CutPending"/> (by array reference; it dims rows).
+    /// It also covers an open search's matches (by array reference): they highlight rows, and typing
+    /// a query that matches nothing changes them without touching the columns.
     /// Add to it whenever <see cref="Project"/> starts reading something else.
     /// The guard that compares keys is kept per screen row, not per pane, so the key also names the
     /// pane: a swap puts the other pane in the row, and that pane's untouched <c>Columns</c> array
@@ -33,7 +35,8 @@ public static class StateProjection
         ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(pane);
 
-        return new RenderKeyValue(pane.Id, pane.Columns, pane.FocusedColumn, pane.Id == state.Focused.Id, state.CutPending);
+        return new RenderKeyValue(
+            pane.Id, pane.Columns, pane.FocusedColumn, pane.Id == state.Focused.Id, state.CutPending, pane.Search?.Matches ?? default);
     }
 
     /// <summary>See <see cref="RenderKey"/>. Arrays compare by reference, which is the point.</summary>
@@ -42,7 +45,8 @@ public static class StateProjection
         System.Collections.Immutable.ImmutableArray<Column> Columns,
         int FocusedColumn,
         bool PaneFocused,
-        System.Collections.Immutable.ImmutableArray<string> CutPending);
+        System.Collections.Immutable.ImmutableArray<string> CutPending,
+        System.Collections.Immutable.ImmutableArray<int> SearchMatches);
 
     /// <summary>
     /// Projects every column of <paramref name="pane"/> into a <see cref="Controls.ColumnVm"/>.
@@ -71,8 +75,9 @@ public static class StateProjection
         var result = new Controls.ColumnVm[pane.Columns.Length];
         for (var i = 0; i < pane.Columns.Length; i++)
         {
+            var matches = pane.Search is { } search && search.ColumnIndex == i ? search.Matches : default;
             result[i] = ProjectColumn(
-                pane.Columns[i], isFocused: paneIsFocused && i == pane.FocusedColumn, iconResolver, cutPending, cache, i, state.CutPending);
+                pane.Columns[i], isFocused: paneIsFocused && i == pane.FocusedColumn, iconResolver, cutPending, cache, i, state.CutPending, matches);
         }
 
         cache?.Trim(pane.Columns.Length);
@@ -87,21 +92,32 @@ public static class StateProjection
         HashSet<string>? cutPending,
         ProjectionCache? cache,
         int columnIndex,
-        ImmutableArray<string> cutPendingKey)
+        ImmutableArray<string> cutPendingKey,
+        ImmutableArray<int> searchMatches)
     {
         // Reusing the array instance is the whole point - see ProjectionCache. The ColumnVm around
         // it is still rebuilt (its Title and CursorIndex do change), but that is one small object.
-        var entries = cache?.TryReuse(columnIndex, column, cutPendingKey);
+        var entries = cache?.TryReuse(columnIndex, column, cutPendingKey, searchMatches);
         if (entries is null)
         {
             entries = new Controls.EntryVm[column.Entries.Length];
+
+            // Matches are ascending indices, so one pass walks them alongside the rows.
+            var nextMatch = 0;
+            var matches = searchMatches.IsDefault ? [] : searchMatches;
             for (var i = 0; i < column.Entries.Length; i++)
             {
+                var isMatch = nextMatch < matches.Length && matches[nextMatch] == i;
+                if (isMatch)
+                {
+                    nextMatch++;
+                }
+
                 entries[i] = ProjectEntry(
-                    column.Entries[i], iconResolver, column.Location, cutPending, column.CollapsedGroups);
+                    column.Entries[i], iconResolver, column.Location, cutPending, column.CollapsedGroups, isMatch);
             }
 
-            cache?.Store(columnIndex, column, cutPendingKey, entries);
+            cache?.Store(columnIndex, column, cutPendingKey, searchMatches, entries);
         }
 
         return new Controls.ColumnVm(
@@ -154,7 +170,8 @@ public static class StateProjection
         Func<Entry, ImageSource?>? iconResolver,
         Location columnLocation,
         HashSet<string>? cutPending,
-        ImmutableHashSet<string> collapsedGroups)
+        ImmutableHashSet<string> collapsedGroups,
+        bool isSearchMatch)
     {
         // A header is a label, not a place: no path, no icon, no size or date column. It does carry
         // whether its section is collapsed, which is what its hover control reads.
@@ -181,7 +198,8 @@ public static class StateProjection
             SizeText: ProjectSize(entry),
             DateText: ProjectDate(entry.Modified),
             Icon: iconResolver?.Invoke(entry),
-            IsCut: fullPath is not null && (cutPending?.Contains(fullPath) ?? false));
+            IsCut: fullPath is not null && (cutPending?.Contains(fullPath) ?? false),
+            IsSearchMatch: isSearchMatch);
     }
 
     private static Controls.EntryKind ProjectKind(EntryKind kind) => kind switch
@@ -662,6 +680,71 @@ public static class StateProjection
     /// <param name="Summary">Entry count, marks and any notice.</param>
     public sealed record StatusBarVm(string Path, string Hints, string Summary);
 
+    /// <summary>Which mode the bar in the path bar's place is showing.</summary>
+    public enum ModeBarKind
+    {
+        /// <summary>No mode: the path bar shows.</summary>
+        Hidden,
+
+        /// <summary>A <c>/</c> search.</summary>
+        Search,
+
+        /// <summary>A Leap.</summary>
+        Leap,
+    }
+
+    /// <summary>
+    /// The bar a search or Leap is typed into, in the path bar's place.
+    /// </summary>
+    /// <param name="Kind">Which mode, or hidden.</param>
+    /// <param name="Prefix">Before the text box: <c>/</c>, or <c>LEAP</c> and the trail (<c>mapm/</c>).</param>
+    /// <param name="Text">What the text box holds - the search text, or Leap's filter in this column.</param>
+    /// <param name="Status">After the text box: <c>(2/5)</c>, <c>(0)</c>, <c>[regex]</c>, <c>(no match)</c>.</param>
+    /// <param name="IsError">Draw <paramref name="Status"/> as a failure (red): nothing matches, or a bad pattern.</param>
+    public sealed record ModeBarVm(ModeBarKind Kind, string Prefix, string Text, string Status, bool IsError)
+    {
+        /// <summary>The bar when no mode is open.</summary>
+        public static ModeBarVm Hidden { get; } = new(ModeBarKind.Hidden, string.Empty, string.Empty, string.Empty, false);
+    }
+
+    /// <summary>Projects the mode bar for the focused pane (the only one that can have a mode open).</summary>
+    public static ModeBarVm ProjectModeBar(AppState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        var pane = state.Focused;
+
+        if (pane.Search is { } search)
+        {
+            var query = search.Query;
+            var pending = query.Pending.IsEmpty ? string.Empty : "*";
+            var failed = !query.IsEmpty && search.Matches.IsEmpty && query.Pending.IsEmpty;
+            var count = query.IsEmpty
+                ? string.Empty
+                : failed
+                    ? "(0)"
+                    : $"({search.MatchIndex + 1}/{search.Matches.Length}{pending})";
+            var status = query.IsRegex ? ("[regex] " + count).TrimEnd() : count;
+            return new ModeBarVm(ModeBarKind.Search, "/", query.Text, status, failed);
+        }
+
+        if (pane.Leap is { } leap)
+        {
+            var trail = new System.Text.StringBuilder();
+            foreach (var step in leap.Trail)
+            {
+                trail.Append(step.Text).Append('/');
+            }
+
+            var column = pane.FocusedColumnOrNull;
+            var filter = column?.Filter ?? NameQuery.Empty;
+            var noMatch = !filter.IsEmpty && column is { Load: LoadState.Loaded, Entries.IsEmpty: true } && filter.Pending.IsEmpty;
+            return new ModeBarVm(
+                ModeBarKind.Leap, "LEAP  " + trail, filter.Text, noMatch ? "(no match)" : string.Empty, IsError: false);
+        }
+
+        return ModeBarVm.Hidden;
+    }
+
     /// <summary>Projects the path bar and status bar. Pure - see <see cref="StatusBarVm"/>.</summary>
     public static StatusBarVm ProjectStatusBar(AppState state)
     {
@@ -734,6 +817,16 @@ public static class StateProjection
             return string.Empty;
         }
 
+        if (state.Focused.Search is not null)
+        {
+            return "↑↓ 前後の一致  Ctrl+R 正規表現  Enter 確定  Esc 取消";
+        }
+
+        if (state.Focused.Leap is not null)
+        {
+            return "→ / 入る  ← 戻る  ↑↓ 選択  Ctrl+K 最初へ  Ctrl+U 消去  Enter・F3 確定  Esc 取消";
+        }
+
         if (state.InputMode == Core.InputMode.Sort)
         {
             var sort = state.Focused.View.Sort;
@@ -747,7 +840,7 @@ public static class StateProjection
         var split = state.Panes.Length == 2
             ? "Tab 切替  c/m コピー/移動  o 同期  Shift+O 入替  Ctrl+W 閉じる"
             : "Ctrl+W 分割";
-        return $"S 並べ替え    Ctrl+Shift+. {hidden}    Ctrl+D ピン留め    {split}";
+        return $"/ 検索  F3 Leap    S 並べ替え    Ctrl+Shift+. {hidden}    Ctrl+D ピン留め    {split}";
     }
 
     private static string FieldLabel(SortMode mode) => mode switch

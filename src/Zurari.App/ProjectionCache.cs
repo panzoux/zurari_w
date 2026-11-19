@@ -36,6 +36,7 @@ public sealed class ProjectionCache
         ImmutableArray<Core.Entry> Entries,
         Location Location,
         ImmutableArray<string> CutPending,
+        ImmutableArray<int> SearchMatches,
         ImmutableHashSet<string> CollapsedGroups,
         Controls.EntryVm[] Vms);
 
@@ -43,7 +44,8 @@ public sealed class ProjectionCache
     /// The array previously projected for <paramref name="index"/>, if it was built from exactly
     /// these inputs; otherwise <c>null</c>.
     /// </summary>
-    internal Controls.EntryVm[]? TryReuse(int index, Column column, ImmutableArray<string> cutPending)
+    internal Controls.EntryVm[]? TryReuse(
+        int index, Column column, ImmutableArray<string> cutPending, ImmutableArray<int> searchMatches = default)
     {
         if (index < 0 || index >= memo.Length)
         {
@@ -54,6 +56,7 @@ public sealed class ProjectionCache
         return cached.Vms is not null
             && cached.Entries == column.Entries
             && cached.CutPending == cutPending
+            && cached.SearchMatches == searchMatches
             && ReferenceEquals(cached.CollapsedGroups, column.CollapsedGroups)
             && cached.Location == column.Location
             ? cached.Vms
@@ -61,7 +64,8 @@ public sealed class ProjectionCache
     }
 
     /// <summary>Records what <paramref name="index"/> was projected from, for the next render.</summary>
-    internal void Store(int index, Column column, ImmutableArray<string> cutPending, Controls.EntryVm[] vms)
+    internal void Store(
+        int index, Column column, ImmutableArray<string> cutPending, ImmutableArray<int> searchMatches, Controls.EntryVm[] vms)
     {
         if (index < 0)
         {
@@ -73,7 +77,7 @@ public sealed class ProjectionCache
             System.Array.Resize(ref memo, index + 1);
         }
 
-        memo[index] = new Entry(column.Entries, column.Location, cutPending, column.CollapsedGroups, vms);
+        memo[index] = new Entry(column.Entries, column.Location, cutPending, searchMatches, column.CollapsedGroups, vms);
     }
 
     /// <summary>

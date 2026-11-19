@@ -1307,6 +1307,7 @@ public sealed partial class MainWindow : Window, IDisposable
         PathBarText.Text = statusBar.Path;
         StatusHints.Text = statusBar.Hints;
         StatusSummary.Text = statusBar.Summary;
+        RenderModeBar(state);
 
         // Keyboard focus follows the focused pane. By row, not by pane id: a swap keeps the focused
         // row, and the row already has the keyboard.

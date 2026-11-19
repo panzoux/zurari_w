@@ -31,10 +31,22 @@
                 <TextBlock x:Name="StatusSummary" Text="(no state yet)" />
             </StatusBarItem>
         </StatusBar>
-        <!-- Path bar: the full path of what the cursor is on. Planned to become a Finder-style
-             breadcrumb bar, and to host the incremental search box while slash search is open. -->
+        <!-- Path bar: the full path of what the cursor is on. While a / search or a Leap is open the
+             mode bar takes its place (7b): a prefix (/ or LEAP and the trail), a real text box - so IME
+             and Backspace work as anywhere else - and the match count. MainWindow.Modes.cs drives it. -->
         <Border DockPanel.Dock="Bottom" BorderBrush="#FFB0B0B0" BorderThickness="0,1,0,0" Padding="6,2">
-            <TextBlock x:Name="PathBarText" TextTrimming="CharacterEllipsis" />
+            <Grid>
+                <TextBlock x:Name="PathBarText" TextTrimming="CharacterEllipsis" />
+                <DockPanel x:Name="ModeBar" Visibility="Collapsed" LastChildFill="True">
+                    <TextBlock x:Name="ModePrefix" DockPanel.Dock="Left" VerticalAlignment="Center"
+                               Foreground="#FF808080" Margin="0,0,4,0" />
+                    <TextBlock x:Name="ModeStatus" DockPanel.Dock="Right" VerticalAlignment="Center"
+                               Margin="6,0,0,0" />
+                    <TextBox x:Name="ModeBox" BorderThickness="0" Padding="0" Background="#FFFFFBE0"
+                             PreviewKeyDown="OnModeBoxPreviewKeyDown" TextChanged="OnModeBoxTextChanged"
+                             LostKeyboardFocus="OnModeBoxLostKeyboardFocus" />
+                </DockPanel>
+            </Grid>
         </Border>
         <!-- Deliberately uncapped: a job row can hold the conflict prompt's buttons, and a waiting
              prompt must never scroll out of sight. Window MinHeight 400 = 2 x 120 panes + 6 splitter

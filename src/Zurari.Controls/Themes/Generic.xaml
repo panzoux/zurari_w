@@ -157,6 +157,13 @@
                                             <DataTrigger Binding="{Binding IsMarked}" Value="True">
                                                 <Setter Property="Background" Value="#FFCCE8FF" />
                                             </DataTrigger>
+                                            <!-- A / search match (7b): a warm yellow nothing else uses, after
+                                                 IsMarked so a match reads as one while the search is open even
+                                                 if it is also marked. The strong cursor below still wins, so
+                                                 the current match is the blue one among the yellow. -->
+                                            <DataTrigger Binding="{Binding IsSearchMatch}" Value="True">
+                                                <Setter Property="Background" Value="#FFFFF0A0" />
+                                            </DataTrigger>
                                             <!-- Explorer (or other app) file drag currently hovering this
                                                  row, which is a Directory or Drive: set directly on the
                                                  container by ColumnView.OnDragOver, cleared on DragLeave/

@@ -16,7 +16,7 @@
 
 # Status
 
-1134 tests, `scripts/check.ps1` green.
+1152 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`; do not edit it by hand. Write `(this commit)`
 in a row's commit cell (no backticks) and `status.ps1` fills in the hash after the commit lands.</sub>
@@ -28,8 +28,8 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
 | 7b.2 | Runtime: built-in migemo (rustmigemo port + embedded dictionary + golden test) | `[x]` | `4e08ff4` |
 | 7b.3 | Core: `/` search (`Pane.Search`, Msgs, migemo round trip, deferred rereads) | `[x]` | `155e242` |
 | 7b.4 | Core: Leap (`Column` filter in `Derive`, `Pane.Leap`, auto-enter, blank preview) | `[x]` | `155e242` |
-| 7b.5 | Runtime: `ExpandMigemo` executor (cmigemo → built-in), word LRU, a-z prewarm | `[x]` | (this commit) |
-| 7b.6 | App: mode bar, keys, match highlight, status hints | `[ ]` | |
+| 7b.5 | Runtime: `ExpandMigemo` executor (cmigemo → built-in), word LRU, a-z prewarm | `[x]` | `f24aedf` |
+| 7b.6 | App: mode bar, keys, match highlight, status hints | `[x]` | (this commit) |
 | 7b.7 | Manual verification; roadmap/summary/spec/notices updated | `[ ]` | |
 
 ---
@@ -342,3 +342,12 @@ the embedded one) happens on the migemo reader thread at first use, never in the
 calls `PrewarmMigemo()` after restoring settings. cmigemo is bound with `NativeLibrary` + function
 pointers (loaded from the folder its dictionary is in). Verified on this machine: the cmigemo in zrr's
 publish folder loads from the x64 process and `nihon` matches 日本.
+
+**7b.6 (as built):** `MainWindow.Modes.cs` holds the bar. The text box is focused at
+`DispatcherPriority.Input` after the opening key is handled, so `/` is not typed into the box it opened
+(to be confirmed by hand with IME on). Search matches feed `RenderKey` and the `ProjectionCache` key by
+array reference - a query that matches nothing changes no column, and the highlight still has to go.
+Match highlight is `#FFFFF0A0`, after `IsMarked` and before the strong cursor in the trigger order.
+The search count shows `*` while a migemo word is pending, and `(0)` (red) only once nothing is pending.
+Smoke-launched the Debug build: the window comes up and stays up. Not driven by keyboard here - that is
+7b.7's checklist.
