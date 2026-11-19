@@ -15,7 +15,7 @@
 
 # Status
 
-1019 tests, `scripts/check.ps1` green.
+1044 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`; do not edit it by hand. Write `(this commit)`
 in a row's commit cell (no backticks) and `status.ps1` fills in the hash after the commit lands.</sub>
@@ -37,7 +37,7 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
 | 7a.10 | App: coalescing gates and projection cache per pane; `PaneView` extracted (still one row) | `[x]` | `04307fa` `c6301eb` `efab33d` `15c75f1` `719623c` `bc437a5` |
 | 7a.11 | App: second row, splitter, focus routing, dimming, keys | `[x]` | `7cfebdc` `e9824cd` `472bf92` `dc0fc33` `d9171c8` |
 | 7a.12 | Persistence: split open/ratio, per-position view options | `[x]` | `12c77ec` `c6df2ac` `0ba6a95` |
-| 7a.13 | Headless E2E: split, copy top → bottom | `[ ]` | |
+| 7a.13 | Headless E2E: split, copy top → bottom | `[x]` | `54ded09` `fec4b46` `e054881` |
 | 7a.14 | Manual verification; roadmap/summary updated | `[ ]` | |
 
 ---
@@ -2913,6 +2913,9 @@ git commit -m "E2E: copy from the top pane lands in the bottom pane's directory"
       - F2 shows the editor only in its own pane; swapping or clicking the other pane cancels it.
       - On a narrow window (~800 px) the status bar's counts on the right stay visible (the hints trim).
       - A small window: below ~360 px tall the bottom row should not be clipped away (see below).
+      - Press, or start a drag, in the bottom row and press Ctrl+W from the keyboard mid-gesture: the
+        top pane's cursor and marks do not change (events from a row with no pane are dropped -
+        verified only by reading, MainWindow is not headless-testable).
   10. Single pane, checks collected from 7a.10 (PaneView extraction; only smoke-launched by the agents):
       - Previews: a text file, an image, a drive's capacity, the recycle bin (figures, no bar).
       - A deleted file in the bin: its header lines are shortened from the middle and re-fit when the
@@ -2934,9 +2937,16 @@ git commit -m "E2E: copy from the top pane lands in the bottom pane's directory"
 - [ ] **Step 1b: Two small UI items (7a.11 review)**
   - Give the window a `MinHeight` (about 360) or cap the job strip with a `MaxHeight` and a
     `ScrollViewer`, so both rows' `MinHeight` of 120 fit and the bottom row is never clipped.
+  - When moving the block below, drop `MainWindow.DefaultSplitRatio` (now only an alias of
+    `SplitLayout.DefaultRatio`) and use `SplitLayout.DefaultRatio` directly (7a.13 review).
   - Move the split-layout block of `MainWindow` (ratio constants and helpers, `ApplyLayout`,
     `DropGonePanes` and friends, ~180 lines) into a `MainWindow.Split.cs` partial, mirroring
     `Transition.Split.cs` (7a.12 review; `MainWindow.xaml.cs` is ~1540 lines).
+  - Backlog notes from the 7a.13 review (not required here): `SplitLayout.StartupMsgs` is session
+    restore rather than split geometry, and `WorkerRuntime.ReadViewOptions` is a settings conversion
+    that would sit better as `PaneViewSettings.ToViewOptions()`; the E2E `DrainUntil` timeout message
+    could name the jobs and the last Notice; `SplitE2ETests`' transfer tests should delete their
+    (currently never created) settings directory; the startup E2E stores a ratio it never asserts.
   - Backlog note (not required here): `MainWindow.xaml.cs` was ~1430 lines before 7a.12; the next extractions are the
     shell context menu, drag and drop, and turning the `OnWindowKeyDown` if/else chain into a KeyMap
     table so it is unit-testable like `ResolveNormal`.
@@ -3200,3 +3210,17 @@ anticipate. Stop and ask rather than deciding unilaterally when something contra
 - The follow-up's implementer did not deliver a report; the controller reviewed the serial writer
   (settings effects diverted at Submit to a single-reader FIFO channel, drained on Dispose) and ran the
   Runtime tests three times: 177/177 each.
+
+## 7a.13 (2026-11-19)
+
+- Headless E2E: copy and move from the top pane into the bottom pane's directory through the real
+  message loop, worker runtime and job engine on temp directories (`54ded09`). The startup restore and
+  the split ratio became pure, tested functions in a new `SplitLayout` class, with a startup E2E
+  against an isolated settings store, a Core test that closing from the bottom saves the bottom pane's
+  view, and a property test that only the sort/hidden, split and swap messages ever persist pane views
+  - it found nothing (`fec4b46`). Events from a row that has no pane are now dropped instead of
+  retargeted to the focused pane (`e054881`). 1044 tests, `check.ps1` green.
+- Spec review: compliant; the property test checks every generated message from one- and two-pane
+  starts and would catch e.g. a cursor move that persisted views. Quality review: no code issues;
+  manual check for the dropped-event path, the `DefaultSplitRatio` alias and backlog notes added to
+  7a.14.

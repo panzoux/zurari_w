@@ -45,3 +45,5 @@
 {"timestamp":"2026-11-19T09:00:52.505931+09:00","action":"move","task_id":12,"detail":"todo -\u003e in-progress"}
 {"timestamp":"2026-11-19T09:58:49.5377097+09:00","action":"move","task_id":12,"detail":"in-progress -\u003e done"}
 {"timestamp":"2026-11-19T09:58:49.6753007+09:00","action":"move","task_id":13,"detail":"todo -\u003e in-progress"}
+{"timestamp":"2026-11-19T10:19:14.1274827+09:00","action":"move","task_id":13,"detail":"in-progress -\u003e done"}
+{"timestamp":"2026-11-19T10:19:14.2841929+09:00","action":"move","task_id":14,"detail":"todo -\u003e in-progress"}
