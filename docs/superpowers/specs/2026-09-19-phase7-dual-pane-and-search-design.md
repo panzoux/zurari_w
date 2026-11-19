@@ -29,7 +29,7 @@ zrr(`..\zurari\Program.cs`)は二画面・`/` 検索・Leap・ブックマーク
 | プレビュー | **ペインごと**。各行が `[列 \| スプリッタ \| プレビュー]` を持つ。`PreviewState` は `Pane` へ移る |
 | 並べ替え・隠しファイル | **ペインごと**。`ViewOptions` は `Pane` へ移る |
 | 永続化 | 分割の開閉・分割比率・位置(上/下)ごとの `ViewOptions`。場所は復元しない(両ペインともドライブ一覧から) |
-| アドレッシング | `ColumnRef(PaneId, Column)`。ペインは安定 ID を持つ |
+| アドレッシング | `ColumnRef(PaneId, Index)`(Msg/Effect のフィールド名は `At`)。ペインは安定 ID を持つ |
 | ペイン間コピー/移動 | `c` / `m`(zrr と同じ) |
 | migemo | cmigemo があれば使う → 無ければ内蔵(rustmigemo の C# 移植 + BSD 辞書) |
 | ブックマーク | 既存のピン(6d)をブックマークとみなす。別概念は作らない |
@@ -42,7 +42,7 @@ zrr(`..\zurari\Program.cs`)は二画面・`/` 検索・Leap・ブックマーク
 
 ```csharp
 public readonly record struct PaneId(int Value);
-public readonly record struct ColumnRef(PaneId Pane, int Column);
+public readonly record struct ColumnRef(PaneId Pane, int Index);   // 実装時に Column → Index へ改名
 
 public sealed record Pane(PaneId Id, ImmutableArray<Column> Columns, int FocusedColumn)
 {
@@ -64,11 +64,13 @@ public sealed record AppState
 - `Columns` / `FocusedColumn` / `Preview` / `View` は `AppState` から消える。
 - `CursorMemory` は共有(zrr の `_cursorMemory` と同じ)。どちらのペインで訪れても同じ記憶を使う。
 - `InputMode`(並べ替えモード)と `Rename` は共有だが、作用するのはフォーカスペイン。
-  `RenameState.ColumnIndex` は `ColumnRef` になる。
+  `RenameState.ColumnIndex` は `ColumnRef` になる(実装では `RenameState(At, Location, EntryName, Error)`。
+  開いたフォルダーを覚え、列が別のフォルダーに変わっていたら確定せず閉じる)。
 
 ### アドレッシング
 
-- Msg / Effect の `int ColumnIndex` を**すべて** `ColumnRef Column` に置き換える
+- Msg / Effect の `int ColumnIndex` を**すべて** `ColumnRef At` に置き換える(当初案のフィールド名 `Column` は
+  `Column` レコードと紛らわしいため `At` にした)
   (`ReadDirectory`、`DirectoryLoaded`/`Failed`、`ShellOpCompleted`/`Failed`、`RenameCompleted`、
   `FolderCreated`、`CursorUp` 等のカーソル系、マーク系、`PasteRequested`、`DropFiles`、`PinFocusedLocation` …)。
   型を変えるのでコンパイラが呼び出し箇所を全部挙げる。
@@ -114,7 +116,7 @@ public sealed record AppState
 | `ToggleSplit` | Ctrl+W | 開: 新しい `PaneId` の下ペインを追加。初期位置はフォーカスペインのフォーカス列の Location、`View` はフォーカスペインの複製。フォーカスは元のペインのまま。閉: フォーカスペインだけを残す(他方への未着の結果は古い結果として捨てられる) |
 | `FocusPane(PaneId)` | Tab(他方へ)/ ペイン内のクリック | 分割していなければ Tab は何もしない |
 | `SwapPanes` | Shift+O | `Panes` の順を入れ替える。`FocusedPane` は**位置**を保つ(上は上のまま)ので、入れ替わるのは「どちらの内容がアクティブか」。ID はペインと一緒に動く |
-| `SyncToOtherPane` | `o` | フォーカスペインを他方のペインの Location に合わせる(同じなら何もしない)。列の積み直しは純粋ヘルパー `JumpTo(PaneId, Location)` で行う。7c のジャンプ系もこれを使う |
+| `SyncToOtherPane` | `o` | フォーカスペインを他方のペインの表示に合わせる。**実装**: 他方の列チェーン(`Columns` と `FocusedColumn`)をこのペインの `View` で再導出してコピーする — 読み込み済みの一覧を使うので I/O も読み込み中のちらつきも無い。読み込み中の列だけはこのペイン宛てに読み直す。マークはコピーしない(選択は作ったペインのもの。zrr も `o` でマークを失う)。`JumpTo(PaneId, Location)` は 7c(アドレスバー・履歴)へ持ち越し |
 | `CopyToOtherPane(bool IsMove)` | `c` / `m` | 下記 |
 
 **`CopyToOtherPane`**:
@@ -135,6 +137,12 @@ public sealed record AppState
 - 各行は再利用可能な UserControl `PaneView`(`ColumnBrowser | スプリッタ | プレビュー`)1つ。
   2行の実装が乖離しないようにするため。分割していないときは下の行を Collapsed にする。
 - 非フォーカスペインは**減光**: カーソル行の強調を灰色系にする(zrr の減光パレットに相当)。
+  実装: 非フォーカスペインは「フォーカス列なし」として投影するだけ(既存の弱い強調がそのまま出る)。
+- **行とペインは別物(7a.11)**: 再描画の判定と画像デコードのキャッシュは行ごと・`PaneId` 込みで持つ。
+  入れ替え(Shift+O)や下ペインからの閉じでは、同じ行に別のペインが来るため。
+- 並べ替えモード中、ジョブを始める・削除するキー(`c`、Delete、Shift+Delete、Ctrl+V)はモードを閉じる
+  だけで実行しない(6e.8 の「閉じてそのまま通す」を移動系キーに限定)。当て推量の並べ替えキーで
+  ファイル操作が始まらないようにするため。
 - パスバーとステータスバーは1組のまま、**フォーカスペイン**を表示する。
 - キーボードフォーカスは `FocusedPane` に従う。`ProjectionCache` はペインごとに持ち、カーソル移動を安く保つ。
 
@@ -151,6 +159,11 @@ public sealed record AppState
 - `PaneViews[2]`: 位置(上/下)ごとの並べ替え・隠しファイル設定。既存の単一フィールド
   (`SortMode` 等)を置き換える。**移行**: `PaneViews` の無い設定ファイルは旧フィールドを上ペインへ読む。
 - 起動時、`SplitOpen` なら復元系 Msg の後に `ToggleSplit` を投げる。両ペインともドライブ一覧から始まる。
+- **実装で確定したこと(7a.12)**: 起動時の表示設定の復元は App が行う(`SplitLayout.StartupMsgs`:
+  `ViewRestored(上)` → `Refresh` → 分割していたら `ToggleSplit(下の保存済み View)`)。以前は Runtime が
+  「最初に読み終わったドライブ一覧」に `ViewRestored` を送っていたが、分割を復元すると下ペインの読みが
+  先に終わり、上の設定が下に入ることがあった。`SplitOpen` は `Effect.SetPaneViews` と同じ書き込みで保存し
+  (`TopFirst` の数が2なら開)、設定を書く Effect は Runtime の単一の順序付き書き込み器を通す。
 
 ### テスト
 

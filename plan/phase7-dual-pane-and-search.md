@@ -1,6 +1,6 @@
 # Phase 7 — 二画面分割 + 検索・ジャンプ系(要約)
 
-**状態**: `[~]` 設計済み、7a 計画済み
+**状態**: `[~]` 7a のコード完了(ブランチ `phase7a-screen-split`、手動確認待ち)。7b〜7d は未着手
 **前提**: Phase 6 完了
 **位置づけ**: [roadmap.md](roadmap.md) の Phase 7
 **設計**: [2026-09-19-phase7-dual-pane-and-search-design.md](../docs/superpowers/specs/2026-09-19-phase7-dual-pane-and-search-design.md)
@@ -18,7 +18,7 @@ zrr(TUI版)の操作体験の核 — 二画面分割と、キーボードでの�
 
 | | 内容 | 状態 | 計画 |
 |---|---|---|---|
-| **7a** | **画面分割**: 前段 `Pane` 抽出(`ColumnRef(PaneId, Column)`、見た目の変化なし)→ 後段 分割 UI(Ctrl+W / Tab / Shift+O / `o` / `c`・`m`、ペインごとのプレビューと並べ替え、分割の永続化) | `[ ]` | [phase7a-screen-split.md](phase7a-screen-split.md) |
+| **7a** | **画面分割**: 前段 `Pane` 抽出(`ColumnRef(PaneId, Index)`、見た目の変化なし)→ 後段 分割 UI(Ctrl+W / Tab / Shift+O / `o` / `c`・`m`、ペインごとのプレビューと並べ替え、分割の永続化) | `[~]` コード完了・手動確認待ち | [phase7a-screen-split.md](phase7a-screen-split.md) |
 | **7b** | **インクリメンタル検索 / Leap**: 共通マッチャ(AND セグメント・regex は NonBacktracking)、migemo(cmigemo → 内蔵 rustmigemo 移植 + BSD 辞書)、`/` 検索、Leap(F3) | `[ ]` | 未作成 |
 | 7c | ジャンプ一覧: 履歴、ブックマーク(= 既存のピン)、`ListPicker`、アドレスバー(Ctrl+L)、非分割時の `c`/`m` 宛先ピッカー | `[ ]` | 未作成 |
 | 7d | 操作ログ(Shift+L) | `[ ]` | 未作成 |

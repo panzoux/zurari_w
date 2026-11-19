@@ -38,7 +38,7 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
 | 7a.11 | App: second row, splitter, focus routing, dimming, keys | `[x]` | `7cfebdc` `e9824cd` `472bf92` `dc0fc33` `d9171c8` |
 | 7a.12 | Persistence: split open/ratio, per-position view options | `[x]` | `12c77ec` `c6df2ac` `0ba6a95` |
 | 7a.13 | Headless E2E: split, copy top → bottom | `[x]` | `54ded09` `fec4b46` `e054881` |
-| 7a.14 | Manual verification; roadmap/summary updated | `[ ]` | |
+| 7a.14 | Manual verification; roadmap/summary updated — code and docs done, hands-on checks pending (user) | `[~]` | `ad09568` `b265201` `64b1579` (this commit) |
 
 ---
 
@@ -2913,6 +2913,8 @@ git commit -m "E2E: copy from the top pane lands in the bottom pane's directory"
       - F2 shows the editor only in its own pane; swapping or clicking the other pane cancels it.
       - On a narrow window (~800 px) the status bar's counts on the right stay visible (the hints trim).
       - A small window: below ~360 px tall the bottom row should not be clipped away (see below).
+      - Shrink the window to its minimum (400 px tall): with the split open and at most one job
+        running, the top row, the row splitter and the bottom row are all visible.
       - Press, or start a drag, in the bottom row and press Ctrl+W from the keyboard mid-gesture: the
         top pane's cursor and marks do not change (events from a row with no pane are dropped -
         verified only by reading, MainWindow is not headless-testable).
@@ -3224,3 +3226,18 @@ anticipate. Stop and ask rather than deciding unilaterally when something contra
   starts and would catch e.g. a cursor move that persisted views. Quality review: no code issues;
   manual check for the dropped-event path, the `DefaultSplitRatio` alias and backlog notes added to
   7a.14.
+
+## 7a.14 (2026-11-19) - code and docs; hands-on checks pending
+
+- Step 1b: the window has `MinHeight="400"` so both rows' 120 px minimum fit with one job row in the
+  strip (`ad09568`); the split-layout code moved into `MainWindow.Split.cs`, a pure move apart from
+  dropping the `DefaultSplitRatio` alias (`b265201`; `MainWindow.xaml.cs` 1551 → 1416 lines). The first
+  version also capped the job strip at 60 px with a scroll bar; the controller had it removed
+  (`64b1579`) because a second job's conflict prompt (上書き / スキップ / 中止) would have scrolled out of
+  sight, leaving a job blocked without the user noticing. More jobs on a minimum-size window squeeze the
+  panes instead - cosmetic, and by choice.
+- Step 2: the design doc now describes what was built (`ColumnRef(PaneId, Index)` and the `At` field;
+  `o` copying the other pane's columns without marks; the startup restore owned by the App; rows vs
+  panes; sort mode swallowing job keys), and decision 7's wording was corrected earlier. The Phase 7
+  summary and the roadmap mark 7a as code-complete with manual checks pending.
+- Step 1 (hands-on, items 1-11 above) is the user's. 7a.14 and the 7a-front row stay `[~]` until then.
