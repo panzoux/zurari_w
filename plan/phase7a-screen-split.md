@@ -28,7 +28,7 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
 | 7a.3 | Preview Msgs/Effects carry `PaneId`; post-steps run per pane; `ViewRestored` per pane | `[x]` | `6afba7f` `e4c72bc` |
 | 7a.4 | Remove the compatibility shim | `[x]` | `c0024a9` `537a62d` |
 | 7a.5 | Property tests: refs to panes that do not exist; per-pane invariants | `[x]` | `d35a7ca` `8ec0f31` |
-| **7a-back** | **Split UI** | `[ ]` | |
+| **7a-back** | **Split UI** — code done; hands-on checks pending (user) | `[~]` | `7aef49d`..`6a989ec` |
 | 7a.6 | `ToggleSplit` / `FocusPane` | `[x]` | `7aef49d` `50797e3` |
 | 7a.7 | `SwapPanes` / `SyncToOtherPane` | `[x]` | `fe89b27` `7aed1c6` `ecd5c12` `274cf9b` |
 | 7a.8 | `CopyToOtherPane` (`c` / `m`) | `[x]` | `60fc9f5` `4a8c14a` |
@@ -52,7 +52,8 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
 - After each commit, set the task's Status row to `[x]` with `(this commit)` in the commit cell in the
   *next* commit, or run `pwsh scripts/status.ps1` after committing the row.
 - `plan/*.md` are CRLF. Edit them without converting line endings.
-- A new `Msg` must be added to `GenMsg` in `tests/Zurari.Core.Tests/TransitionTests.cs` (project rule).
+- A new `Msg` must be added to `GenMsg` in `tests/Zurari.Core.Tests/TransitionProperties.cs` (project rule;
+  moved out of `TransitionTests.cs` in 7a.7).
 - Do not leave the shell's cwd in `artifacts/testresults` when committing (check.ps1 deletes it).
 
 > **No LINQ (added 2026-09-20, commit `d142ce2`).** `build/no-linq/BannedSymbols.txt` applies to
@@ -3241,3 +3242,21 @@ anticipate. Stop and ask rather than deciding unilaterally when something contra
   panes; sort mode swallowing job keys), and decision 7's wording was corrected earlier. The Phase 7
   summary and the roadmap mark 7a as code-complete with manual checks pending.
 - Step 1 (hands-on, items 1-11 above) is the user's. 7a.14 and the 7a-front row stay `[~]` until then.
+
+## Final branch review (2026-11-19)
+
+- Whole branch `main..6a989ec` (65 commits, +8679/-2660): no critical issue, no code defect blocking
+  the merge; 1044 tests green three times. The pane model, close-time cleanup, Runtime concurrency and
+  the startup restore were each judged sound across task boundaries. The branch fast-forwards onto main.
+- Fixed before merge (text only): stale "single preview" comments in `WorkerRuntime`; the
+  `SyncToOtherPane` doc ("nothing is read again" - no longer true, and marks are dropped); the `GenMsg`
+  file named in CLAUDE.md and in this plan (moved to `TransitionProperties.cs` in 7a.7); the 7a-back row;
+  the design doc's 7a-front sections (invariants, projection per row, `c`/`m` refusals).
+- Follow-ups (kanban backlog): deepen the property generators so two-pane states load two or three
+  columns and add a pane-isolation property (the reviewer's most valuable item, before 7b); reread every
+  pane after `FolderCreated`, as `RenameCompleted` does; an invariant that each column is derived under
+  its own pane's view. A candidate for the unidentified full-suite Runtime failure is in roadmap.md's
+  known issues (7a-1).
+- Note for 7b: `SetSortMode`/`SetSortDescending`/`ToggleDirectoriesFirst`/`ToggleHiddenFiles` carry no
+  `PaneId` and act on the focused pane. Correct while they are keyboard-only; a future mouse or toolbar
+  entry point must address a pane explicitly.

@@ -460,7 +460,7 @@ public sealed class WorkerRuntime : IDisposable
 
     /// <summary>
     /// Begins <paramref name="effect"/> on its own task and returns immediately, cancelling whatever
-    /// preview was already running.
+    /// preview was already running for the same pane.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -472,9 +472,10 @@ public sealed class WorkerRuntime : IDisposable
     /// stopped until a thumbnail timed out.
     /// </para>
     /// <para>
-    /// Only one preview is ever in flight, matching what the UI can show. Starting a new one cancels
-    /// the old rather than waiting for it, so cancellation is not itself blocked by the work it is
-    /// cancelling; a superseded result would be discarded by the generation check anyway.
+    /// Only one preview per pane is ever in flight, matching what each pane can show. Starting a new
+    /// one cancels that pane's old one rather than waiting for it, so cancellation is not itself
+    /// blocked by the work it is cancelling; a superseded result would be discarded by the generation
+    /// check anyway. The other pane's preview is never touched.
     /// </para>
     /// </remarks>
     private void StartPreview(Effect.LoadPreview effect)
@@ -561,7 +562,7 @@ public sealed class WorkerRuntime : IDisposable
     }
 
     /// <summary>
-    /// Cancels the in-flight preview, but only if it is still the one for
+    /// Cancels the pane's in-flight preview, but only if it is still the one for
     /// <paramref name="generation"/>. Safe to call when nothing is running.
     /// </summary>
     /// <remarks>
@@ -1717,7 +1718,8 @@ public sealed class WorkerRuntime : IDisposable
             Task.WaitAll(_workers, TimeSpan.FromSeconds(5));
             _settingsWriter.Wait(TimeSpan.FromSeconds(5));
 
-            // The in-flight preview runs off the pool, so waiting on the workers does not cover it.
+            // The in-flight previews (one per pane) run off the pool, so waiting on the workers does
+            // not cover them.
             // It is given its own budget to unwind: cancellation kills any ffmpeg it started, but
             // that still takes a moment.
             //

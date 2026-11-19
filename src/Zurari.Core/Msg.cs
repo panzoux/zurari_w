@@ -357,7 +357,9 @@ public abstract record Msg
 
     /// <summary>
     /// <c>o</c>. Makes the focused pane show what the other pane shows - the same columns and focused
-    /// column, re-derived under this pane's own view. Nothing is read again.
+    /// column, re-derived under this pane's own view. Loaded listings are reused rather than read
+    /// again; a column still loading is read again for this pane, since the pending read answers the
+    /// other pane. Marks are not copied: a selection belongs to the pane it was made in.
     /// </summary>
     public sealed record SyncToOtherPane : Msg;
 

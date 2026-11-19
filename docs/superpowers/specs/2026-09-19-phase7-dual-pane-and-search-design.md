@@ -54,7 +54,7 @@ public sealed record Pane(PaneId Id, ImmutableArray<Column> Columns, int Focused
 public sealed record AppState
 {
     public required ImmutableArray<Pane> Panes { get; init; }   // 1〜2 要素、上が先
-    public required int FocusedPane { get; init; }              // Panes へのインデックス
+    public int FocusedPane { get; init; }                       // Panes へのインデックス
     public int NextPaneId { get; init; }
     // 全ペイン共有(zrr と同じ考え方:「今どこを見ているか」だけがペインに属する):
     // Jobs, NextJobId, Notice, CursorMemory, Rename, InputMode, RevealTarget, CutPending
@@ -93,10 +93,14 @@ public sealed record AppState
 - `Panes` は 1〜2 要素、`PaneId` は重複せず、すべて `NextPaneId` 未満。
 - `FocusedPane` は範囲内。
 - 既存の列ごとの不変条件(カーソル範囲、`Entries ⊆ AllEntries`、エラー時のメッセージ)を各ペインで検査。
+- 実装で追加したもの: 入力中のリネームは生きているペインを指す / 列に紐づく reveal は生きているペインを指す /
+  すべてのペインのドライブ一覧は折りたたみセクションの集合が等しい。
 
 ### App
 
 - `StateProjection` は `state.Focused` を投影する(後段で2つ目のブラウザを足す)。
+  実装: 後段で `Project(state, pane)` / `ProjectPreview(state, pane)` になり、行ごとに投影する。
+  パスバーとステータスバーだけがフォーカスペインを投影する。
 - `ColumnBrowser` のイベントは、発生元のブラウザが属するペインの `PaneId` を付けて Msg にする。
 
 ### テスト
@@ -126,6 +130,9 @@ public sealed record AppState
   表示と食い違い1階層上を指すバグが zrr で実際にあった)。
 - 以降は `PasteRequested` と同じ経路(`RunFileJob`、衝突確認つき)。
 - 拒否して `Notice` を出す場合: 宛先がドライブ一覧、宛先が対象そのもの・対象の配下(自分自身への移動)。
+  実装で追加: どちら側でも実フォルダーでない場所(ゴミ箱・ドライブ一覧。ゴミ箱の行は `$R…` の生パスなので
+  Ctrl+C/V と同じく拒否)、コピー先が元と同じフォルダー(「コピー先が元と同じフォルダーです」)。
+  対象の規則は `Column.PathsToActOn()`(Ctrl+C/X・ドラッグと共通)。
 - **分割していない場合**: 7a では `Notice`(「分割していません」)。7c で宛先ピッカーに置き換える。
 
 **見送り**: zrr の Shift+Y(列幅を他方ペインへ複製)。列幅は `ColumnBrowser` のビュー局所状態で、

@@ -46,7 +46,7 @@ pre-commit フックが check.ps1 を実行する(`git config core.hooksPath scr
 - `Directory.Build.props`: TreatWarningsAsErrors + AnalysisLevel latest-all。
   アナライザーを無効化・suppressする場合は .editorconfig に理由コメント付きで(乱用しない)。
 
-新しい Msg を足したら `tests/Zurari.Core.Tests/TransitionTests.cs` の `GenMsg` に必ず追加する
+新しい Msg を足したら `tests/Zurari.Core.Tests/TransitionProperties.cs` の `GenMsg` に必ず追加する
 (property-based test が自動でカバーするため)。
 
 ## 参照資産(このリポジトリの外、`C:\Users\user\source\repos\panzoux\`)
