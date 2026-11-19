@@ -75,6 +75,73 @@ internal static class InputTrace
         return line;
     }
 
+    /// <summary>
+    /// What a message decided beyond the mode and the view: a new status-bar notice (a refusal says
+    /// nothing else), and every job that appeared, changed status or left the strip, with where it
+    /// copies to. Empty when none of that changed.
+    /// </summary>
+    public static IReadOnlyList<string> Outcome(AppState before, AppState after)
+    {
+        ArgumentNullException.ThrowIfNull(before);
+        ArgumentNullException.ThrowIfNull(after);
+
+        var lines = new List<string>();
+        if (after.Notice is { } notice && notice != before.Notice)
+        {
+            lines.Add("[app] notice " + notice);
+        }
+
+        foreach (var job in after.Jobs)
+        {
+            var previous = FindJob(before.Jobs, job.JobId);
+            if (previous is null || previous.Status != job.Status)
+            {
+                lines.Add(DescribeJob(job));
+            }
+        }
+
+        foreach (var job in before.Jobs)
+        {
+            if (FindJob(after.Jobs, job.JobId) is null)
+            {
+                lines.Add(string.Create(CultureInfo.InvariantCulture, $"[app] job {job.JobId} gone"));
+            }
+        }
+
+        return lines;
+    }
+
+    private static Job? FindJob(System.Collections.Immutable.ImmutableArray<Job> jobs, int jobId)
+    {
+        foreach (var job in jobs)
+        {
+            if (job.JobId == jobId)
+            {
+                return job;
+            }
+        }
+
+        return null;
+    }
+
+    private static string DescribeJob(Job job)
+    {
+        var line = string.Create(
+            CultureInfo.InvariantCulture,
+            $"[app] job {job.JobId} {job.Kind} {job.Status} {job.Sources.Length} item(s) -> {job.DestDir}");
+        if (job.SkippedFiles > 0)
+        {
+            line += string.Create(CultureInfo.InvariantCulture, $" skipped={job.SkippedFiles}");
+        }
+
+        if (job.Error is { } error)
+        {
+            line += " error=" + error;
+        }
+
+        return line;
+    }
+
     /// <summary>The first few names of a list, for a log line: enough to see an order change.</summary>
     public static string FirstNames<T>(IEnumerable<T> items, Func<T, string> name)
     {

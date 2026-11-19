@@ -75,4 +75,47 @@ public class InputTraceTests
             @"[app] state pane=0/1 mode=Normal sort=Name/asc/dirsFirst hidden=False focused=0 loc=C:\x sortable=True first=[b.txt]",
             InputTrace.State(state));
     }
+
+    /// <summary>
+    /// <c>c</c> and <c>m</c> reach Core identically; whether one then does nothing visible depends on
+    /// what Core decided. A refusal is only a status-bar notice, and a queued job says where it went.
+    /// </summary>
+    [Fact]
+    public void Outcome_lines_show_a_new_notice_and_a_queued_job_with_its_destination()
+    {
+        var before = AppState.SinglePane([]);
+        var job = new Job(3, JobKind.Copy, [@"C:\a\x.txt", @"C:\a\y.txt"], @"C:\b\sub");
+        var after = before with { Notice = "コピー先が元と同じフォルダーです", Jobs = [job] };
+
+        Assert.Equal(
+            [
+                "[app] notice コピー先が元と同じフォルダーです",
+                @"[app] job 3 Copy Queued 2 item(s) -> C:\b\sub",
+            ],
+            InputTrace.Outcome(before, after));
+    }
+
+    [Fact]
+    public void Outcome_lines_show_a_job_changing_status_with_its_error_and_a_job_leaving_the_strip()
+    {
+        var running = new Job(1, JobKind.Copy, [@"C:\a\x.txt"], @"C:\b", Status: JobStatus.Running);
+        var other = new Job(2, JobKind.Move, [@"C:\a\y.txt"], @"C:\b", Status: JobStatus.Running);
+        var before = AppState.SinglePane([]) with { Jobs = [running, other] };
+        var after = before with { Jobs = [running with { Status = JobStatus.Failed, Error = "denied", SkippedFiles = 1 }] };
+
+        Assert.Equal(
+            [
+                @"[app] job 1 Copy Failed 1 item(s) -> C:\b skipped=1 error=denied",
+                "[app] job 2 gone",
+            ],
+            InputTrace.Outcome(before, after));
+    }
+
+    [Fact]
+    public void Outcome_lines_are_empty_when_neither_the_notice_nor_any_job_changed()
+    {
+        var state = AppState.SinglePane([]) with { Notice = "x" };
+
+        Assert.Empty(InputTrace.Outcome(state, state with { InputMode = Core.InputMode.Sort }));
+    }
 }

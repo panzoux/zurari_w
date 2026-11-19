@@ -585,6 +585,11 @@ public sealed partial class MainWindow : Window, IDisposable
         {
             Trace.WriteLine(InputTrace.State(after));
         }
+
+        foreach (var line in InputTrace.Outcome(before, after))
+        {
+            Trace.WriteLine(line);
+        }
     }
 
     /// <summary>
