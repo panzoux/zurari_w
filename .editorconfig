@@ -78,3 +78,9 @@ dotnet_diagnostic.CA1031.severity = none
 # would tear the token out from under a preview still unwinding. Scoped to this file only.
 [src/Zurari.Runtime/WorkerRuntime.cs]
 dotnet_diagnostic.CA2213.severity = none
+
+# CMigemo.TryLoad / MigemoService.Create: CA2000 cannot follow ownership out of a factory. TryLoad
+# returns the CMigemo it opened (or frees the native library itself), and MigemoService takes the
+# returned one as `owned` and disposes it in its own Dispose. Scoped to these two files only.
+[src/Zurari.Runtime/Migemo/{CMigemo,MigemoService}.cs]
+dotnet_diagnostic.CA2000.severity = none

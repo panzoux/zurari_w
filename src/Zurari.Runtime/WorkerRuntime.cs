@@ -3,6 +3,7 @@ using System.Security;
 using System.Text;
 using System.Threading.Channels;
 using Zurari.Core;
+using Zurari.Runtime.Migemo;
 
 namespace Zurari.Runtime;
 
@@ -110,6 +111,24 @@ public sealed class WorkerRuntime : IDisposable
         new UnboundedChannelOptions { SingleReader = true });
 
     private readonly Task _settingsWriter;
+
+    /// <summary><see cref="Effect.ExpandMigemo"/> requests, drained by <see cref="RunMigemoAsync"/>.</summary>
+    private readonly Channel<Effect> _migemoChannel = Channel.CreateUnbounded<Effect>(
+        new UnboundedChannelOptions { SingleReader = true });
+
+    /// <summary>Words to expand only to fill the cache - see <see cref="PrewarmMigemo"/>.</summary>
+    private readonly Channel<string> _migemoIdle = Channel.CreateUnbounded<string>(
+        new UnboundedChannelOptions { SingleReader = true });
+
+    private readonly Task _migemoReader;
+
+    /// <summary>
+    /// Expands migemo words, or <c>null</c> for no migemo (every word then matches by its letters). Lazy, so
+    /// whatever loading a dictionary costs is paid on the migemo reader, never by the caller of the
+    /// constructor - the UI thread. The caller owns and disposes it.
+    /// </summary>
+    private readonly Lazy<MigemoService>? _migemo;
+
     private readonly Action<Msg> _post;
     private readonly CancellationTokenSource _cts;
     private readonly Task[] _workers;
@@ -329,7 +348,8 @@ public sealed class WorkerRuntime : IDisposable
         UserSettingsStore? settings = null,
         Func<string, string?>? displayName = null,
         Func<string, int, byte[]?>? shellThumbnail = null,
-        TimeSpan? shellThumbnailBudget = null)
+        TimeSpan? shellThumbnailBudget = null,
+        Lazy<MigemoService>? migemo = null)
     {
         ArgumentNullException.ThrowIfNull(post);
         if (workerCount < 1)
@@ -357,6 +377,8 @@ public sealed class WorkerRuntime : IDisposable
                 () => new ShellThumbnailThread(shellThumbnail), LazyThreadSafetyMode.ExecutionAndPublication);
 
         _settingsWriter = Task.Run(RunSettingsWriterAsync);
+        _migemo = migemo;
+        _migemoReader = Task.Run(() => RunMigemoAsync(_cts.Token));
 
         _workers = new Task[workerCount];
         for (var i = 0; i < workerCount; i++)
@@ -372,10 +394,65 @@ public sealed class WorkerRuntime : IDisposable
 
         // Routed here, at the point of submission, so nothing between a caller's two Submit calls
         // can reorder them: the writer channel is FIFO with a single reader.
-        var target = effect is Effect.SetPaneViews or Effect.SetCollapsedGroups or Effect.SetPinned
-            ? _settingsChannel
-            : _channel;
+        var target = effect switch
+        {
+            Effect.SetPaneViews or Effect.SetCollapsedGroups or Effect.SetPinned => _settingsChannel,
+            Effect.ExpandMigemo => _migemoChannel,
+            _ => _channel,
+        };
         target.Writer.TryWrite(effect);
+    }
+
+    /// <summary>
+    /// Expands <c>a</c> to <c>z</c> in the background, behind anything the user asks for, so the first
+    /// letter typed into a search answers at once. A single letter is the slowest word there is
+    /// (tens of milliseconds to 0.2 s, wappsw) and the most likely first keystroke.
+    /// </summary>
+    public void PrewarmMigemo()
+    {
+        if (_migemo is null)
+        {
+            return;
+        }
+
+        for (var c = 'a'; c <= 'z'; c++)
+        {
+            _migemoIdle.Writer.TryWrite(c.ToString());
+        }
+    }
+
+    /// <summary>
+    /// Migemo runs on its own reader, not the pool: a cold expansion takes long enough that sharing the
+    /// two pool workers would hold up directory reads while typing. Requests go first; prewarming fills
+    /// in when there are none.
+    /// </summary>
+    private async Task RunMigemoAsync(CancellationToken token)
+    {
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                if (_migemoChannel.Reader.TryRead(out var effect))
+                {
+                    Execute(effect);
+                    continue;
+                }
+
+                if (_migemoIdle.Reader.TryRead(out var word))
+                {
+                    _migemo?.Value.Expand(word);
+                    continue;
+                }
+
+                await Task.WhenAny(
+                    _migemoChannel.Reader.WaitToReadAsync(token).AsTask(),
+                    _migemoIdle.Reader.WaitToReadAsync(token).AsTask()).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Dispose() requested cancellation; exit quietly.
+        }
     }
 
     private async Task RunSettingsWriterAsync()
@@ -456,7 +533,7 @@ public sealed class WorkerRuntime : IDisposable
                 ExecuteSetPinned(setPinned);
                 break;
             case Effect.ExpandMigemo expand:
-                _post(new Msg.MigemoExpanded(expand.Word, null));
+                _post(new Msg.MigemoExpanded(expand.Word, _migemo?.Value.Expand(expand.Word)));
                 break;
         }
     }
@@ -1720,6 +1797,7 @@ public sealed class WorkerRuntime : IDisposable
         {
             Task.WaitAll(_workers, TimeSpan.FromSeconds(5));
             _settingsWriter.Wait(TimeSpan.FromSeconds(5));
+            _migemoReader.Wait(TimeSpan.FromSeconds(5));
 
             // The in-flight previews (one per pane) run off the pool, so waiting on the workers does
             // not cover them.

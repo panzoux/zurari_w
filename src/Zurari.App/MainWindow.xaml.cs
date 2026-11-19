@@ -24,6 +24,10 @@ namespace Zurari.App;
 public sealed partial class MainWindow : Window, IDisposable
 {
     private readonly WorkerRuntime runtime;
+
+    /// <summary>cmigemo or the built-in port, created on the runtime's migemo thread at first use.</summary>
+    private readonly Lazy<Zurari.Runtime.Migemo.MigemoService> migemo =
+        new(Zurari.Runtime.Migemo.MigemoService.CreateDefault, LazyThreadSafetyMode.ExecutionAndPublication);
     private readonly ShellEffectExecutor shellExecutor;
     private readonly JobEngine jobEngine;
     private readonly DirectoryWatcher directoryWatcher;
@@ -156,7 +160,8 @@ public sealed partial class MainWindow : Window, IDisposable
         runtime = new WorkerRuntime(
             post: PostToLoop, places: RootPlaces, trash: TrashPlaceRow, settings: settingsStore,
             displayName: Zurari.Shell.ShellDisplayName.For,
-            shellThumbnail: Zurari.Shell.ShellThumbnailer.TryGetPng);
+            shellThumbnail: Zurari.Shell.ShellThumbnailer.TryGetPng,
+            migemo: migemo);
         shellExecutor = new ShellEffectExecutor(post: PostToLoop);
         jobEngine = new JobEngine(post: PostToLoop);
         directoryWatcher = new DirectoryWatcher(post: PostToLoop);
@@ -211,6 +216,7 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         RestoreFromSettings();
+        runtime.PrewarmMigemo();
     }
 
     /// <summary>
@@ -489,6 +495,11 @@ public sealed partial class MainWindow : Window, IDisposable
         placesRefreshTimer?.Stop();
         shellWatcher?.Dispose();
         runtime.Dispose();
+        if (migemo.IsValueCreated)
+        {
+            migemo.Value.Dispose();
+        }
+
         shellExecutor.Dispose();
         jobEngine.Dispose();
         directoryWatcher.Dispose();

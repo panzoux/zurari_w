@@ -16,7 +16,7 @@
 
 # Status
 
-1125 tests, `scripts/check.ps1` green.
+1134 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`; do not edit it by hand. Write `(this commit)`
 in a row's commit cell (no backticks) and `status.ps1` fills in the hash after the commit lands.</sub>
@@ -28,7 +28,7 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
 | 7b.2 | Runtime: built-in migemo (rustmigemo port + embedded dictionary + golden test) | `[x]` | `4e08ff4` |
 | 7b.3 | Core: `/` search (`Pane.Search`, Msgs, migemo round trip, deferred rereads) | `[x]` | `155e242` |
 | 7b.4 | Core: Leap (`Column` filter in `Derive`, `Pane.Leap`, auto-enter, blank preview) | `[x]` | `155e242` |
-| 7b.5 | Runtime: `ExpandMigemo` executor (cmigemo → built-in), word LRU, a-z prewarm | `[ ]` | |
+| 7b.5 | Runtime: `ExpandMigemo` executor (cmigemo → built-in), word LRU, a-z prewarm | `[x]` | (this commit) |
 | 7b.6 | App: mode bar, keys, match highlight, status hints | `[ ]` | |
 | 7b.7 | Manual verification; roadmap/summary/spec/notices updated | `[ ]` | |
 
@@ -328,3 +328,17 @@ tests `tests/Zurari.Runtime.Tests/Migemo/MigemoServiceTests.cs`.
   FocusedColumn - RootIndex`; search on the focused column with in-range matches; `NeedsRefresh` only
   under an open mode; a mode only in the focused pane.
 - Until 7b.5 the Runtime answers every `ExpandMigemo` with `null` (no migemo), routed in `EffectRouting`.
+
+**7b.2 (agent, merged in 9eb930e):** rustmigemo's own output is not deterministic -
+`romaji_to_hiragana_predictively` collects suffixes from a `HashSet`, and the generator drops a word
+that extends an earlier one, so `n`, `tt`, `abc` ... differed between runs of the Rust CLI. The golden
+file was generated from a scratch copy with the suffixes sorted descending, and the C# port uses that
+order (`RomajiProcessor.ExpandSuffixes`); longer suffixes first means none are dropped. Rust's Unicode
+case/whitespace predicates are approximated with `ToLowerInvariant` and `Rune.Is*`.
+
+**7b.5 (as built):** `WorkerRuntime` takes a `Lazy<MigemoService>`, so opening cmigemo's dictionary (or
+the embedded one) happens on the migemo reader thread at first use, never in the App's constructor.
+`ExpandMigemo` has its own single reader with a request queue and an idle queue (prewarm a-z); the App
+calls `PrewarmMigemo()` after restoring settings. cmigemo is bound with `NativeLibrary` + function
+pointers (loaded from the folder its dictionary is in). Verified on this machine: the cmigemo in zrr's
+publish folder loads from the x64 process and `nihon` matches 日本.
