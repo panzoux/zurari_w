@@ -189,7 +189,27 @@ public class TransitionProperties
         GenPaneId.Select(p => (Msg)new Msg.FocusPane(p)),
         Gen.Const<Msg>(new Msg.SwapPanes()),
         Gen.Const<Msg>(new Msg.SyncToOtherPane()),
-        GenIsMove.Select(m => (Msg)new Msg.CopyToOtherPane(m)));
+        GenIsMove.Select(m => (Msg)new Msg.CopyToOtherPane(m)),
+        Gen.Const<Msg>(new Msg.BeginSearch()),
+        GenQueryText.Select(t => (Msg)new Msg.SearchTextChanged(t)),
+        Gen.OneOfConst(1, -1, 0, 3).Select(d => (Msg)new Msg.SearchStep(d)),
+        Gen.Const<Msg>(new Msg.ToggleSearchRegex()),
+        GenIsMove.Select(r => (Msg)new Msg.EndSearch(r)),
+        Gen.Const<Msg>(new Msg.BeginLeap()),
+        GenQueryText.Select(t => (Msg)new Msg.LeapTextChanged(t)),
+        Gen.Const<Msg>(new Msg.LeapStepIn()),
+        Gen.Const<Msg>(new Msg.LeapStepOut()),
+        Gen.Const<Msg>(new Msg.LeapToRoot()),
+        GenIsMove.Select(r => (Msg)new Msg.EndLeap(r)),
+        Gen.Select(Gen.OneOfConst("a", "b", "ab", "x"), Gen.OneOfConst<System.Text.RegularExpressions.Regex?>(null, MigemoA, MigemoB))
+            .Select(t => (Msg)new Msg.MigemoExpanded(t.Item1, t.Item2)));
+
+    private static readonly System.Text.RegularExpressions.Regex MigemoA = new("[ac]", NameQuery.PatternOptions);
+
+    private static readonly System.Text.RegularExpressions.Regex MigemoB = new("b|c", NameQuery.PatternOptions);
+
+    /// <summary>Texts for search and Leap: names the generated entries have, AND segments, and a bad regex.</summary>
+    private static Gen<string> GenQueryText => Gen.OneOfConst("", "a", "b", "ab", "a b", "x", "(", "c");
 
     [Fact]
     public void Any_msg_sequence_yields_valid_state_and_effects()
@@ -392,7 +412,11 @@ public class TransitionProperties
         {
             var e = expected.Panes[p];
             var a = actual.Panes[p];
-            Assert.Equal(e with { Columns = default, Preview = PreviewState.Initial }, a with { Columns = default, Preview = PreviewState.Initial });
+            Assert.Equal(
+                e with { Columns = default, Preview = PreviewState.Initial, Search = null, Leap = null },
+                a with { Columns = default, Preview = PreviewState.Initial, Search = null, Leap = null });
+            AssertSearchesEqual(e.Search, a.Search);
+            AssertLeapsEqual(e.Leap, a.Leap);
             Assert.Equal(e.Preview with { ImageBytes = default }, a.Preview with { ImageBytes = default });
             Assert.Equal(e.Preview.ImageBytes, a.Preview.ImageBytes);
             Assert.Equal(e.Columns.Length, a.Columns.Length);
@@ -401,11 +425,69 @@ public class TransitionProperties
                 var ec = e.Columns[c];
                 var ac = a.Columns[c];
                 // Empty rather than default: an ImmutableHashSet is a reference type, so default is null.
-                Assert.Equal(ec with { Entries = default, AllEntries = default, CollapsedGroups = ImmutableHashSet<string>.Empty }, ac with { Entries = default, AllEntries = default, CollapsedGroups = ImmutableHashSet<string>.Empty });
+                Assert.Equal(
+                    ec with { Entries = default, AllEntries = default, CollapsedGroups = ImmutableHashSet<string>.Empty, Filter = null },
+                    ac with { Entries = default, AllEntries = default, CollapsedGroups = ImmutableHashSet<string>.Empty, Filter = null });
+                AssertQueriesEqual(ec.Filter, ac.Filter);
                 Assert.Equal(ec.Entries, ac.Entries);
                 Assert.Equal(ec.AllEntries, ac.AllEntries);
                 Assert.True(ec.CollapsedGroups.SetEquals(ac.CollapsedGroups));
             }
+        }
+    }
+
+    // NameQuery, SearchState and LeapState hold immutable collections, which compare by reference;
+    // two runs of the same message build equal ones, not the same ones.
+    private static void AssertQueriesEqual(NameQuery? expected, NameQuery? actual)
+    {
+        if (expected is null || actual is null)
+        {
+            Assert.Equal(expected is null, actual is null);
+            return;
+        }
+
+        Assert.Equal(expected.Text, actual.Text);
+        Assert.Equal(expected.IsRegex, actual.IsRegex);
+        Assert.Equal(expected.Patterns.Count, actual.Patterns.Count);
+        foreach (var (word, pattern) in expected.Patterns)
+        {
+            Assert.Same(pattern, actual.Patterns[word]);
+        }
+
+        Assert.True(expected.Pending.SetEquals(actual.Pending));
+    }
+
+    private static void AssertSearchesEqual(SearchState? expected, SearchState? actual)
+    {
+        if (expected is null || actual is null)
+        {
+            Assert.Equal(expected is null, actual is null);
+            return;
+        }
+
+        Assert.Equal(expected.ColumnIndex, actual.ColumnIndex);
+        Assert.Equal(expected.AnchorName, actual.AnchorName);
+        Assert.Equal(expected.Matches, actual.Matches);
+        Assert.Equal(expected.MatchIndex, actual.MatchIndex);
+        Assert.Equal(expected.MatchedEntries, actual.MatchedEntries);
+        AssertQueriesEqual(expected.Query, actual.Query);
+    }
+
+    private static void AssertLeapsEqual(LeapState? expected, LeapState? actual)
+    {
+        if (expected is null || actual is null)
+        {
+            Assert.Equal(expected is null, actual is null);
+            return;
+        }
+
+        Assert.Equal(expected.RootIndex, actual.RootIndex);
+        Assert.Equal(expected.RootCursorName, actual.RootCursorName);
+        Assert.Equal(expected.AutoEnterArmed, actual.AutoEnterArmed);
+        Assert.Equal(expected.Trail.Length, actual.Trail.Length);
+        for (var i = 0; i < expected.Trail.Length; i++)
+        {
+            AssertQueriesEqual(expected.Trail[i], actual.Trail[i]);
         }
     }
 }

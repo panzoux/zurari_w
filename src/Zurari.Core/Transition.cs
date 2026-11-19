@@ -16,6 +16,7 @@ public static partial class Transition
         ArgumentNullException.ThrowIfNull(msg);
 
         var (applied, effects) = ApplyCore(state, msg);
+        (applied, effects) = ReconcileModes(applied, effects);
         var remembered = RememberFocusedCursor(state, applied);
         var result = (State: remembered, Effects: effects);
         foreach (var pane in remembered.Panes)
@@ -251,6 +252,18 @@ public static partial class Transition
             Msg.SwapPanes => SwapPanes(state),
             Msg.SyncToOtherPane => SyncToOtherPane(state),
             Msg.CopyToOtherPane m => CopyToOtherPane(state, m.IsMove),
+            Msg.BeginSearch => BeginSearch(state),
+            Msg.SearchTextChanged m => ChangeSearch(state, q => q.WithText(m.Text)),
+            Msg.SearchStep m => (SearchStep(state, m.Delta), NoEffects),
+            Msg.ToggleSearchRegex => ChangeSearch(state, q => q.AsRegex(!q.IsRegex)),
+            Msg.EndSearch m => EndSearch(state, state.Focused.Id, m.Restore, NoEffects),
+            Msg.BeginLeap => BeginLeap(state),
+            Msg.LeapTextChanged m => LeapTextChanged(state, m.Text),
+            Msg.LeapStepIn => LeapStepIn(state),
+            Msg.LeapStepOut => (LeapStepOut(state), NoEffects),
+            Msg.LeapToRoot => (LeapToRoot(state), NoEffects),
+            Msg.EndLeap m => EndLeap(state, state.Focused.Id, m.Restore, NoEffects),
+            Msg.MigemoExpanded m => MigemoExpanded(state, m.Word, m.Pattern),
             _ => (state, NoEffects),
         };
     }
@@ -1558,14 +1571,31 @@ public static partial class Transition
     /// <see cref="LoadState.Loading"/> and requests it again. A directory that changed is stale
     /// wherever it is shown, so this deliberately does not stop at one pane.
     /// </summary>
+    /// <remarks>
+    /// A pane with a search or Leap open is not re-read: that would move the rows its matches and
+    /// filter were computed on. It is marked <see cref="Pane.NeedsRefresh"/> instead, and re-read
+    /// whole when the mode closes.
+    /// </remarks>
     private static (AppState, IReadOnlyList<Effect>) RereadWhere(
         AppState state, Func<ColumnRef, Column, bool> shouldReread)
     {
         List<Effect>? effects = null;
         var panes = state.Panes;
+        var deferred = false;
         for (var p = 0; p < panes.Length; p++)
         {
             var pane = panes[p];
+            if (pane.HasMode)
+            {
+                if (!pane.NeedsRefresh && AnyColumn(pane, shouldReread))
+                {
+                    panes = panes.SetItem(p, pane with { NeedsRefresh = true });
+                    deferred = true;
+                }
+
+                continue;
+            }
+
             var columns = pane.Columns;
             for (var i = 0; i < columns.Length; i++)
             {
@@ -1585,7 +1615,22 @@ public static partial class Transition
             }
         }
 
-        return effects is null ? (state, NoEffects) : (state with { Panes = panes }, effects);
+        return effects is null && !deferred
+            ? (state, NoEffects)
+            : (state with { Panes = panes }, (IReadOnlyList<Effect>?)effects ?? NoEffects);
+    }
+
+    private static bool AnyColumn(Pane pane, Func<ColumnRef, Column, bool> predicate)
+    {
+        for (var i = 0; i < pane.Columns.Length; i++)
+        {
+            if (predicate(pane.Ref(i), pane.Columns[i]))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -1677,7 +1722,9 @@ public static partial class Transition
     /// </summary>
     private static CursorTarget ResolveCursorFileTarget(Pane pane)
     {
-        if (pane.FocusedColumnOrNull is not { } column)
+        // Leap moves the cursor at every keystroke; a preview that kept showing an earlier file while
+        // it did was the most confusing thing about zrr's Leap. Empty until it ends.
+        if (pane.Leap is not null || pane.FocusedColumnOrNull is not { } column)
         {
             return default;
         }

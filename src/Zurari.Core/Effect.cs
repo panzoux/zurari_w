@@ -180,4 +180,11 @@ public abstract record Effect
     /// applied to the state that emitted this, so there is nothing to wait for.
     /// </remarks>
     public sealed record SetCollapsedGroups(ImmutableArray<string> Groups) : Effect;
+
+    /// <summary>
+    /// Expands <paramref name="Word"/> with migemo - romaji to the kana and kanji it may stand for -
+    /// and reports the compiled pattern back as <see cref="Msg.MigemoExpanded"/>. Compiled there, not
+    /// here: the pattern for a single letter runs to tens of kilobytes.
+    /// </summary>
+    public sealed record ExpandMigemo(string Word) : Effect;
 }

@@ -478,4 +478,56 @@ public abstract record Msg
     /// whatever was there.
     /// </summary>
     public sealed record NoticeRaised(string Message) : Msg;
+
+    /// <summary>
+    /// Opens a <c>/</c> search on the focused column. Ignored while renaming or while a search or
+    /// Leap is already open. Closes sort mode.
+    /// </summary>
+    public sealed record BeginSearch : Msg;
+
+    /// <summary>The search text is now <paramref name="Text"/>.</summary>
+    public sealed record SearchTextChanged(string Text) : Msg;
+
+    /// <summary>Moves to the next (<c>+1</c>) or previous (<c>-1</c>) match, wrapping around.</summary>
+    public sealed record SearchStep(int Delta) : Msg;
+
+    /// <summary>Switches the search between literal segments and a regular expression (Ctrl+R).</summary>
+    public sealed record ToggleSearchRegex : Msg;
+
+    /// <summary>
+    /// Closes the search. <paramref name="Restore"/> (Esc) puts the cursor back where it was when the
+    /// search opened; otherwise (Enter) it stays on the match.
+    /// </summary>
+    public sealed record EndSearch(bool Restore) : Msg;
+
+    /// <summary>Opens a Leap (F3) on the focused column. Ignored like <see cref="BeginSearch"/>.</summary>
+    public sealed record BeginLeap : Msg;
+
+    /// <summary>The Leap filter for the focused column is now <paramref name="Text"/>.</summary>
+    public sealed record LeapTextChanged(string Text) : Msg;
+
+    /// <summary>Walks into the folder under the cursor (→, <c>/</c>). Ignored on anything else.</summary>
+    public sealed record LeapStepIn : Msg;
+
+    /// <summary>
+    /// Walks back out to the parent (←, Backspace in an empty box), whose filter becomes the one
+    /// that led in. Ignored in the column the Leap started in.
+    /// </summary>
+    public sealed record LeapStepOut : Msg;
+
+    /// <summary>Goes back to the column the Leap started in, with an empty filter (Ctrl+K).</summary>
+    public sealed record LeapToRoot : Msg;
+
+    /// <summary>
+    /// Closes the Leap and removes its filters. <paramref name="Restore"/> (Esc) goes back to where it
+    /// started; otherwise (Enter, F3, → on a file) the cursor stays where the Leap took it.
+    /// </summary>
+    public sealed record EndLeap(bool Restore) : Msg;
+
+    /// <summary>
+    /// The migemo expansion of <paramref name="Word"/> (<see cref="Effect.ExpandMigemo"/>), compiled
+    /// with <see cref="NameQuery.PatternOptions"/>, or <c>null</c> when there is none. Applied to
+    /// every open search or Leap that still has the word among its segments, and dropped otherwise.
+    /// </summary>
+    public sealed record MigemoExpanded(string Word, System.Text.RegularExpressions.Regex? Pattern) : Msg;
 }

@@ -455,6 +455,9 @@ public sealed class WorkerRuntime : IDisposable
             case Effect.SetPinned setPinned:
                 ExecuteSetPinned(setPinned);
                 break;
+            case Effect.ExpandMigemo expand:
+                _post(new Msg.MigemoExpanded(expand.Word, null));
+                break;
         }
     }
 

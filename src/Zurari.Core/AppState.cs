@@ -159,6 +159,62 @@ public sealed record Column(
     public ImmutableHashSet<string> CollapsedGroups { get; init; } = ImmutableHashSet<string>.Empty;
 
     /// <summary>
+    /// What Leap is narrowing this column to, or <c>null</c>. An input of the derived view like
+    /// hidden files and collapsed sections, so <see cref="AllEntries"/> and the marks on it are
+    /// untouched, and a listing that arrives while the filter is on is simply derived again.
+    /// </summary>
+    public NameQuery? Filter { get; init; }
+
+    /// <summary>
+    /// Narrows the visible list to <paramref name="filter"/> (or widens it again for <c>null</c>).
+    /// </summary>
+    /// <param name="filter">The new filter.</param>
+    /// <param name="view">The pane's view options.</param>
+    /// <param name="cursorToBest">
+    /// Put the cursor on the best match - the first prefix match in listing order, else the first
+    /// substring match, else the first migemo match - as typing does. Otherwise the cursor stays on
+    /// its entry while it is still shown.
+    /// </param>
+    public Column WithFilter(NameQuery? filter, ViewOptions view, bool cursorToBest)
+    {
+        if (ReferenceEquals(filter, Filter))
+        {
+            return this;
+        }
+
+        var next = (this with { Filter = filter }).WithView(view);
+        if (!cursorToBest || filter is null || filter.IsEmpty || next.Entries.IsEmpty)
+        {
+            return next;
+        }
+
+        var best = BestMatch(next.Entries, filter);
+        return best == next.Cursor ? next : next with { Cursor = best };
+    }
+
+    /// <summary>Index of the best-ranked match in <paramref name="rows"/>, or 0 when none ranks.</summary>
+    private static int BestMatch(ImmutableArray<Entry> rows, NameQuery filter)
+    {
+        int substring = -1, migemo = -1;
+        for (var i = 0; i < rows.Length; i++)
+        {
+            switch (filter.Match(rows[i].Label))
+            {
+                case MatchTier.Prefix:
+                    return i;
+                case MatchTier.Substring when substring < 0:
+                    substring = i;
+                    break;
+                case MatchTier.Migemo when migemo < 0:
+                    migemo = i;
+                    break;
+            }
+        }
+
+        return substring >= 0 ? substring : Math.Max(migemo, 0);
+    }
+
+    /// <summary>
     /// Collapses or expands <paramref name="group"/>, re-deriving the visible list and keeping the
     /// cursor on the same entry - which, for the header you just pressed, means it stays put.
     /// </summary>
@@ -304,7 +360,7 @@ public sealed record Column(
     {
         ArgumentNullException.ThrowIfNull(view);
         var previousName = CursorName;
-        var visible = Derive(all, collapsedGroups, view, IsSortable);
+        var visible = Derive(all, collapsedGroups, view, IsSortable, Filter);
         return this with
         {
             AllEntries = all,
@@ -325,18 +381,20 @@ public sealed record Column(
     public bool IsSortable => Location is not Location.Drives;
 
     /// <summary>
-    /// The visible list: everything except the rows of collapsed sections, in the order asked for.
-    /// Hidden files will join this.
+    /// The visible list: everything except hidden files, the rows of collapsed sections and what a
+    /// Leap filter leaves out, in the order asked for.
     /// </summary>
     private static ImmutableArray<Entry> Derive(
         ImmutableArray<Entry> all,
         ImmutableHashSet<string> collapsedGroups,
         ViewOptions view,
-        bool sortable)
+        bool sortable,
+        NameQuery? filter)
     {
         var hidesAnything = !collapsedGroups.IsEmpty || (!view.ShowHidden && HasHidden(all));
+        var filters = filter is { IsEmpty: false };
 
-        if (!hidesAnything && !sortable)
+        if (!hidesAnything && !sortable && !filters)
         {
             // Returning the same instance matters beyond saving a copy: the projection reuses its
             // row array when Entries is reference-equal, which is what keeps cursor movement cheap.
@@ -345,7 +403,8 @@ public sealed record Column(
 
         if (!hidesAnything)
         {
-            return Sort(all, view.Sort);
+            var shown = filters ? ApplyFilter(all, filter!) : all;
+            return sortable ? Sort(shown, view.Sort) : shown;
         }
 
         var builder = ImmutableArray.CreateBuilder<Entry>(all.Length);
@@ -371,7 +430,35 @@ public sealed record Column(
             }
         }
 
-        return sortable ? Sort(builder.ToImmutable(), view.Sort) : builder.ToImmutable();
+        var visible = filters ? ApplyFilter(builder.ToImmutable(), filter!) : builder.ToImmutable();
+        return sortable ? Sort(visible, view.Sort) : visible;
+    }
+
+    /// <summary>
+    /// The rows <paramref name="filter"/> keeps. Migemo-only matches are kept only when nothing
+    /// matched by its letters (zrr's rule: the romaji reading is a fallback, not a widening), and a
+    /// section header is never kept - narrowing to "ドライブ" means nothing.
+    /// </summary>
+    private static ImmutableArray<Entry> ApplyFilter(ImmutableArray<Entry> rows, NameQuery filter)
+    {
+        var tiers = new MatchTier[rows.Length];
+        var anyLiteral = false;
+        for (var i = 0; i < rows.Length; i++)
+        {
+            tiers[i] = rows[i].Kind == EntryKind.Header ? MatchTier.None : filter.Match(rows[i].Label);
+            anyLiteral |= tiers[i] is MatchTier.Prefix or MatchTier.Substring;
+        }
+
+        var kept = ImmutableArray.CreateBuilder<Entry>();
+        for (var i = 0; i < rows.Length; i++)
+        {
+            if (tiers[i] != MatchTier.None && !(anyLiteral && tiers[i] == MatchTier.Migemo))
+            {
+                kept.Add(rows[i]);
+            }
+        }
+
+        return kept.ToImmutable();
     }
 
     /// <summary>
@@ -964,6 +1051,12 @@ public sealed record AppState
                 violations.Add($"Panes[{p}].Preview.Attempt is outside 1.." + PreviewState.MaxAttempts);
             }
 
+            // A search or Leap closes when its pane loses focus.
+            if (pane.HasMode && p != FocusedPane)
+            {
+                violations.Add($"Panes[{p}] has a search or Leap open but is not the focused pane.");
+            }
+
             CheckColumns(pane, $"Panes[{p}].", violations);
         }
 
@@ -1085,6 +1178,66 @@ public sealed record AppState
             // Now a row carries its own Entry.Target, so a column can legitimately point somewhere
             // unrelated to the one on its left - that is exactly what a favorite, a pinned network
             // share, or the recycle bin does. String containment would reject all of them.
+
+            // A filter is Leap's, on the column it is narrowing - the focused one - and nowhere else.
+            if (column.Filter is not null && (pane.Leap is null || i != pane.FocusedColumn))
+            {
+                violations.Add($"{prefix}Columns[{i}] has a filter outside the focused column of an open Leap.");
+            }
+        }
+
+        CheckModeInvariants(pane, prefix, violations);
+    }
+
+    private static void CheckModeInvariants(Pane pane, string prefix, List<string> violations)
+    {
+        if (pane.Search is not null && pane.Leap is not null)
+        {
+            violations.Add(prefix + "has both a search and a Leap open.");
+        }
+
+        if (pane.NeedsRefresh && !pane.HasMode)
+        {
+            violations.Add(prefix + "NeedsRefresh is set with no mode open to hold it back.");
+        }
+
+        if (pane.Search is { } search)
+        {
+            if (search.ColumnIndex != pane.FocusedColumn || search.ColumnIndex >= pane.Columns.Length)
+            {
+                violations.Add($"{prefix}Search.ColumnIndex {search.ColumnIndex} is not the focused column.");
+            }
+            else
+            {
+                var entries = pane.Columns[search.ColumnIndex].Entries;
+                foreach (var match in search.Matches)
+                {
+                    if (match < 0 || match >= entries.Length)
+                    {
+                        violations.Add($"{prefix}Search.Matches holds {match}, out of range [0, {entries.Length}).");
+                    }
+                }
+
+                if (search.MatchIndex < -1 || search.MatchIndex >= search.Matches.Length
+                    || (search.MatchIndex == -1) != search.Matches.IsEmpty)
+                {
+                    violations.Add($"{prefix}Search.MatchIndex {search.MatchIndex} does not fit {search.Matches.Length} matches.");
+                }
+            }
+        }
+
+        if (pane.Leap is { } leap)
+        {
+            if (pane.FocusedColumnOrNull?.Filter is null)
+            {
+                violations.Add(prefix + "has a Leap open but its focused column has no filter.");
+            }
+
+            if (pane.FocusedColumn - leap.RootIndex != leap.Trail.Length)
+            {
+                violations.Add(
+                    $"{prefix}Leap walked {leap.Trail.Length} levels from column {leap.RootIndex} but is focused on {pane.FocusedColumn}.");
+            }
         }
     }
 

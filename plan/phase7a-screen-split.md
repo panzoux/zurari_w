@@ -15,7 +15,7 @@
 
 # Status
 
-1074 tests, `scripts/check.ps1` green.
+1109 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`; do not edit it by hand. Write `(this commit)`
 in a row's commit cell (no backticks) and `status.ps1` fills in the hash after the commit lands.</sub>

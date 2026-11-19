@@ -27,6 +27,21 @@ public sealed record Pane(PaneId Id, ImmutableArray<Column> Columns, int Focused
     /// <summary>How this pane's listings are ordered and filtered.</summary>
     public ViewOptions View { get; init; } = ViewOptions.Default;
 
+    /// <summary>The <c>/</c> search open in this pane, or <c>null</c>.</summary>
+    public SearchState? Search { get; init; }
+
+    /// <summary>The Leap open in this pane, or <c>null</c>.</summary>
+    public LeapState? Leap { get; init; }
+
+    /// <summary>
+    /// A re-read was asked for while a search or Leap was open, and is owed when it closes. Re-reading
+    /// under an open mode would move the rows its matches and filter were computed on (zrr's rule).
+    /// </summary>
+    public bool NeedsRefresh { get; init; }
+
+    /// <summary>Whether a search or Leap is open in this pane.</summary>
+    public bool HasMode => Search is not null || Leap is not null;
+
     /// <summary>The column the cursor keys act on, or <c>null</c> when <see cref="FocusedColumn"/> is out of range.</summary>
     public Column? FocusedColumnOrNull =>
         FocusedColumn >= 0 && FocusedColumn < Columns.Length ? Columns[FocusedColumn] : null;

@@ -16,7 +16,7 @@
 
 # Status
 
-1074 tests, `scripts/check.ps1` green.
+1109 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`; do not edit it by hand. Write `(this commit)`
 in a row's commit cell (no backticks) and `status.ps1` fills in the hash after the commit lands.</sub>
@@ -24,10 +24,10 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
 | | Item | Status | Commit |
 |---|---|---|---|
 | 7b.0 | This plan | `[x]` | `cb6613a` |
-| 7b.1 | Core: `NameQuery` matcher (segments, tiers, regex, migemo slots) | `[x]` | (this commit) |
+| 7b.1 | Core: `NameQuery` matcher (segments, tiers, regex, migemo slots) | `[x]` | `d4ceaec` |
 | 7b.2 | Runtime: built-in migemo (rustmigemo port + embedded dictionary + golden test) | `[ ]` | |
-| 7b.3 | Core: `/` search (`Pane.Search`, Msgs, migemo round trip, deferred rereads) | `[ ]` | |
-| 7b.4 | Core: Leap (`Column` filter in `Derive`, `Pane.Leap`, auto-enter, blank preview) | `[ ]` | |
+| 7b.3 | Core: `/` search (`Pane.Search`, Msgs, migemo round trip, deferred rereads) | `[x]` | (this commit) |
+| 7b.4 | Core: Leap (`Column` filter in `Derive`, `Pane.Leap`, auto-enter, blank preview) | `[x]` | (this commit) |
 | 7b.5 | Runtime: `ExpandMigemo` executor (cmigemo → built-in), word LRU, a-z prewarm | `[ ]` | |
 | 7b.6 | App: mode bar, keys, match highlight, status hints | `[ ]` | |
 | 7b.7 | Manual verification; roadmap/summary/spec/notices updated | `[ ]` | |
@@ -309,4 +309,22 @@ tests `tests/Zurari.Runtime.Tests/Migemo/MigemoServiceTests.cs`.
 
 # Records
 
-(filled in while working)
+**7b.3 / 7b.4 (as built, one commit — they share the mode post-step and the deferred reread):**
+- `LeapState` has no `Query`: the Leap's query *is* the focused column's `Column.Filter`, so there is
+  one copy. `Trail` holds `NameQuery`s rather than strings, so stepping out restores the parent's
+  migemo patterns too, and `MigemoExpanded` updates the trail as well as the live filter (a word
+  answered while it sat in the trail would otherwise stay `Pending` for ever).
+- `Transition.ReconcileModes` runs right after `ApplyCore`, before the cursor memory and the per-pane
+  reconciles. It closes a search whose pane is unfocused or whose column is no longer focused, closes
+  a Leap whose focused column has no filter (that is how "something else moved the focus" shows), and
+  runs auto-enter. Auto-enter loops over already-loaded columns within one message, capped at 64
+  levels (`MaxAutoEnterDepth`) against a junction that points at its own ancestor.
+- Clearing a search's text goes back to the anchor (zrr left the cursor on the last match).
+- A late migemo pattern only moves a search's cursor when there were no matches before; for Leap it
+  re-derives keeping the cursor on its entry. A cursor the user already moved stays put.
+- `Apply_is_deterministic` compares `NameQuery` / `SearchState` / `LeapState` structurally in the test
+  (they hold immutable collections, which compare by reference). Core keeps record equality.
+- New invariants: a filter only on the focused column of an open Leap; `Trail.Length ==
+  FocusedColumn - RootIndex`; search on the focused column with in-range matches; `NeedsRefresh` only
+  under an open mode; a mode only in the focused pane.
+- Until 7b.5 the Runtime answers every `ExpandMigemo` with `null` (no migemo), routed in `EffectRouting`.

@@ -64,6 +64,7 @@ public static class EffectRouting
             Effect.RunFileJob => EffectTarget.Jobs,
             Effect.CancelJob => EffectTarget.Jobs,
             Effect.ResolveJobConflict => EffectTarget.Jobs,
+            Effect.ExpandMigemo => EffectTarget.Runtime,
             _ => throw new NotSupportedException($"No executor is wired for {effect.GetType().Name}."),
         };
     }
