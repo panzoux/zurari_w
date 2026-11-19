@@ -38,7 +38,7 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
 | 7a.11 | App: second row, splitter, focus routing, dimming, keys | `[x]` | `7cfebdc` `e9824cd` `472bf92` `dc0fc33` `d9171c8` |
 | 7a.12 | Persistence: split open/ratio, per-position view options | `[x]` | `12c77ec` `c6df2ac` `0ba6a95` |
 | 7a.13 | Headless E2E: split, copy top → bottom | `[x]` | `54ded09` `fec4b46` `e054881` |
-| 7a.14 | Manual verification; roadmap/summary updated — code and docs done, hands-on checks pending (user) | `[~]` | `ad09568` `b265201` `64b1579` (this commit) |
+| 7a.14 | Manual verification; roadmap/summary updated — code and docs done, hands-on checks pending (user) | `[~]` | `ad09568` `b265201` `64b1579` `8d1d04f` |
 
 ---
 
