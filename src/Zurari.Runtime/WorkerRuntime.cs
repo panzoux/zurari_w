@@ -407,14 +407,15 @@ public sealed class WorkerRuntime : IDisposable
             case Effect.CreateFolder createFolder:
                 ExecuteCreateFolder(createFolder);
                 break;
-            case Effect.SetViewOptions setView:
-                _settings.Update(s => s with
+            case Effect.SetPaneViews setViews:
+                var mapped = new List<PaneViewSettings>(setViews.TopFirst.Length);
+                foreach (var view in setViews.TopFirst)
                 {
-                    SortMode = setView.View.Sort.Mode.ToString(),
-                    SortDescending = setView.View.Sort.Descending,
-                    DirectoriesFirst = setView.View.Sort.DirectoriesFirst,
-                    ShowHidden = setView.View.ShowHidden,
-                });
+                    mapped.Add(new PaneViewSettings(
+                        view.Sort.Mode.ToString(), view.Sort.Descending, view.Sort.DirectoriesFirst, view.ShowHidden));
+                }
+
+                _settings.Update(s => s.WithPaneViews(mapped));
                 break;
             case Effect.SetCollapsedGroups setCollapsedGroups:
                 _settings.Update(s => s with { CollapsedGroups = [.. setCollapsedGroups.Groups] });
@@ -594,18 +595,19 @@ public sealed class WorkerRuntime : IDisposable
     /// The mode is stored by name rather than by its numeric value: renaming or reordering the enum
     /// would otherwise silently reinterpret an old settings file as a different mode.
     /// </remarks>
-    private static ViewOptions ReadViewOptions(UserSettings settings)
+    public static ViewOptions ReadViewOptions(PaneViewSettings stored)
     {
-        var mode = Enum.TryParse<SortMode>(settings.SortMode, ignoreCase: true, out var parsed)
+        ArgumentNullException.ThrowIfNull(stored);
+        var mode = Enum.TryParse<SortMode>(stored.SortMode, ignoreCase: true, out var parsed)
             ? parsed
             : SortOrder.Default.Mode;
 
         return new ViewOptions(
             new SortOrder(
                 mode,
-                settings.SortDescending ?? SortOrder.Default.Descending,
-                settings.DirectoriesFirst ?? SortOrder.Default.DirectoriesFirst),
-            settings.ShowHidden ?? ViewOptions.Default.ShowHidden);
+                stored.SortDescending ?? SortOrder.Default.Descending,
+                stored.DirectoriesFirst ?? SortOrder.Default.DirectoriesFirst),
+            stored.ShowHidden ?? ViewOptions.Default.ShowHidden);
     }
 
     /// <summary>
@@ -725,7 +727,7 @@ public sealed class WorkerRuntime : IDisposable
                 var settings = _settings.Load();
                 _post(new Msg.CollapsedGroupsRestored(
                     effect.At, [.. settings.CollapsedGroups ?? []]));
-                _post(new Msg.ViewRestored(effect.At.Pane, ReadViewOptions(settings)));
+                _post(new Msg.ViewRestored(effect.At.Pane, ReadViewOptions(settings.EffectivePaneViews()[0])));
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

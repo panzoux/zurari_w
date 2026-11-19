@@ -204,9 +204,8 @@ public class SortTests
 
         Assert.Equal(["b.txt", "a.txt"], TestEntries.Names(next.Focused.Columns[0].Entries));
         Assert.Equal(["d.txt", "c.txt"], TestEntries.Names(next.Focused.Columns[1].Entries));
-        Assert.Equal(
-            new Effect.SetViewOptions(new ViewOptions(new SortOrder(SortMode.Size))),
-            Assert.Single(TestEffects.Of<Effect.SetViewOptions>(effects)));
+        var saved = Assert.Single(TestEffects.Of<Effect.SetPaneViews>(effects));
+        Assert.Equal(new ViewOptions(new SortOrder(SortMode.Size)), Assert.Single(saved.TopFirst));
     }
 
     /// <summary>
@@ -241,7 +240,7 @@ public class SortTests
 
         Assert.Equal(["b.txt", "a.txt"], TestEntries.Names(next.Focused.Columns[0].Entries));
         Assert.Equal(new SortOrder(SortMode.Size), next.Focused.View.Sort);
-        Assert.Empty(TestEffects.Of<Effect.SetViewOptions>(effects));
+        Assert.Empty(TestEffects.Of<Effect.SetPaneViews>(effects));
     }
 
     [Fact]
@@ -306,7 +305,7 @@ public class SortTests
         Assert.Equal(["a.txt", "desktop.ini"], TestEntries.Names(shown.Focused.Columns[0].Entries));
         Assert.True(shown.Focused.View.ShowHidden);
         Assert.Empty(TestEffects.Of<Effect.ReadDirectory>(effects));
-        Assert.Single(TestEffects.Of<Effect.SetViewOptions>(effects));
+        Assert.Single(TestEffects.Of<Effect.SetPaneViews>(effects));
 
         var (hiddenAgain, _) = Transition.Apply(shown, new Msg.ToggleHiddenFiles());
         Assert.Equal(["a.txt"], TestEntries.Names(hiddenAgain.Focused.Columns[0].Entries));

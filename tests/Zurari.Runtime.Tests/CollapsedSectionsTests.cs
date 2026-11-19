@@ -155,17 +155,18 @@ public class CollapsedSectionsTests
             var queue = new ConcurrentQueue<Msg>();
             using var runtime = new WorkerRuntime(queue.Enqueue, settings: store);
 
-            runtime.Submit(new Effect.SetViewOptions(new ViewOptions(new SortOrder(SortMode.Size, Descending: true, DirectoriesFirst: false), ShowHidden: true)));
+            runtime.Submit(new Effect.SetPaneViews([new ViewOptions(new SortOrder(SortMode.Size, Descending: true, DirectoriesFirst: false), ShowHidden: true)]));
 
             var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
-            while (store.Load().SortMode is null && DateTime.UtcNow < deadline)
+            while (store.Load().PaneViews is null && DateTime.UtcNow < deadline)
             {
                 Thread.Sleep(10);
             }
 
-            Assert.Equal("Size", store.Load().SortMode);
-            Assert.True(store.Load().SortDescending);
-            Assert.False(store.Load().DirectoriesFirst);
+            var stored = Assert.Single(store.Load().EffectivePaneViews());
+            Assert.Equal("Size", stored.SortMode);
+            Assert.True(stored.SortDescending);
+            Assert.False(stored.DirectoriesFirst);
 
             runtime.Submit(new Effect.ReadDirectory(Col(0), Location.Drives.Instance));
             var restored = WaitFor<Msg.ViewRestored>(queue, TimeSpan.FromSeconds(10));

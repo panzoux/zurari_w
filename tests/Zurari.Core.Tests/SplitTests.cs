@@ -33,6 +33,43 @@ public class SplitTests
     }
 
     [Fact]
+    public void Changing_a_view_persists_every_panes_view_top_first()
+    {
+        var (split, _) = Transition.Apply(Browsing(), new Msg.ToggleSplit());
+
+        var (_, effects) = Transition.Apply(split, new Msg.ToggleHiddenFiles());
+
+        var saved = Assert.Single(TestEffects.Of<Effect.SetPaneViews>(effects));
+        Assert.Equal(2, saved.TopFirst.Length);
+        Assert.True(saved.TopFirst[0].ShowHidden);
+        Assert.False(saved.TopFirst[1].ShowHidden);
+    }
+
+    [Fact]
+    public void Swapping_persists_the_views_in_their_new_positions()
+    {
+        var (split, _) = Transition.Apply(Browsing(), new Msg.ToggleSplit());
+        var (hidden, _) = Transition.Apply(split, new Msg.ToggleHiddenFiles());
+
+        var (_, effects) = Transition.Apply(hidden, new Msg.SwapPanes());
+
+        var saved = Assert.Single(TestEffects.Of<Effect.SetPaneViews>(effects));
+        Assert.False(saved.TopFirst[0].ShowHidden);
+        Assert.True(saved.TopFirst[1].ShowHidden);
+    }
+
+    [Fact]
+    public void Toggling_the_split_persists_the_views_of_the_panes_that_remain()
+    {
+        var (split, opened) = Transition.Apply(Browsing(), new Msg.ToggleSplit());
+        Assert.Equal(2, Assert.Single(TestEffects.Of<Effect.SetPaneViews>(opened)).TopFirst.Length);
+
+        var (_, closed) = Transition.Apply(split, new Msg.ToggleSplit());
+
+        Assert.Single(Assert.Single(TestEffects.Of<Effect.SetPaneViews>(closed)).TopFirst);
+    }
+
+    [Fact]
     public void Opening_adds_a_bottom_pane_at_the_focused_location_and_keeps_focus()
     {
         var state = Browsing();
@@ -117,7 +154,7 @@ public class SplitTests
     {
         var (_, effects) = Transition.Apply(Split(), new Msg.ToggleSplit());
 
-        Assert.Empty(effects);
+        Assert.Empty(TestEffects.Of<Effect.CancelPreview>(effects));
     }
 
     [Fact]

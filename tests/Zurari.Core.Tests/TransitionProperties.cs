@@ -332,6 +332,11 @@ public class TransitionProperties
                     Assert.Equal(e with { Groups = default }, g with { Groups = default });
                     Assert.Equal(e.Groups, g.Groups);
                     break;
+                case Effect.SetPaneViews e:
+                    var v = Assert.IsType<Effect.SetPaneViews>(actual[i]);
+                    Assert.Equal(e with { TopFirst = default }, v with { TopFirst = default });
+                    Assert.Equal(e.TopFirst, v.TopFirst);
+                    break;
                 default:
                     Assert.Equal(expected[i], actual[i]);
                     break;

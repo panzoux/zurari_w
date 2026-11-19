@@ -163,9 +163,11 @@ public abstract record Effect
     public sealed record CreateFolder(ColumnRef At, Location Location) : Effect;
 
     /// <summary>
-    /// Remembers how listings are shown, so they come back the way they were left.
+    /// Remembers every pane's view options, top first, so each position comes back the way it was
+    /// left. Sent whole, like <see cref="SetCollapsedGroups"/>, so a lost or reordered effect cannot
+    /// leave storage disagreeing with the screen.
     /// </summary>
-    public sealed record SetViewOptions(ViewOptions View) : Effect;
+    public sealed record SetPaneViews(ImmutableArray<ViewOptions> TopFirst) : Effect;
 
     /// <summary>
     /// Remembers which sections of the drive pane are collapsed, so they come back that way.

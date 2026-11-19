@@ -13,6 +13,12 @@ namespace Zurari.Runtime;
 /// <param name="SortDescending">Whether that mode was reversed.</param>
 /// <param name="DirectoriesFirst">Whether folders were kept above files.</param>
 /// <param name="ShowHidden">Whether hidden and system entries were being shown.</param>
+/// <param name="SplitOpen">Whether the window was showing two panes.</param>
+/// <param name="SplitRatio">The top pane's share of the height when it was split, 0..1.</param>
+/// <param name="PaneViews">
+/// Each pane position's view options, top first. Entries beyond the open panes are kept, so closing
+/// the split does not forget the bottom pane's setup.
+/// </param>
 public sealed record UserSettings(
     double? PreviewWidth = null,
     IReadOnlyList<string>? PinnedPaths = null,
@@ -20,7 +26,40 @@ public sealed record UserSettings(
     string? SortMode = null,
     bool? SortDescending = null,
     bool? DirectoriesFirst = null,
-    bool? ShowHidden = null);
+    bool? ShowHidden = null,
+    bool? SplitOpen = null,
+    double? SplitRatio = null,
+    IReadOnlyList<PaneViewSettings>? PaneViews = null)
+{
+    /// <summary>
+    /// The stored per-position views. A file from before the split has none; its single set of
+    /// fields is what the one pane used, so it reads as the top pane's.
+    /// </summary>
+    public IReadOnlyList<PaneViewSettings> EffectivePaneViews() =>
+        PaneViews is { Count: > 0 } views
+            ? views
+            : [new PaneViewSettings(SortMode, SortDescending, DirectoriesFirst, ShowHidden)];
+
+    /// <summary>
+    /// Stores <paramref name="topFirst"/>, keeping any stored positions beyond it: closing the split
+    /// saves one view, and that must not forget how the bottom pane was set up.
+    /// </summary>
+    public UserSettings WithPaneViews(IReadOnlyList<PaneViewSettings> topFirst)
+    {
+        ArgumentNullException.ThrowIfNull(topFirst);
+        var existing = EffectivePaneViews();
+        var merged = new List<PaneViewSettings>(topFirst);
+        for (var i = topFirst.Count; i < existing.Count; i++)
+        {
+            merged.Add(existing[i]);
+        }
+
+        return this with { PaneViews = merged };
+    }
+}
+
+/// <summary>One pane position's view options, as stored.</summary>
+public sealed record PaneViewSettings(string? SortMode, bool? SortDescending, bool? DirectoriesFirst, bool? ShowHidden);
 
 /// <summary>
 /// Loads and saves <see cref="UserSettings"/> as JSON, by default under <c>%APPDATA%\zurari_w</c>.

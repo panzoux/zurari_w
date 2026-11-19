@@ -52,7 +52,7 @@ public static class EffectRouting
             Effect.ReadDirectory => EffectTarget.Runtime,
             Effect.SetPinned => EffectTarget.Runtime,
             Effect.SetCollapsedGroups => EffectTarget.Runtime,
-            Effect.SetViewOptions => EffectTarget.Runtime,
+            Effect.SetPaneViews => EffectTarget.Runtime,
             Effect.MountImage => EffectTarget.Shell,
             Effect.OpenWithDefaultApp => EffectTarget.Shell,
             Effect.CreateFolder => EffectTarget.Runtime,

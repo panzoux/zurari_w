@@ -24,8 +24,8 @@ public static partial class Transition
             // A preview still loading for the pane that is going would hold a worker until it times
             // out, and nothing would ever consume its result: say so.
             return dropped.Preview.Kind == PreviewKind.Loading
-                ? (closed, [new Effect.CancelPreview(dropped.Id, dropped.Preview.Generation)])
-                : (closed, NoEffects);
+                ? (closed, [new Effect.CancelPreview(dropped.Id, dropped.Preview.Generation), PaneViews(closed)])
+                : (closed, [PaneViews(closed)]);
         }
 
         var source = state.Focused.FocusedColumnOrNull;
@@ -46,7 +46,7 @@ public static partial class Transition
 
         var pane = new Pane(id, [column], 0) { View = view };
         var next = state with { Panes = state.Panes.Add(pane), NextPaneId = state.NextPaneId + 1 };
-        return (next, [new Effect.ReadDirectory(pane.Ref(0), source.Location)]);
+        return (next, [new Effect.ReadDirectory(pane.Ref(0), source.Location), PaneViews(next)]);
     }
 
     private static AppState FocusPane(AppState state, PaneId id)
@@ -62,10 +62,16 @@ public static partial class Transition
 
     // A rename in progress belongs to a row on screen; swapping moves panes between rows and syncing
     // replaces the columns it was typed into, so both end it (as FocusPane does).
-    private static AppState SwapPanes(AppState state) =>
-        state.Panes.Length == 2
-            ? state with { Panes = [state.Panes[1], state.Panes[0]], Rename = null, InputMode = InputMode.Normal }
-            : state;
+    private static (AppState, IReadOnlyList<Effect>) SwapPanes(AppState state)
+    {
+        if (state.Panes.Length != 2)
+        {
+            return (state, NoEffects);
+        }
+
+        var swapped = state with { Panes = [state.Panes[1], state.Panes[0]], Rename = null, InputMode = InputMode.Normal };
+        return (swapped, [PaneViews(swapped)]);
+    }
 
     // A selection belongs to the pane where it was made, so the copy carries no marks. A column still
     // loading in the other pane is read again for this one: the pending read answers to the other

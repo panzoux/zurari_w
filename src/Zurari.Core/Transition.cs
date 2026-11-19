@@ -248,7 +248,7 @@ public static partial class Transition
             Msg.CollapsedGroupsRestored m => (RestoreCollapsedGroups(state, m.At, m.Groups), NoEffects),
             Msg.ToggleSplit m => ToggleSplit(state, m.NewPaneView),
             Msg.FocusPane m => (FocusPane(state, m.Pane), NoEffects),
-            Msg.SwapPanes => (SwapPanes(state), NoEffects),
+            Msg.SwapPanes => SwapPanes(state),
             Msg.SyncToOtherPane => SyncToOtherPane(state),
             Msg.CopyToOtherPane m => CopyToOtherPane(state, m.IsMove),
             _ => (state, NoEffects),
@@ -404,7 +404,19 @@ public static partial class Transition
     {
         var pane = state.Focused;
         var next = state.WithPane(pane with { Columns = RederiveColumns(pane.Columns, view), View = view });
-        return (next, new Effect[] { new Effect.SetViewOptions(view) });
+        return (next, new Effect[] { PaneViews(next) });
+    }
+
+    /// <summary>Every pane's view options, top first, as the effect that persists them.</summary>
+    private static Effect.SetPaneViews PaneViews(AppState state)
+    {
+        var views = ImmutableArray.CreateBuilder<ViewOptions>(state.Panes.Length);
+        foreach (var pane in state.Panes)
+        {
+            views.Add(pane.View);
+        }
+
+        return new Effect.SetPaneViews(views.MoveToImmutable());
     }
 
     /// <summary>

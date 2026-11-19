@@ -280,4 +280,74 @@ public class UserSettingsStoreTests
             TempDirectory.Delete(dir);
         }
     }
+
+    [Fact]
+    public void Old_single_view_fields_read_as_the_top_panes_view_and_survive_the_first_save()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(dir, "settings.json"),
+                """{ "PreviewWidth": 321, "PinnedPaths": ["C:/p"], "SortMode": "Size", "ShowHidden": true }""");
+            var store = new UserSettingsStore(dir);
+
+            var top = Assert.Single(store.Load().EffectivePaneViews());
+            Assert.Equal("Size", top.SortMode);
+            Assert.True(top.ShowHidden);
+
+            store.Update(s => s.WithPaneViews([new PaneViewSettings("Name", false, true, false)]));
+
+            var saved = store.Load();
+            Assert.Equal(321, saved.PreviewWidth);
+            Assert.Equal(["C:/p"], saved.PinnedPaths);
+            Assert.Equal("Size", saved.SortMode);
+            Assert.Equal("Name", Assert.Single(saved.EffectivePaneViews()).SortMode);
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
+
+    [Fact]
+    public void Saving_fewer_views_keeps_the_stored_bottom_one()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var store = new UserSettingsStore(dir);
+            store.Update(s => s.WithPaneViews([new PaneViewSettings("Name", false, true, false), new PaneViewSettings("Size", true, true, true)]));
+
+            store.Update(s => s.WithPaneViews([new PaneViewSettings("Modified", false, true, false)]));
+
+            var views = store.Load().EffectivePaneViews();
+            Assert.Equal(2, views.Count);
+            Assert.Equal("Modified", views[0].SortMode);
+            Assert.Equal("Size", views[1].SortMode);
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
+
+    [Fact]
+    public void The_split_fields_round_trip()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var store = new UserSettingsStore(dir);
+            store.Update(s => s with { SplitOpen = true, SplitRatio = 0.3 });
+
+            var loaded = store.Load();
+            Assert.True(loaded.SplitOpen);
+            Assert.Equal(0.3, loaded.SplitRatio);
+        }
+        finally
+        {
+            TempDirectory.Delete(dir);
+        }
+    }
 }
