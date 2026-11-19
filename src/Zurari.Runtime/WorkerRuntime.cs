@@ -727,7 +727,6 @@ public sealed class WorkerRuntime : IDisposable
                 var settings = _settings.Load();
                 _post(new Msg.CollapsedGroupsRestored(
                     effect.At, [.. settings.CollapsedGroups ?? []]));
-                _post(new Msg.ViewRestored(effect.At.Pane, ReadViewOptions(settings.EffectivePaneViews()[0])));
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

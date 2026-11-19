@@ -2129,6 +2129,42 @@ public class TransitionTests
     }
 
     [Fact]
+    public void Restoring_collapsed_groups_applies_even_when_the_triggering_column_is_gone()
+    {
+        var state = StateWithColumns(DrivePaneColumn(cursor: 0));
+
+        var (next, _) = Transition.Apply(state, new Msg.CollapsedGroupsRestored(Col(5), ["drives"]));
+
+        Assert.Equal(["drives"], next.Focused.Columns[0].CollapsedGroups);
+        Assert.Equal(3, next.Focused.Columns[0].Entries.Length);
+    }
+
+    [Fact]
+    public void A_drive_list_still_loading_when_the_restore_lands_comes_up_collapsed()
+    {
+        var loading = new Column(Location.Drives.Instance, Entries: [], Cursor: -1, Load: LoadState.Loading);
+        var state = StateWithColumns(loading);
+
+        var (restored, _) = Transition.Apply(state, new Msg.CollapsedGroupsRestored(Col(0), ["drives"]));
+        var (loaded, _) = Transition.Apply(
+            restored, new Msg.DirectoryLoaded(Col(0), Location.Drives.Instance, DrivePaneColumn().AllEntries));
+
+        Assert.Equal(3, loaded.Focused.Columns[0].Entries.Length);
+        Assert.Equal(5, loaded.Focused.Columns[0].AllEntries.Length);
+    }
+
+    [Fact]
+    public void Restoring_collapsed_groups_reaches_the_drive_list_of_every_pane()
+    {
+        var state = TestPanes.TwoPanes(DrivePaneColumn(cursor: 0), DrivePaneColumn(cursor: 0), focused: 0);
+
+        var (next, _) = Transition.Apply(state, new Msg.CollapsedGroupsRestored(Col(0), ["drives"]));
+
+        Assert.Equal(["drives"], next.Panes[0].Columns[0].CollapsedGroups);
+        Assert.Equal(["drives"], next.Panes[1].Columns[0].CollapsedGroups);
+    }
+
+    [Fact]
     public void Restoring_collapsed_groups_into_an_ordinary_directory_does_nothing()
     {
         var column = new Column(new Location.RealDirectory(@"C:\"), [Dir, File1, File2], Cursor: 0, Load: LoadState.Loaded);

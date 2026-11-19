@@ -139,6 +139,19 @@ public partial class PaneView : UserControl
     }
 
     /// <summary>
+    /// Empties the preview and drops the decoded image, for a row whose pane has gone: a closed
+    /// split must not keep the last picture it showed alive until the split reopens.
+    /// </summary>
+    public void ClearPreview()
+    {
+        RenderPreview(
+            new PaneId(-1),
+            new StateProjection.PreviewVm(0, null, null, null, PreviewKind.None, null, [], null, string.Empty));
+        PreviewImage.Source = null;
+        lastDecodedImage = null;
+    }
+
+    /// <summary>
     /// Wires a <see cref="StateProjection.PreviewVm"/> onto the preview pane's four
     /// mutually-exclusive content views (image / text-or-hex / capacity bar / status message), toggling
     /// visibility by <see cref="PreviewKind"/>, plus the Finder-style metadata block underneath

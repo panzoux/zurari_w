@@ -245,7 +245,7 @@ public static partial class Transition
             Msg.ViewRestored m => (RestoreView(state, m.Pane, m.View), NoEffects),
             Msg.ToggleSection m => ToggleSection(state, m.At, m.EntryIndex),
             Msg.RetryPreview m => RetryPreview(state, m.Pane),
-            Msg.CollapsedGroupsRestored m => (RestoreCollapsedGroups(state, m.At, m.Groups), NoEffects),
+            Msg.CollapsedGroupsRestored m => (RestoreCollapsedGroups(state, m.Groups), NoEffects),
             Msg.ToggleSplit m => ToggleSplit(state, m.NewPaneView),
             Msg.FocusPane m => (FocusPane(state, m.Pane), NoEffects),
             Msg.SwapPanes => SwapPanes(state),
@@ -933,21 +933,12 @@ public static partial class Transition
     /// <remarks>
     /// Silently ignores a group name that no longer matches any section - a stored setting is a
     /// wish, not a claim about what exists, and <see cref="Column.WithView"/> simply hides nothing
-    /// for it. Restoring into a column that is not the drive pane would be meaningless, so it does
-    /// not happen.
+    /// for it. Applies to every drive list in every pane, whichever column triggered it: every drive
+    /// list shares one collapsed set, and the restore happens once per process, so it must not be
+    /// lost because the column that was read first has since been replaced.
     /// </remarks>
-    private static AppState RestoreCollapsedGroups(
-        AppState state, ColumnRef at, ImmutableArray<string> groups)
-    {
-        if (state.ColumnAt(at) is not { } column)
-        {
-            return state;
-        }
-
-        return column.Location is Location.Drives
-            ? WithCollapsedGroupsInAllDriveLists(state, [.. groups])
-            : state;
-    }
+    private static AppState RestoreCollapsedGroups(AppState state, ImmutableArray<string> groups) =>
+        WithCollapsedGroupsInAllDriveLists(state, [.. groups]);
 
     /// <summary>
     /// Re-reads every column showing the drive pane, after the pinned places changed underneath it.

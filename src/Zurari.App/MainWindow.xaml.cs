@@ -179,7 +179,14 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         Closed += (_, _) => Dispose();
-        Loaded += (_, _) => FocusRow(loop.State.FocusedPane);
+        Loaded += (_, _) =>
+        {
+            // Whatever pane has the focus at startup is the row that gets the keyboard, and Render
+            // must not then see a "change" from a row it never knew about.
+            lastFocusedRow = loop.State.FocusedPane;
+            FocusRow(lastFocusedRow);
+        };
+        PaneSplitter.DragCompleted += (_, _) => SaveSplitRatio();
 
         // The handle does not exist until here, and the shell registers against a handle.
         SourceInitialized += OnSourceInitialized;
@@ -203,7 +210,36 @@ public sealed partial class MainWindow : Window, IDisposable
             PreviewMouseUp += (_, e) => TraceWindowMouse("winUp", e);
         }
 
+        RestoreFromSettings();
+    }
+
+    /// <summary>
+    /// Brings back what the last session left: each position's view options, whether the split was
+    /// open, and the splitter. Runs once, synchronously in the constructor, before the first read.
+    /// </summary>
+    /// <remarks>
+    /// The App names the pane for each stored view itself (the top pane's id is known here), rather
+    /// than the Runtime posting it for whichever drive read finished first - with the split restored,
+    /// that could be the bottom pane's. These Msgs are dispatched before any worker can post
+    /// anything, because <see cref="PostToLoop"/> goes through the dispatcher and this is the UI
+    /// thread, so every <see cref="Msg.DirectoryLoaded"/> that follows is filed under the right view.
+    /// The bottom view rides in <see cref="Msg.ToggleSplit"/>, so it needs no pane id at all.
+    /// </remarks>
+    private void RestoreFromSettings()
+    {
+        var settings = settingsStore.Load();
+        var views = settings.EffectivePaneViews();
+        splitRatio = ClampRatio(settings.SplitRatio ?? DefaultSplitRatio);
+
+        Dispatch(new Msg.ViewRestored(loop.State.Focused.Id, WorkerRuntime.ReadViewOptions(views[0])));
+
+        // Refresh first: it reads the top pane's column. Opening the split afterwards then reads
+        // only the new pane's own column, so nothing is read twice.
         Dispatch(new Msg.Refresh());
+        if (settings.SplitOpen == true)
+        {
+            Dispatch(new Msg.ToggleSplit(views.Count > 1 ? WorkerRuntime.ReadViewOptions(views[1]) : null));
+        }
     }
 
     /// <summary>
@@ -1243,11 +1279,50 @@ public sealed partial class MainWindow : Window, IDisposable
     /// <summary>Whether <see cref="ApplyLayout"/> currently shows the second row.</summary>
     private bool splitShown;
 
-    /// <summary>
-    /// Where the splitter starts when the split opens: the top pane's share of the height. Fixed
-    /// until 7a.12 stores and restores it.
-    /// </summary>
+    /// <summary>Where the splitter starts when nothing has been stored: the top pane's share of the height.</summary>
     private const double DefaultSplitRatio = 0.5;
+
+    /// <summary>The smallest a pane may be dragged to, so both always have room for their columns.</summary>
+    private const double PaneMinHeight = 120;
+
+    /// <summary>
+    /// The top pane's share of the height the split opens with: restored from settings, then kept
+    /// current by every drag.
+    /// </summary>
+    private double splitRatio = DefaultSplitRatio;
+
+    private static double ClampRatio(double ratio) =>
+        double.IsFinite(ratio) ? Math.Clamp(ratio, 0.15, 0.85) : DefaultSplitRatio;
+
+    /// <summary>
+    /// The top pane's share as the rows are laid out now, or <c>null</c> when there is no usable
+    /// layout (the split is closed, or the window has not been measured). Computed from
+    /// <c>ActualHeight</c>: after a drag <c>GridSplitter</c> leaves pixel-sized star values
+    /// (<c>312*</c> and <c>188*</c>), not normalised ones. Clamped so both rows' minimum heights fit.
+    /// </summary>
+    private double? MeasuredSplitRatio()
+    {
+        var total = TopRow.ActualHeight + BottomRow.ActualHeight;
+        if (BottomRow.ActualHeight <= 0 || total <= 2 * PaneMinHeight)
+        {
+            return null;
+        }
+
+        var floor = Math.Max(0.15, PaneMinHeight / total);
+        var ceiling = Math.Min(0.85, 1 - (PaneMinHeight / total));
+        return Math.Clamp(TopRow.ActualHeight / total, floor, ceiling);
+    }
+
+    private void SaveSplitRatio()
+    {
+        if (MeasuredSplitRatio() is not { } ratio)
+        {
+            return;
+        }
+
+        splitRatio = ratio;
+        settingsStore.Update(s => s with { SplitRatio = ratio });
+    }
 
     /// <summary>
     /// Opens or closes the second row when the state's pane count says so. Acts only on a change,
@@ -1262,17 +1337,25 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         splitShown = split;
+        settingsStore.Update(s => s with { SplitOpen = split });
         if (split)
         {
-            TopRow.Height = new GridLength(DefaultSplitRatio, GridUnitType.Star);
+            TopRow.Height = new GridLength(splitRatio, GridUnitType.Star);
             SplitterRow.Height = new GridLength(6);
-            BottomRow.MinHeight = 120;
-            BottomRow.Height = new GridLength(1 - DefaultSplitRatio, GridUnitType.Star);
+            BottomRow.MinHeight = PaneMinHeight;
+            BottomRow.Height = new GridLength(1 - splitRatio, GridUnitType.Star);
             PaneSplitter.Visibility = Visibility.Visible;
             BottomPane.Visibility = Visibility.Visible;
         }
         else
         {
+            // The rows are about to be zeroed, and with them the only record of where the user left
+            // the splitter this session.
+            if (MeasuredSplitRatio() is { } leftAt)
+            {
+                splitRatio = leftAt;
+            }
+
             PaneSplitter.Visibility = Visibility.Collapsed;
             BottomPane.Visibility = Visibility.Collapsed;
             BottomRow.MinHeight = 0;
@@ -1339,6 +1422,10 @@ public sealed partial class MainWindow : Window, IDisposable
             {
                 lastRendered[row] = null;
                 rowEmptied = true;
+
+                // The row is hidden, but its columns and decoded image are still alive.
+                rows[row].ColumnBrowser.Columns = [];
+                rows[row].ClearPreview();
             }
         }
 

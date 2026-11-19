@@ -382,8 +382,10 @@ public abstract record Msg
     public sealed record ToggleSection(ColumnRef At, int EntryIndex) : Msg;
 
     /// <summary>
-    /// The sections that were collapsed when the app last ran, applied to a drive pane that has just
-    /// finished loading. Ignored for any other column.
+    /// The sections that were collapsed when the app last ran, applied to every drive list in every
+    /// pane. <paramref name="At"/> is only where the restore was triggered (the first drive list to
+    /// finish loading): it is not consulted, so the restore is not lost if that column has since been
+    /// replaced. A state with no drive list ignores it.
     /// </summary>
     /// <remarks>
     /// A separate message rather than a field on <see cref="DirectoryLoaded"/>: what is in a listing

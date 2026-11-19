@@ -141,11 +141,11 @@ public class CollapsedSectionsTests
     }
 
     /// <summary>
-    /// The view options ride the same seam as the collapsed sections: written when it changes, handed
-    /// back once when the drive pane is first read.
+    /// The view options are written when they change; reading them back is the App's job (it names the
+    /// pane), so the first drive read posts only the collapsed sections.
     /// </summary>
     [Fact]
-    public void The_view_options_are_written_and_handed_back_on_the_first_read()
+    public void The_view_options_are_written_per_position_and_no_view_is_posted_back()
     {
         var dir = CreateTempDir();
         try
@@ -168,12 +168,14 @@ public class CollapsedSectionsTests
             Assert.True(stored.SortDescending);
             Assert.False(stored.DirectoriesFirst);
 
-            runtime.Submit(new Effect.ReadDirectory(Col(0), Location.Drives.Instance));
-            var restored = WaitFor<Msg.ViewRestored>(queue, TimeSpan.FromSeconds(10));
-
             Assert.Equal(
                 new ViewOptions(new SortOrder(SortMode.Size, Descending: true, DirectoriesFirst: false), ShowHidden: true),
-                restored.View);
+                WorkerRuntime.ReadViewOptions(stored));
+
+            // The App names each pane's view itself; the Runtime no longer guesses which pane that is.
+            runtime.Submit(new Effect.ReadDirectory(Col(0), Location.Drives.Instance));
+            WaitFor<Msg.CollapsedGroupsRestored>(queue, TimeSpan.FromSeconds(10));
+            Assert.DoesNotContain(queue, m => m is Msg.ViewRestored);
         }
         finally
         {
@@ -188,23 +190,9 @@ public class CollapsedSectionsTests
     [Fact]
     public void An_unrecognized_stored_mode_falls_back_to_the_default()
     {
-        var dir = CreateTempDir();
-        try
-        {
-            var settingsDir = Path.Combine(dir, "cfg");
-            new UserSettingsStore(settingsDir).Update(s => s with { SortMode = "ByVibes" });
+        var view = WorkerRuntime.ReadViewOptions(new PaneViewSettings("ByVibes", null, null, null));
 
-            var queue = new ConcurrentQueue<Msg>();
-            using var runtime = new WorkerRuntime(queue.Enqueue, settings: new UserSettingsStore(settingsDir));
-
-            runtime.Submit(new Effect.ReadDirectory(Col(0), Location.Drives.Instance));
-            var restored = WaitFor<Msg.ViewRestored>(queue, TimeSpan.FromSeconds(10));
-
-            Assert.Equal(SortOrder.Default.Mode, restored.View.Sort.Mode);
-        }
-        finally
-        {
-            TempDirectory.Delete(dir);
-        }
+        Assert.Equal(SortOrder.Default.Mode, view.Sort.Mode);
+        Assert.Equal(ViewOptions.Default, view with { Sort = view.Sort with { Mode = SortOrder.Default.Mode } });
     }
 }
