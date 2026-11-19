@@ -244,29 +244,31 @@ public sealed partial class MainWindow : Window, IDisposable
     private void WirePane(PaneView view, int row)
     {
         var browser = view.ColumnBrowser;
-        browser.CursorMoveRequested += (_, e) => Dispatch(ToCursorMsg(e, RefIn(row, e.ColumnIndex)));
-        browser.ColumnFocusRequested += (_, e) => Dispatch(new Msg.FocusColumn(RefIn(row, e.ColumnIndex)));
-        browser.EntryActivated += (_, e) => Dispatch(new Msg.EnterDirectory(RefIn(row, e.ColumnIndex), e.EntryIndex));
-        browser.NavigateUpRequested += (_, e) => Dispatch(new Msg.GoToParent(RefIn(row, e.ColumnIndex)));
+        browser.CursorMoveRequested += (_, e) => DispatchIn(row, e.ColumnIndex, at => ToCursorMsg(e, at));
+        browser.ColumnFocusRequested += (_, e) => DispatchIn(row, e.ColumnIndex, at => new Msg.FocusColumn(at));
+        browser.EntryActivated += (_, e) => DispatchIn(row, e.ColumnIndex, at => new Msg.EnterDirectory(at, e.EntryIndex));
+        browser.NavigateUpRequested += (_, e) => DispatchIn(row, e.ColumnIndex, at => new Msg.GoToParent(at));
         browser.EntryPointerPressed += (_, e) => OnEntryPointerPressed(row, e);
         browser.EntryClicked += (_, e) => OnEntryClicked(row, e);
         browser.EntryDragRequested += (s, e) => OnEntryDragRequested(row, s, e);
         browser.FileDropRequested += (_, e) =>
         {
             FocusPaneOf(row);
-            Dispatch(new Msg.DropFiles(
-                RefIn(row, e.ColumnIndex), e.TargetEntryIndex, [.. e.Paths], e.ShiftHeld, e.CtrlHeld));
+            DispatchIn(
+                row,
+                e.ColumnIndex,
+                at => new Msg.DropFiles(at, e.TargetEntryIndex, [.. e.Paths], e.ShiftHeld, e.CtrlHeld));
         };
         browser.MarkRangeRequested += (_, e) =>
         {
             FocusPaneOf(row);
-            Dispatch(new Msg.MarkRange(RefIn(row, e.ColumnIndex), e.FromIndex, e.ToIndex, e.Additive));
+            DispatchIn(row, e.ColumnIndex, at => new Msg.MarkRange(at, e.FromIndex, e.ToIndex, e.Additive));
         };
         browser.RubberBandStarted += (_, e) => OnRubberBandStarted(row, e);
         browser.SectionToggleRequested += (_, e) =>
         {
             FocusPaneOf(row);
-            Dispatch(new Msg.ToggleSection(RefIn(row, e.ColumnIndex), e.EntryIndex));
+            DispatchIn(row, e.ColumnIndex, at => new Msg.ToggleSection(at, e.EntryIndex));
         };
         browser.RenameSubmitted += (_, e) => Dispatch(new Msg.RenameSubmitted(e.NewName));
         browser.RenameCancelled += (_, _) => Dispatch(new Msg.RenameCancelled());
@@ -284,15 +286,24 @@ public sealed partial class MainWindow : Window, IDisposable
         view.PreviewMouseDown += (_, _) => FocusPaneOf(row);
 
         view.PreviewWidthChanged += OnPreviewWidthChanged;
-        view.RetryRequested += (_, _) => Dispatch(new Msg.RetryPreview(PaneInRow(row)));
+        view.RetryRequested += (_, _) =>
+        {
+            if (PaneInRow(row) is { } pane)
+            {
+                Dispatch(new Msg.RetryPreview(pane));
+            }
+        };
     }
 
     /// <summary>
     /// The pane shown in <paramref name="row"/> right now. By position at the moment of the event,
-    /// not captured at wiring time: a swap moves panes between rows.
+    /// not captured at wiring time: a swap moves panes between rows. <c>null</c> for a row that has
+    /// no pane (the bottom row while the split is closed): a late event from that collapsed view -
+    /// the release watchdog finishing a press, a <c>DoDragDrop</c> return - is dropped by the callers
+    /// rather than retargeted to whichever pane happens to be focused.
     /// </summary>
-    private PaneId PaneInRow(int row) =>
-        row < loop.State.Panes.Length ? loop.State.Panes[row].Id : loop.State.Focused.Id;
+    private PaneId? PaneInRow(int row) =>
+        row < loop.State.Panes.Length ? loop.State.Panes[row].Id : null;
 
     /// <summary>
     /// Clicking a pane focuses it: called before any pointer <see cref="Msg"/> from
@@ -301,8 +312,7 @@ public sealed partial class MainWindow : Window, IDisposable
     /// </summary>
     private void FocusPaneOf(int row)
     {
-        var pane = PaneInRow(row);
-        if (pane != loop.State.Focused.Id)
+        if (PaneInRow(row) is { } pane && pane != loop.State.Focused.Id)
         {
             Dispatch(new Msg.FocusPane(pane));
         }
@@ -321,8 +331,21 @@ public sealed partial class MainWindow : Window, IDisposable
         }
     }
 
-    /// <summary>Column <paramref name="columnIndex"/> of the pane shown in <paramref name="row"/>. Addresses a pane by its id, never by focus.</summary>
-    private ColumnRef RefIn(int row, int columnIndex) => new(PaneInRow(row), columnIndex);
+    /// <summary>
+    /// Column <paramref name="columnIndex"/> of the pane shown in <paramref name="row"/>. Addresses a
+    /// pane by its id, never by focus; <c>null</c> when the row has no pane.
+    /// </summary>
+    private ColumnRef? RefIn(int row, int columnIndex) =>
+        PaneInRow(row) is { } pane ? new ColumnRef(pane, columnIndex) : null;
+
+    /// <summary>Dispatches the Msg <paramref name="make"/> builds for a column of <paramref name="row"/>'s pane, or nothing when the row has no pane.</summary>
+    private void DispatchIn(int row, int columnIndex, Func<ColumnRef, Msg> make)
+    {
+        if (RefIn(row, columnIndex) is { } at)
+        {
+            Dispatch(make(at));
+        }
+    }
 
     /// <summary>
     /// The places the drive pane lists above the drives. Resolved here because it needs both layers:
@@ -630,10 +653,15 @@ public sealed partial class MainWindow : Window, IDisposable
                 + $"button={e.Button} modifiers={e.Modifiers}");
         }
 
+        if (RefIn(row, e.ColumnIndex) is not { } at)
+        {
+            return;
+        }
+
         FocusPaneOf(row);
         if (!(e.Button == MouseButton.Left && e.Modifiers == ModifierKeys.Control))
         {
-            Dispatch(new Msg.CursorTo(RefIn(row, e.ColumnIndex), e.EntryIndex));
+            Dispatch(new Msg.CursorTo(at, e.EntryIndex));
         }
 
         if (e.Button != MouseButton.Right)
@@ -641,7 +669,7 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
-        ShowContextMenu(RefIn(row, e.ColumnIndex), e.EntryIndex, e.ScreenPosition);
+        ShowContextMenu(at, e.EntryIndex, e.ScreenPosition);
     }
 
     /// <summary>
@@ -708,15 +736,20 @@ public sealed partial class MainWindow : Window, IDisposable
                 $"[app] OnEntryClicked col={e.ColumnIndex} idx={e.EntryIndex} modifiers={Keyboard.Modifiers}");
         }
 
-        FocusPaneOf(row);
-        if ((Keyboard.Modifiers & ModifierKeys.Control) != 0)
+        if (RefIn(row, e.ColumnIndex) is not { } at)
         {
-            Dispatch(new Msg.ToggleMark(RefIn(row, e.ColumnIndex), e.EntryIndex));
             return;
         }
 
-        Dispatch(new Msg.ClearMarks(RefIn(row, e.ColumnIndex)));
-        Dispatch(new Msg.EnterDirectory(RefIn(row, e.ColumnIndex), e.EntryIndex, FocusChild: false));
+        FocusPaneOf(row);
+        if ((Keyboard.Modifiers & ModifierKeys.Control) != 0)
+        {
+            Dispatch(new Msg.ToggleMark(at, e.EntryIndex));
+            return;
+        }
+
+        Dispatch(new Msg.ClearMarks(at));
+        Dispatch(new Msg.EnterDirectory(at, e.EntryIndex, FocusChild: false));
     }
 
     /// <summary>
@@ -734,7 +767,7 @@ public sealed partial class MainWindow : Window, IDisposable
         FocusPaneOf(row);
         if (!e.Additive)
         {
-            Dispatch(new Msg.ClearMarks(RefIn(row, e.ColumnIndex)));
+            DispatchIn(row, e.ColumnIndex, at => new Msg.ClearMarks(at));
         }
     }
 
@@ -749,8 +782,9 @@ public sealed partial class MainWindow : Window, IDisposable
     /// </summary>
     private void OnEntryDragRequested(int row, object? sender, EntryDragRequestedEventArgs e)
     {
-        var at = RefIn(row, e.ColumnIndex);
-        if (loop.State.ColumnAt(at) is not { } column || column.Location.FilesystemPath is null)
+        if (RefIn(row, e.ColumnIndex) is not { } at
+            || loop.State.ColumnAt(at) is not { } column
+            || column.Location.FilesystemPath is null)
         {
             return;
         }
