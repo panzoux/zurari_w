@@ -23,6 +23,19 @@ public class OpenAndCreateTests
             Assert.Single(TestEffects.Of<Effect.OpenWithDefaultApp>(effects)));
     }
 
+    /// <summary>A single click selects a file without opening it; that takes a double-click.</summary>
+    [Fact]
+    public void A_click_selects_a_file_without_opening_it()
+    {
+        var state = With(Here, new Entry("a.txt", EntryKind.File), new Entry("notes.txt", EntryKind.File));
+
+        var (next, effects) = Transition.Apply(state, new Msg.EnterDirectory(Col(0), 1, FocusChild: false, OpenFile: false));
+
+        Assert.Empty(TestEffects.Of<Effect.OpenWithDefaultApp>(effects));
+        Assert.Empty(TestEffects.Of<Effect.MountImage>(effects));
+        Assert.Equal(1, next.Focused.Columns[0].Cursor);
+    }
+
     /// <summary>A disc image is opened by becoming a drive, not by launching something.</summary>
     [Fact]
     public void Opening_a_disc_image_mounts_it_instead()

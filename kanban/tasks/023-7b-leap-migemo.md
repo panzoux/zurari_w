@@ -1,10 +1,12 @@
 ---
 id: 23
 title: 7b 実機確認(検索・Leap・migemo)
-status: in-progress
+status: done
 priority: high
 created: 2026-11-19T23:06:09.9740517+09:00
-updated: 2026-11-19T23:06:09.9740517+09:00
+updated: 2026-11-20T18:59:39.0579176+09:00
+started: 2026-11-20T18:59:39.0616061+09:00
+completed: 2026-11-20T18:59:39.0616061+09:00
 tags:
     - phase7b
 class: standard

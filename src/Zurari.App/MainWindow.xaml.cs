@@ -731,7 +731,8 @@ public sealed partial class MainWindow : Window, IDisposable
     /// Finder style, then activates the clicked entry. Net behavior table (see also
     /// <see cref="Zurari.Controls.ColumnView.OnListPreviewMouseMove"/> for the drag/rubber-band half):
     /// <list type="bullet">
-    /// <item>plain click = select-only-this + enter, but <see cref="Msg.EnterDirectory.FocusChild"/>
+    /// <item>plain click = select-only-this + enter a folder (a file is only selected - opening it
+    /// takes a double-click), but <see cref="Msg.EnterDirectory.FocusChild"/>
     /// false - the child pane opens without stealing focus/cursor-highlight from the clicked column
     /// (that only happens via Enter/→/double-click, which dispatch the FocusChild-true default via
     /// <see cref="Zurari.Controls.ColumnBrowser.EntryActivated"/>)</item>
@@ -765,7 +766,7 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         Dispatch(new Msg.ClearMarks(at));
-        Dispatch(new Msg.EnterDirectory(at, e.EntryIndex, FocusChild: false));
+        Dispatch(new Msg.EnterDirectory(at, e.EntryIndex, FocusChild: false, OpenFile: false));
     }
 
     /// <summary>

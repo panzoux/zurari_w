@@ -16,7 +16,7 @@
 
 # Status
 
-1152 tests, `scripts/check.ps1` green.
+1153 tests, `scripts/check.ps1` green.
 
 <sub>The test count is written by `scripts/status.ps1`; do not edit it by hand. Write `(this commit)`
 in a row's commit cell (no backticks) and `status.ps1` fills in the hash after the commit lands.</sub>
@@ -30,7 +30,7 @@ in a row's commit cell (no backticks) and `status.ps1` fills in the hash after t
 | 7b.4 | Core: Leap (`Column` filter in `Derive`, `Pane.Leap`, auto-enter, blank preview) | `[x]` | `155e242` |
 | 7b.5 | Runtime: `ExpandMigemo` executor (cmigemo → built-in), word LRU, a-z prewarm | `[x]` | `f24aedf` |
 | 7b.6 | App: mode bar, keys, match highlight, status hints | `[x]` | `72392cf` |
-| 7b.7 | Manual verification; roadmap/summary/spec/notices updated | `[~]` docs done, hands-on pending | `bf811e1` |
+| 7b.7 | Manual verification; roadmap/summary/spec/notices updated | `[x]` hands-on OK 2026-11-20 (single click no longer opens a file; 0.7.0) | `(this commit)` |
 
 ---
 

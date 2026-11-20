@@ -173,7 +173,7 @@ public static partial class Transition
             Msg.CursorEnd m => (MoveCursorTo(state, m.At, index: int.MaxValue), NoEffects),
             Msg.CursorTo m => (MoveCursorTo(state, m.At, m.EntryIndex), NoEffects),
             Msg.FocusColumn m => (FocusColumn(state, m.At), NoEffects),
-            Msg.EnterDirectory m => EnterDirectory(state, m.At, m.EntryIndex, m.FocusChild),
+            Msg.EnterDirectory m => EnterDirectory(state, m.At, m.EntryIndex, m.FocusChild, m.OpenFile),
             Msg.GoToParent m => (GoToParent(state, m.At), NoEffects),
             Msg.Refresh => Refresh(state),
             Msg.DirectoryLoaded m => (DirectoryLoaded(state, m.At, m.Location, m.Entries), NoEffects),
@@ -328,7 +328,7 @@ public static partial class Transition
     }
 
     private static (AppState, IReadOnlyList<Effect>) EnterDirectory(
-        AppState state, ColumnRef at, int entryIndex, bool focusChild)
+        AppState state, ColumnRef at, int entryIndex, bool focusChild, bool openFile = true)
     {
         if (state.ColumnAt(at) is not { } column || state.PaneOf(at.Pane) is not { } pane)
         {
@@ -347,7 +347,7 @@ public static partial class Transition
             fileTruncated = fileTruncated.SetItem(at.Index, column with { Cursor = entryIndex });
             var fileState = state.WithPane(pane with { Columns = fileTruncated, FocusedColumn = at.Index });
 
-            if (entry.Kind != EntryKind.File || EntryPath(column, entry) is not { } filePath)
+            if (!openFile || entry.Kind != EntryKind.File || EntryPath(column, entry) is not { } filePath)
             {
                 return (fileState, NoEffects);
             }

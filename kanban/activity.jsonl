@@ -52,3 +52,4 @@
 {"timestamp":"2026-11-19T10:38:20.0544875+09:00","action":"create","task_id":22,"detail":"不変条件: 各列は自分のペインの View で導出されている"}
 {"timestamp":"2026-11-19T23:06:09.8606525+09:00","action":"move","task_id":15,"detail":"backlog -\u003e done"}
 {"timestamp":"2026-11-19T23:06:09.9791586+09:00","action":"create","task_id":23,"detail":"7b 実機確認(検索・Leap・migemo)"}
+{"timestamp":"2026-11-20T18:59:39.0621276+09:00","action":"move","task_id":23,"detail":"in-progress -\u003e done"}

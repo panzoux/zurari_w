@@ -112,8 +112,8 @@ public class TransitionProperties
         GenColumnRef.Select(r => (Msg)new Msg.CursorEnd(r)),
         Gen.Select(GenColumnRef, GenEntryIndex).Select(t => (Msg)new Msg.CursorTo(t.Item1, t.Item2)),
         GenColumnRef.Select(r => (Msg)new Msg.FocusColumn(r)),
-        Gen.Select(Gen.Select(GenColumnRef, GenEntryIndex), GenIsMove)
-            .Select(t => (Msg)new Msg.EnterDirectory(t.Item1.Item1, t.Item1.Item2, t.Item2)),
+        Gen.Select(Gen.Select(GenColumnRef, GenEntryIndex), GenIsMove, GenIsMove)
+            .Select(t => (Msg)new Msg.EnterDirectory(t.Item1.Item1, t.Item1.Item2, t.Item2, t.Item3)),
         GenColumnRef.Select(r => (Msg)new Msg.GoToParent(r)),
         Gen.Const<Msg>(new Msg.Refresh()),
         Gen.Select(GenColumnRef, GenLocation, GenEntries).Select(t => (Msg)new Msg.DirectoryLoaded(t.Item1, t.Item2, t.Item3)),

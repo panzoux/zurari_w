@@ -50,9 +50,10 @@ public abstract record Msg
     /// itself (a plain click on the directory - the child pane still opens, but the strong
     /// cursor-row highlight and title-bar path stay put). For a file, selects it and moves focus to
     /// <paramref name="At"/> regardless of <paramref name="FocusChild"/> - there is no
-    /// child column to focus.
+    /// child column to focus - and opens it unless <paramref name="OpenFile"/> is <c>false</c>
+    /// (a single click only selects a file; Enter and double-click open it).
     /// </summary>
-    public sealed record EnterDirectory(ColumnRef At, int EntryIndex, bool FocusChild = true) : Msg;
+    public sealed record EnterDirectory(ColumnRef At, int EntryIndex, bool FocusChild = true, bool OpenFile = true) : Msg;
 
     /// <summary>Move focus from <paramref name="At"/> to the column to its left, Finder style.</summary>
     public sealed record GoToParent(ColumnRef At) : Msg;
